@@ -1,0 +1,12 @@
+{
+    "short_name": "Gold & Ruin",
+    "name": "Gold & Ruin",
+    "icons": [
+        {
+          "src": "/img/favico.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ],
+    "display": "fullscreen"
+  }
