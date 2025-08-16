@@ -1,7 +1,7 @@
 class System {
-    #console = null;
+    console = null;
     constructor(){
-        this.#console = document.getElementById("os");
+        
     }
 
     sleep(ms) {
@@ -35,8 +35,32 @@ class System {
     async print(message){
         for(let i=0; i<message.length; i++){
             let s = message.substring(i,i+1);
-            this.#console.innerHTML = this.#console.innerHTML.substring(0, this.#console.innerHTML.length - 1) + s + '|';
+            this.console.innerHTML = this.console.innerHTML.substring(0, this.console.innerHTML.length - 1) + s + '|';
             await this.sleep(25)
+        }
+    }
+
+    spin(pos){
+        if(pos == null){
+            pos = 0;
+        }
+        if (this.console.style.visibility!='hidden'){
+            let cursor = "|"
+            switch (pos){
+                case 1:
+                    cursor = "/";
+                    break;
+                case 2:
+                    cursor = "—";
+                    break;
+                case 3:
+                    cursor = "\\";
+                    break;
+            }
+            this.console.innerHTML = this.console.innerHTML.substring(0, this.console.innerHTML.length - 1) + cursor;
+            pos++;
+            var that = this;
+            setTimeout(function(pos){that.spin(pos);},100,(pos%4));        
         }
     }
 
@@ -54,25 +78,27 @@ class System {
         for(let i = 0; i <ca.length; i++) {
             let c = ca[i];
             while (c.charAt(0) === ' ') {
-            c = c.substring(1);
+                c = c.substring(1);
             }
             if (c.indexOf(name) === 0) {
-            return c.substring(name.length, c.length);
+                return c.substring(name.length, c.length);
             }
         }
         return "";
     }
 
     static async boot(){
-        var os = document.createElement('div');
-        os.id = "os";
-        document.body.appendChild(os);
+
         var s = new System();
         let lastModified = await s.fetchLastModified();
         let lastLoaded = s.getCookie("lm");
         console.log(lastModified.getTime().toString());
         console.log(lastLoaded);
         if(lastLoaded != lastModified.getTime().toString()){
+            var os = document.createElement('div');
+            os.id = "os";
+            document.body.appendChild(os);
+            s.console = os;
             await s.print("VC Loader v1.1 BETA")
             await s.print("\n\nLoading Display Subsystem...")
             await s.loadScript("raphael.min.js");
@@ -84,14 +110,18 @@ class System {
             await s.loadScript("engine.js");
             await s.print("OK")
             await s.print("\n\nLoading Gold & Ruin...")
+            s.spin();
             await s.loadScript("goldruin.js");
-            s.setCookie("lm", lastModified.getTime().toString(), 365)
+            s.setCookie("lm", lastModified.getTime().toString(), 365);
+            os.style.visibility = 'hidden';
+            os.style.display = 'none';
         }else{
             await s.loadScript("raphael.min.js");
             await s.loadScript("howler.min.js");
             await s.loadScript("engine.js");
             await s.loadScript("goldruin.js");
         }
+        
 
         VC.Client.Start();
     }
