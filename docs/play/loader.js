@@ -26,6 +26,11 @@ class System {
             document.body.appendChild(script);
         });
     }
+
+    async fetchLastModified(callback) {
+        let r = await fetch('loader.js', {method: "HEAD"});
+        return new Date(r.headers.get('Last-Modified'));
+    }
  
     async print(message){
         for(let i=0; i<message.length; i++){
@@ -35,17 +40,59 @@ class System {
         }
     }
 
-    static async boot(scripts){
+    setCookie(cname, cvalue, exdays) {
+        const d = new Date();
+        d.setTime(d.getTime() + (exdays*24*60*60*1000));
+        let expires = "expires="+ d.toUTCString();
+        document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+    }
+
+    getCookie(cname) {
+        let name = cname + "=";
+        let decodedCookie = decodeURIComponent(document.cookie);
+        let ca = decodedCookie.split(';');
+        for(let i = 0; i <ca.length; i++) {
+            let c = ca[i];
+            while (c.charAt(0) === ' ') {
+            c = c.substring(1);
+            }
+            if (c.indexOf(name) === 0) {
+            return c.substring(name.length, c.length);
+            }
+        }
+        return "";
+    }
+
+    static async boot(){
+        var os = document.createElement('div');
+        os.id = "os";
+        document.body.appendChild(os);
         var s = new System();
-        await s.print("VolatileCoder OS v1.0 BETA")
-        await s.print("\n\nLoading Display Subsystem...")
-        await s.loadScript("raphael.min.js");
-        await s.print("OK")
-        await s.print("\n\nLoading Audio Subsystem...")
-        await s.loadScript("howler.min.js");
-        await s.print("OK")
-        await s.print("\n\nLoading Gold & Ruin...")
-        await s.loadScript("game.js");
+        let lastModified = await s.fetchLastModified();
+        let lastLoaded = s.getCookie("lm");
+        console.log(lastModified.getTime().toString());
+        console.log(lastLoaded);
+        if(lastLoaded != lastModified.getTime().toString()){
+            await s.print("VC Loader v1.1 BETA")
+            await s.print("\n\nLoading Display Subsystem...")
+            await s.loadScript("raphael.min.js");
+            await s.print("OK")
+            await s.print("\n\nLoading Audio Subsystem...")
+            await s.loadScript("howler.min.js");
+            await s.print("OK")
+            await s.print("\n\nLoading VC Engine...")
+            await s.loadScript("engine.js");
+            await s.print("OK")
+            await s.print("\n\nLoading Gold & Ruin...")
+            await s.loadScript("goldruin.js");
+            s.setCookie("lm", lastModified.getTime().toString(), 365)
+        }else{
+            await s.loadScript("raphael.min.js");
+            await s.loadScript("howler.min.js");
+            await s.loadScript("engine.js");
+            await s.loadScript("goldruin.js");
+        }
+
         VC.Client.Start();
     }
 }
