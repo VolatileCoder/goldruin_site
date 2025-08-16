@@ -97,7 +97,7 @@ class System {
             os.id = "os";
             document.body.appendChild(os);
             s.console = os;
-            await s.print("VC Loader v1.1 BETA")
+            await s.print("  .: VC Loader v1.1 BETA :.")
             await s.print("\n\nLoading Display Subsystem...")
             await s.loadScript("raphael.min.js");
             await s.print("OK")
