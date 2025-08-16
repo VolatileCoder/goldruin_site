@@ -92,8 +92,6 @@ class System {
         var s = new System();
         let lastModified = await s.fetchLastModified();
         let lastLoaded = s.getCookie("lm");
-        console.log(lastModified.getTime().toString());
-        console.log(lastLoaded);
         if(lastLoaded != lastModified.getTime().toString()){
             var os = document.createElement('div');
             os.id = "os";
