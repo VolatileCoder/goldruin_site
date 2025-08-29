@@ -1,5 +1,8 @@
-const VERSION = "v5.25.8.28.46 BETA"
+const VERSION = "v5.25.8.28.76 BETA"
 class Layer {
+    static get STAIN(){
+        return -2;
+    }
     static get SHADOW(){
         return -1;
     }
@@ -850,14 +853,16 @@ class SoundEffects {
     }
 }
 
-class Rat extends Character {
+class Bat extends Character {
     sprite = null;
+    #initialized = false;
     constructor(room, controller){
         super(room, controller);
         this.box.x = Math.round(dimensions.width / 2)-100;
         this.box.y = Math.round(dimensions.width / 2)-100;
-        this.box.height = 50;
-        this.box.width = 50;
+        this.box.height = 75;
+        this.box.width = 75;
+        this.layer = Layer.EFFECT; 
         this.team = Team.DUNGEON;
         this.direction = Direction.EAST;
         this.speed = 125;
@@ -867,76 +872,53 @@ class Rat extends Character {
         this._attackDuration = 500; 
         this._attackCooldown = 3000;
         this.style = VC.Math.random(0,3);
+        this.z = 25;
+        this.immovable = true;
     }
 
+    initialize(){
+        new BatShadow(this);
+        this.playSound(0, SoundEffects.BAT_WING, .7, true);
+        this.#initialized = true;
+    }
     move(deltaT){
+        if(!this.#initialized){
+            this.initialize();
+        }
+        
         this.controller.reverseInput = ((Date.now() - this._lastAttack) < this._attackCooldown);
         this.speed = this.controller.reverseInput ? 200 : this.getObjectsInView().indexOf(game.player) === -1 ? 115 : 150;
         super.move(deltaT);
-        if(this.state === State.WALKING){
-            this.playSound(1, SoundEffects.RAT_WALK, .05, true);
-        } else {
-            this.stopSound(1, SoundEffects.RAT_WALK);
+
+        if(this.state === State.DYING){
+            this.z = VC.Math.percentToRange((Date.now() - this._stateStart)/800, 30, 0)
         }
-        
+
     }
     
     render(deltaT, screen){
         if(!this.sprite){
-            let image = null;
-            switch(this.style){
-                case 1:
-                    image = Images.RAT_BLACK;
-                    break;
-                case 2:
-                    image = Images.RAT_BROWN;
-                    break;
-                default:
-                    if(VC.Math.random(0,4)===4){                        
-                        image = Images.RAT_WHITE;
-                    }
-                    image = Images.RAT_GRAY;
-            }
-            this.sprite = new VC.Sprite(screen, image, 800, 500, 100, 100, 0, 0);
+            this.sprite = new VC.Sprite(screen, Images.BAT, 1200, 750, 150, 150, 0, 0);
         }
         if(DEBUG){
            this.box.render(screen, "#FF0");
-            /*
-                if(this._viewBox1){
-                    this._viewBox1.render(screen,"#0ff");
-                }
-                if(this._viewBox2){
-                    this._viewBox2.render(screen,"#0ff");
-                }
-            */
-            if(this._attackBox){
+           /*
+            if(this._viewBox1){
+                this._viewBox1.render(screen,"#0ff");
+            }
+            if(this._viewBox2){
+                this._viewBox2.render(screen,"#0ff");
+            }
+            if(this._viewBox){
                 this._attackBox.render(screen, "#f00");
             }
+            */
         } 
         
-        switch(this.direction){
-            case Direction.NORTH:
-                this.box.width = 50;
-                this.sprite.location.x = this.box.x-25;
-                this.sprite.location.y = this.box.y-15;
-                break;
-            case Direction.WEST:
-                this.box.width = 50;
-                this.sprite.location.x = this.box.x-10;
-                this.sprite.location.y = this.box.y-32;
-                break;
-            case Direction.SOUTH:
-                this.box.width = 50;
-                this.sprite.location.x = this.box.x-25;
-                this.sprite.location.y = this.box.y-25;
-                break;
-            case Direction.EAST:
-                this.box.width = 50;
-                this.sprite.location.x = this.box.x-50;
-                this.sprite.location.y = this.box.y-32;
-                break;
-                        
-        }
+
+        this.sprite.location.x = this.box.center().x-75;
+        this.sprite.location.y = this.box.center().y-(50+this.z);
+
         this.sprite.setAnimation(this.direction, this.state);
         this.sprite.render(deltaT);
     }
@@ -948,26 +930,15 @@ class Rat extends Character {
        
         if(DEBUG){
             this.box.remove();
-            if(this._viewBox2){
-                this._viewBox2.remove();
-            }
-            if(this._viewBox){
-                this._attackBox.remove();
-            }
-            if(this._attackBox){
-                this._attackBox.remove();
-            }
         }
     }
-
     remove(){
         super.remove();
         this.clear();
     }
-    
     attack(){
         if(this.state !== State.ATTACKING){
-            this.playSound(0, SoundEffects.RAT_ATTACK, .9, false);
+            this.playSound(1, SoundEffects.BAT_ATTACK, .9, false);
             this.state = State.ATTACKING;
         }
         let opposingTeam = Team.getOpposingTeam(this.team)
@@ -1048,10 +1019,11 @@ class Rat extends Character {
         super.hurt(damage, knockback, distance);
         if(startHealth>0 && this.health<=0){
             if (game && game.level && game.level.statistics){
-                game.level.statistics.ratsKilled++;
+                game.level.statistics.batsKilled++;
                 game.level.statistics.enemiesKilled++;
             }
-            this.playSound(0, SoundEffects.RAT_DEATH, .6, false);
+            this.stopSound(0, SoundEffects.BAT_WING);
+            this.playSound(1, SoundEffects.BAT_DEATH, .8, false);
         }
     }
 }
@@ -1649,721 +1621,252 @@ class Level extends VC.Scene {
     }
 
 }
-//Used to make invsibile walls (used in Exit)
-class InvisibleObject extends GameObject{
-    constructor (room){
-        super(room);
-         this.immovable = true;
+class Door {
+    level = null;
+    room = null;
+    wall = 0;
+    color = palette.doorDefaultColor;
+    atmosphere = "#000";
+    offset = 0; 
+    forceBars = false;
+    elements = [];
+    isEntrance = false;
+    isExit = false;
+
+    constructor(level, room, wall, offset){
+        this.level = level;
+        this.room = room;
+        this.wall = wall % 4;
+        this.offset = offset;
+        
     }
-    move(){}
-    render(deltaT, screen){
-        if(DEBUG){
-            this.box.render(screen, "#F0F");
+
+    render(screen){
+        if(this.elements.length>0){
+            //clear previous rendering
+            this.elements.forEach((e)=>e.remove());
+            this.elements = [];
         }
-    }
-    clear(){
-        super.clear();
-        this.box.remove();
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-}
-
-class Starburst extends GameObject{
-    #sprite = null;
-    constructor(room){
-        super(room)
-        this.box.width = 25;
-        this.box.height = 25;
-        this.layer = Layer.EFFECT
-        this.plane = Plane.ETHEREAL;
-    }
-    
-    render(deltaT, screen){
-        if(this.state === State.DEAD){
-            return;
-        }
-        if(!this.#sprite){
-            this.#sprite = new VC.Sprite(screen, Images.STARBURST, 100, 25, 25, 25, this.box.center().x-12, this.box.center().y-12);
-            this.#sprite.setAnimation(0,0);
-            this.#sprite.location.r = Math.round(Math.random() * 360);
-        }
-        this.#sprite.render(deltaT); 
-    }
-
-    move(deltaT){
-        if(Date.now()-this._stateStart>250){
-            this.state = State.DEAD;
-        }
-    }
-
-    clear(){
-        super.clear();
-        if(this.#sprite){
-            this.#sprite.remove();
-            this.#sprite = null;
-        }
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-}
-
-class ScorchMark extends GameObject{
-    #sprite = null;
-    constructor(room,x,y){
-        super(room);
-        this.box.x = x-38;
-        this.box.y = y-38;
-        this.box.width = 0;
-        this.box.height = 0;
-        this.rotation = Math.round(Math.random() * 360);
-        this.style = Math.round(Math.random() * 2);
-        this.layer = Layer.SHADOW;
-        this.plane = Plane.ETHEREAL;
-    }
-
-    move(deltaT){
-        return;
-    }   
-
-    render(deltaT, screen){   
-        if(!this.#sprite){
-            this.#sprite = new VC.Sprite(screen, Images.SCORCH_MARK, 75, 225, 75, 75, this.box.x, this.box.y);
-            this.#sprite.setAnimation(0,this.style);
-            this.#sprite.location.r = this.rotation;
-        }
-        this.#sprite.render(deltaT); 
-    
-    }
-    clear(){
-        if(this.#sprite){
-            this.#sprite.remove();
-            this.#sprite = null;
-        }
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-}
-
-class Explosion extends GameObject{
-    
-    #sprite = null;
-    constructor(room, x, y, parent){
-        super(room);
-        this.box.x = x - 100;
-        this.box.y = y - 100;
-        this.box.width = 200;
-        this.box.height = 200;
-        this.layer = Layer.EFFECT;
-        this.plane = Plane.ETHEREAL;
-        this.parent = parent;
-        this.suppressScorch = false;
-    }
-
-    move(deltaT){
-        if(this.state === State.IDLE){
-            this.state = State.ATTACKING;
-            this.room.objects.forEach((o)=>{
-                if((o.plane===Plane.PHYSICAL || (o.plane===Plane.ETHEREAL && o instanceof InvisibleObject)) && this.box.collidesWith(o.box) && o.hurt!=null && o !== this.parent){
-                    let rect = o.box.intersectRect(this.box);
-                    if(rect){
-                        let diffY = o.box.center().y - this.box.center().y
-                        let diffX = o.box.center().x - this.box.center().x
-
-                        let tan = diffY / diffX;
-
-                        if (isNaN(tan)){
-                            tan = 1;
-                        }
-                        let damage = Math.round((rect.height*rect.width)/16);
-
-                        let box = o.box.clone();
-                        let box2 = o.box.clone();
-                        box.x = diffX * damage;
-                        box.y = tan * box.x;
-
-                        o.hurt(damage, Direction.NORTH);
-                        
-                        o.box = box2;
-                        if(o!=game.player && !(o instanceof Manos)){
-                            o.box = o.room.constrain(o, box.x, box.y);
-                        }
+        if (this.elements.length===0){
+            screen.onClear(()=>{this.elements = [];});
+            focus={};
+            focus.x =  (this.wall === Direction.NORTH || this.wall === Direction.SOUTH ? this.room.box.width : this.room.box.height) / 2
+            //focus.x = this.room.box.width /2
+            focus.y = VC.Trig.cotangent(VC.Trig.degreesToRadians(45)) * focus.x;
+        
+            let offset={};
+            offset.x = 0;//focus.x + this.room.box.x + this.room.wallHeight;
+            offset.y = 0;//focus.y + this.room.box.y + this.room.wallHeight + dimensions.infoHeight;
+        
+            //DOOR FRAME
+            let x1 = this.offset - constants.doorWidth/2 - constants.doorFrameThickness;
+            let y1 = -focus.x;
+            let x4 = this.offset + constants.doorWidth/2 + constants.doorFrameThickness;
+            let y4 = -focus.x;
+            let y2 = y1 - constants.doorHeight - constants.doorFrameThickness;
+            let x2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * y2;
+            let y3 = y4 - constants.doorHeight - constants.doorFrameThickness;
+            let x3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * y3;
+            this.elements.push(screen.drawQuad(x1,y1,x2,y2,x3,y3,x4,y4,offset.x,offset.y,palette.doorFrame,"#000",constants.lineThickness));
+        
+        
+            //DOOR
+            x1 = this.offset - constants.doorWidth / 2;
+            y1 = -focus.x;
+            x4 = this.offset + constants.doorWidth / 2;
+            y4 = -focus.x;
+            let dy2 = y1 - constants.doorHeight;
+            let dx2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * dy2;
+            let dy3 = y4 - constants.doorHeight;
+            let dx3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * dy3;
+            
+            this.opened = 1;
+            if(!this.isExit && this.level){
+                let portalTo = this.level.findNeighbor(this.room, this.wall);
+                if(portalTo){
+                    this.opened = portalTo.opened;
+                    if(!this.opened){
+                        this.lock = portalTo.lock;
+                        this.color = regionColor(portalTo.region);
                     }
                 }
-            })
-            super.move();
-            this.playSound(0, SoundEffects.EXPLOSION, 1, false)
-        }
-        if(this.state !== State.DEAD && Date.now()-this._stateStart>400){
-            this.state = State.DEAD;
-            if(!this.suppressScorch){
-                new ScorchMark(this.room, this.box.center().x, this.box.center().y);
-            }
-        }
-    }       
-
-    render(deltaT, screen){ 
-        if(this.state === State.DEAD){
-            return;
-        }
-        if(!this.#sprite){
-            this.#sprite = new VC.Sprite(screen, Images.EXPLOSION, 1000, 200, 200, 200, this.box.x, this.box.y);
-            this.#sprite.setAnimation(0,0);
-            this.#sprite.location.r = Math.round(Math.random() * 360);
-            VC.VisualEffects.shake(screen,1, 200);
-        }
-        this.#sprite.render(deltaT);
-    }
-    
-    clear(){
-        super.clear();
-        if(this.#sprite){
-            this.#sprite.remove();
-            this.#sprite = null;
-        } 
-    }
-
-    remove(){
-        super.remove();
-        this.clear();
-    }
-
-}
-
-class TNT extends GameObject{
-    sprite = null;
-    #shadow = null;
-    #forceRender = false;
-    constructor(room){
-        super(room);
-        this.box.width = 24;
-        this.box.height = 24;
-        this.layer = Layer.DEFAULT;
-        this.stop = false;
-        this._fuseStart = Date.now();
-        this.z = 100;
-        window.setTimeout(()=>{
-            this.attack()
-        },2000)
-
-        this.playSound(0, SoundEffects.FUSE, .6, false)
-    }
-
-    attack(){
-        if(this.room == null){
-            if(game && game.level && game.level.currentRoom){
-                this.room = game.level.currentRoom;
-            }else{
-                return;
-            }
-        }
-
-        if(this.state !== State.DEAD){       
-            if(this.sprite){
-                new Explosion(this.room, this.sprite.location.x + this.sprite.size.width/2, this.sprite.location.y + this.sprite.size.height/2)
-            } else {
-                new Explosion(this.room, this.box.center().x, this.box.center().y);
-            }
-        }
-    
-        window.setTimeout(()=>{
-            this.stopSound(0, SoundEffects.FUSE)
-        },200);
-
-        this.state = State.DEAD;
-    
-    }
-
-    hurt(){
-        this.attack();
-    }
-
-
-    move(deltaT){
-        if(this.state===State.DEAD){
-            return;
-        }
-        let speed = 0 
-        if(this.state !== State.IDLE){
-            this.#forceRender = true;
-            let releaseSpeed = 400;
-            let msPassed = new Date() - this._stateStart;
-            let factor = (1-(msPassed/2000));
-            speed = releaseSpeed * factor
-            //console.log(factor);    
-        }
-
-        let proposed = {
-            room: this.room,
-            x: this.box.x,
-            y: this.box.y
-        } 
-        switch(this.direction){
-            case Direction.NORTH:
-                proposed.y = this.box.y - speed * deltaT/1000;
-                break;
-            case Direction.EAST:
-                proposed.x = this.box.x + speed * deltaT/1000;
-                break;
-            case Direction.SOUTH: 
-                proposed.y = this.box.y + speed * deltaT/1000;
-                break;
-            case Direction.WEST:
-                proposed.x = this.box.x - speed * deltaT/1000;
-                break;
-        }
-
-        let constrained = this.room.constrain(this,
-            proposed.x,
-            proposed.y
-        )
-        if ((constrained.x !== proposed.x || constrained.y !== proposed.y) && proposed.room === this.room)
-        {
-            this.state = State.IDLE;
-        }
-        this.box.x = constrained.x;
-        this.box.y = constrained.y;
-
-        this.z = 0;
-        if(this.state!==State.IDLE || this.forceRender){
-            let msPassed = new Date() - this._stateStart;
-            let perc = 1-(msPassed/2000);
-            let factor = Math.PI - ((Math.PI-1)*(perc));
-            this.z = VC.Math.constrain(0, 50 * Math.sin(factor*1.5), 50);
-        }
-        if(this.z==0 && this.plane != Plane.ETHEREAL){
-            this.plane = Plane.ETHEREAL;
-            this.layer = Layer.SHADOW;
-        }
-
-        super.move();
-    }    
-
-    render(deltaT, screen){
-        if(this.state === State.DEAD || this.room !== game.level.currentRoom){
-            return;
-        }
-        
-        if(!this.sprite){
-            this.sprite = new VC.Sprite(screen, Images.TNT, 384, 24, 24, 24, this.box.center().x-12, this.box.center().y-12);
-            this.sprite.setAnimation(0,0);
-        }
-           
-        let x = this.box.center().x - 4;
-        let y = this.box.center().y + 5;
-        if(!this.#shadow){
-            this.#shadow = screen.drawEllipse(x, y, 8, 2, 0, 0, "#111","#111",".5");
-            this.#shadow.transform("r0,0,45");// + x +"," + y +  ",1") 
-            this.#shadow.attr({"opacity": .5, "r":45});
-        }
-        this.#shadow.animate({"cx":x, "cy":y}, deltaT, 'linear');
-        
-
-
-        if(DEBUG){
-            this.box.render(screen, "#800");
-        }
-
-        this.sprite.location.x = this.box.x;
-        this.sprite.location.y = this.box.y - this.z;
-
-        this.sprite.setFrame(0,0,Math.round(VC.Math.percentToRange((Date.now()-this._fuseStart)/2000,0,15)))
-        this.sprite.render(deltaT); 
-    }
-
-
-    clear(){
-        super.clear();
-        this.box.remove();
-        if(this.sprite){
-            this.sprite.remove();
-            this.sprite = null;
-        }
-        if(this.#shadow){
-            this.#shadow.remove();
-            this.#shadow = null;
-        }
-    }
-    
-    remove(){
-        super.remove();
-        this.clear();
-    }
-   
-}
-class Torch extends GameObject{
-    sprite = null;
-    #particles=[];
-    #releaseSpark = false;
-    intensity = 1;
-    wall = Direction.NORTH;
-    nextFlicker = new Date(0);
-    constructor(room){
-        super(room)
-        this.box.width=0;
-        this.box.height=0;
-        this.plane = Plane.ETHEREAL;
-        this.layer = Layer.DEFAULT;
-        new TorchLightEffect(this);
-    }
-
-    //TODO: Move Particle Effects to their own class; part of Engine, maybe?
-    move(deltaT){
-        if(!this.nextFlicker || this.nextFlicker<Date.now()){
-            this.intensity = Math.random();
-            this.nextFlicker = Date.now() + Math.random() * 50 + 50;
-            if(this.sprite){
-                this.sprite.setFrame(0, Math.floor(this.intensity * 4) % 4, Math.floor(Math.random()*8) % 8)
             }
             
-            if(this.intensity > .75){
-                this.#releaseSpark = true
+            this.elements.push(screen.drawQuad(x1,y1,dx2,dy2,dx3,dy3,x4,y4,offset.x,offset.y,"#000",0));
+            if(this.isEntrance || this.isExit){
+                this.elements.push(screen.drawQuad(x1+10,y1,dx2+10,dy2,dx3-10,dy3,x4-10,y4,offset.x,offset.y,this.atmosphere,0));
             }
-        }
+            //THRESHOLD
+            x1 = this.offset - constants.doorWidth/2 ;
+            y1 = -focus.x + constants.lineThickness - 3;
+            x4 = this.offset + constants.doorWidth/2;
+            y4 = -focus.x + constants.lineThickness - 3;
+            y2 = y1 - constants.thresholdDepth;
+            if (x1 > 0){
+                x2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * y2;        
+            }else {
+                x2 = x1 - ((VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * y2)-x1)/3;
+            }
+            
+            y3 = y4 - constants.thresholdDepth;
+            if (x4 < 0){
+                x3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * y3;      
+            }else {
+                x3 = x4 - ((VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * y3)-x4)/3;
+            }
+            this.elements.push(screen.drawQuad(x1,y1,x2,y2,x3,y3,x4,y4,offset.x,offset.y,"90-" +this.room.palette.floorColor+ ":5-#000:95","#000",0));                
+        
+            
+            if (!this.opened){
+                //DOOR
+        
+                x1 = this.offset - constants.doorWidth / 2;
+                y1 = -focus.x - constants.doorFrameThickness;
+                x4 = this.offset + constants.doorWidth / 2;
+                y4 = -focus.x - constants.doorFrameThickness;
+                dy2 = y1 - constants.doorHeight + constants.doorFrameThickness ;
+                dx2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * dy2;
+                dy3 = y4 - constants.doorHeight + constants.doorFrameThickness;
+                dx3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * dy3;
+                this.elements.push(screen.drawQuad(x1,y1,dx2,dy2,dx3,dy3,x4,y4,offset.x,offset.y,this.color,constants.lineThickness));
 
-    };
-    render(deltaT, screen){
-        this.box.render(screen, "#FFF");
-        if(this.sprite==null){
-            this.sprite = new VC.Sprite(screen, Images.TORCH, 512,256, 64, 64,this.box.x-32, this.box.y-32);
-            this.sprite.lastLocation.r = this.sprite.location.r = this.wall * 90;
-            screen.onClear(()=>{
-                 this.sprite = null;
-            });
-        }
-
-        this.sprite.render()
-        if(this.#releaseSpark){
-            let particle = screen.drawRect(this.box.center().x + Math.random() * 10 - 5, this.box.center().y + Math.random() * 10 - 5,2,2,"#fea","#000",0).attr("opacity",.75);
-            particle.kill = Date.now() + 1000 * Math.random() + 250;
-            this.#particles.push(particle);
-            this.#releaseSpark = false;
-        }
-        this.#particles.forEach((p)=>{
-            switch(this.wall) {
+                
+                //KEYHOLE
+                let x0 = this.offset;
+                let y0 = -focus.x;
+                
+                y1 = -focus.x - constants.doorHeight/5;
+                x1 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y1) - constants.doorWidth/12;
+                
+                y4 = -focus.x - constants.doorHeight/5;
+                x4 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y1) + constants.doorWidth/12;
+        
+                y2 = y1 - 16;
+                x2 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y2) -1 ;        
+                y3 = y4 - 16;
+                x3 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y3) +1; 
+        
+                this.elements.push(screen.drawQuad(x1,y1,x2,y2,x3,y3,x4,y4,offset.x,offset.y,"#000","#000",0));
+                
+                this.elements.push(screen.drawEllipse( (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y3), y3, 8, 4,offset.x,offset.y,"#000","#000",0));
+        
+                
+            }
+        
+            if(this.room.barred || this.forceBars){
+                
+                let bars = 5;
+            
+                for(let i=1;i<bars; i++){
+                    let x0 = (this.offset - constants.doorWidth/2) + (constants.doorWidth/bars) * i;
+                    let y0 = -focus.x - constants.doorFrameThickness //-this.room.box.width/2;
+                    let y1 = y0-constants.doorHeight + constants.doorFrameThickness;
+                    let x1 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y1);                    
+                    
+                    this.elements.push(screen.drawLine(x0, y0, x1, y1, "#000", constants.lineThickness*3));
+                    this.elements.push(screen.drawLine(x0, y0, x1, y1, palette.doorBarColor, constants.lineThickness));
+                    
+                }
+                this.elements.push(screen.drawLine(dx2, dy2, dx3, dy3, "#000", constants.lineThickness));
+                
+            }
+            let t = ""
+            switch (this.wall){
                 case Direction.NORTH:
-                    p.attr({y: p.attr("y")-deltaT/1000 * 50})
+                    t = "t" + Math.round(focus.x + this.room.box.x) + "," + Math.round(focus.y + this.room.box.y);
+                    break;
+                case Direction.SOUTH:
+                    t = "r180,0,0t" + Math.round(focus.x + this.room.box.x) *-1+ "," + Math.round(-focus.y + this.room.box.y + this.room.box.height) *-1;
                     break;
                 case Direction.EAST:
-                    p.attr({x: p.attr("x")+deltaT/1000 * 50})   
-                    break; 
-                case Direction.SOUTH:
-                    p.attr({y: p.attr("y")+deltaT/1000 * 50})
+                    t = "r90,0,0t" + Math.round(focus.x + this.room.box.y) + "," + Math.round(-focus.y + this.room.box.x + this.room.box.width) * -1;
                     break;
                 case Direction.WEST:
-                    p.attr({x: p.attr("x")-deltaT/1000 * 50})
+                    t = "r270,0,0t" + Math.round(focus.x + this.room.box.y) * -1 + "," + Math.round(focus.y + this.room.box.x);
                     break;
+            }      
+            this.elements.forEach((element)=>{
+                element.transform(t)
+            })
+            
+            if (DEBUG && this.box ){
+                this.box.render(game.screen, "#0FF");
             }
-        });
-
-        remove(this.#particles, (p)=>{
-            if(p.kill<Date.now()){
-                p.remove();
-                return true;
+            if (DEBUG && this.trip ){
+                this.trip.render(game.screen, "#F00");
             }
-            return false;
-        })
-    };
-    clear(){
-        super.clear();
-        if(this.sprite) {
-            this.sprite.remove();
-            this.sprite = null;
         }
-        if(this.#particles){
-            this.#particles.forEach((p)=>{p.remove();});
-            this.#particles = [];
-        }
-    }
-    remove(){
-        super.remove();
-        //this.clear();
-    }
-}
-
-class TorchLightEffect extends GameObject{
-    #torch = null;
-    #element = null;
-    #offsetX = 0;
-    #offsetY = 0;
-    constructor(torch){
-        super(torch.room)
-        this.#torch = torch;
-        this.box = torch.box;   
-        this.plane = Plane.ETHEREAL;
-        this.layer = Layer.EFFECT;
-    }
-    move(deltaT){
-        this.#offsetX = Math.random() * 7 - 3.5;
-        this.#offsetY = Math.random() * 7 - 3.5;
-    };
-    render(deltaT, screen){
-        if(this.#element==null){
-            this.#element = screen.drawEllipse(this.box.center().x, this.box.center().y, this.#torch.intensity * 10 + 140, this.#torch.intensity * 10 + 140, 0, 0, "#fea","#000",0)
-            this.#element.attr({"fill":"#fea","opacity": .15});
-            screen.onClear(()=>{this.#element = null});
-        }
-        if (this.#torch){
-            this.#element.attr({
-                "rx": this.#torch.intensity * 10 + 140,
-                "ry": this.#torch.intensity * 10 + 140,
-                "opacity": this.#torch.intensity * .0125 + .025,
-                //"clip-rect": "" + this.box.center().x + "," + this.box.center().y + "," + 140 + "," + 140 
-            });
-        }
-
-        this.#element.transform("t" + this.#offsetX + "," + this.#offsetY); 
-        this.#element.toFront();    
-
-    };
-    clear(){
-        if(this.#element){
-            this.#element.remove();
-        }
-        this.#element = null;
-        this.box.remove();
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-}
-
-class Exit extends GameObject {
-    #elements = [];
-    #invisibleObjects = [];
-    #hasBeenTripped = false;
     
-    constructor(room){
-        super(room);
-        this.box.width = constants.doorWidth;
-        this.box.height = constants.brickWidth * 4;
-        this.plane = Plane.ETHEREAL;
     }
 
-    move(deltaT){
-        if(this.#invisibleObjects.length===0){
-            
-            let io = new InvisibleObject(this.room);
-            io.box.x = this.box.x - constants.doorFrameThickness;
-            io.box.y = this.box.y;
-            io.box.height = this.box.height;
-            io.box.width = constants.doorFrameThickness*2;
-            //this.room.objects.push(io);
-            this.#invisibleObjects.push(io);
-
-            io = new InvisibleObject(this.room);
-            io.box.x = this.box.x + constants.doorWidth;
-            io.box.y = this.box.y;
-            io.box.height = this.box.height;
-            io.box.width = constants.doorFrameThickness;
-            //this.room.objects.push(io);
-            this.#invisibleObjects.push(io);
-            
-            io = new InvisibleObject(this.room);
-            io.box.x = this.box.x;
-            io.box.y = this.box.y;
-            io.box.width = this.box.width;
-            io.box.height = constants.doorFrameThickness;
-            //this.room.objects.push(io);
-            this.#invisibleObjects.push(io);
-        }
-        if (!this.tripBox){
-            this.tripBox = new VC.Box(this.box.x, this.box.y + constants.doorFrameThickness * 3, this.box.width, this.box.height/2);
-        }
-    }
-
-    render(deltaT, screen){
-        if (this.#elements.length===0){
-            
-            //let exitHeight = constants.brickWidth * 3;
-
-            this.#elements.push(screen.drawRect(this.box.x - constants.doorFrameThickness, this.box.y,  (constants.doorWidth + constants.doorFrameThickness*2),  this.box.height, palette.doorFrame, "#000", constants.lineThickness));
-            this.#elements.push(screen.drawRect(this.box.x, this.box.y + constants.doorFrameThickness, this.box.width,  this.box.height - constants.doorFrameThickness, "#000", "#000", constants.lineThickness));
-            let steps = 6;
-            
-            for(let step = steps; step>0; step--){
-                let stepWidth = constants.doorWidth - step * 4;
-                let stepThickness = constants.brickHeight+2 - step
-                this.#elements.push(screen.drawRect(this.box.center().x - stepWidth/2,  (this.box.y + this.box.height)-stepThickness*step,  stepWidth,  stepThickness, "#888", "#000", constants.lineThickness).attr({opacity:(steps-step)/steps}));
-            }
-            
-            screen.onClear(()=>{this.#elements=[]});
-        }
-
-        //can only check player position when we're rendering.
-        if(game.player.box.inside(this.box)){
-            game.player.sprite.scale= VC.Math.constrain(.85,Math.round(((game.player.box.y - this.box.y) * 100 / this.box.height))/100 +.25,1);
-            game.player.speed = VC.Math.constrain(100,((game.player.box.y - this.box.y) / this.box.height)*150,150);
-        }
-        if(game.player.box.inside(this.tripBox) && !this.#hasBeenTripped){
-            this.#hasBeenTripped = true;
-            this.onTrip();
-        }
-
-        if(DEBUG){
-            this.box.render(screen, "#0FF")
-            //this.tripBox.render(screen, "#F80");
-        }
-    }
-
-    clear(){
-        this.#elements.forEach((e)=>e.remove());
-    }
-    remove(){
-        super.remove();
-        //this.clear();
-    }
-
-    onTrip(){
-        if(game.level){
-            game.level.statistics.roomsVisited = filter(game.level.rooms,(r)=>{return r.visited}).length
-            game.level.statistics.roomsSpawned = game.level.rooms.length
-            game.level.statistics.levelsCleared = 1;
-            game.statistics.add(game.level.statistics); 
-            game.slot.statistics.add(game.level.statistics);   
-            game.slot.save();
-            game.level.transitionTo = new EndLevelSummary(game.level.number + 1, game.level.statistics);
-        }
-    }
-}
-class SpikeTrap extends GameObject{
-    #sprite1 = null;
-    #sprite2 = null;
-    constructor(door, offsetT){
-        super(door.room);
-        this.door = door;
-        this.layer = Layer.SHADOW;
-        this.plane = Plane.ETHEREAL;
-        this.state = State.IDLE;    
-        this._stateStart += offsetT % 3000;
-        this.immovable = true;
-
-        switch (this.door.wall){
+    stabilize(){
+        switch(this.wall){
             case Direction.NORTH:
                 this.box = new VC.Box(
-                    this.room.box.x + this.room.box.width/2 + this.door.offset - 62,
-                    this.room.box.y,
-                    62 * 2,
-                    58
+                    this.room.box.x + this.room.box.width / 2 + this.offset - constants.doorWidth/2,
+                    this.room.box.y - this.room.wallHeight,
+                    constants.doorWidth,
+                    this.room.wallHeight + game.player.box.height * 1.25
+                );
+                this.trip = new VC.Box(
+                    this.room.box.x + this.room.box.width / 2 + this.offset - constants.doorWidth/2,
+                    this.room.box.y - game.player.box.height - 25,
+                    constants.doorWidth,
+                    game.player.box.height  
                 );
                 break;
             case Direction.EAST:
                 this.box = new VC.Box(
-                    this.room.box.x + this.room.box.width - 62 - 5,
-                    this.room.box.y + this.room.box.height / 2 + this.door.offset - 50,
-                    62,
-                    58 * 2
+                    this.room.box.x + this.room.box.width - game.player.box.width * 1.25,
+                    this.room.box.y + this.room.box.height / 2 + this.offset - constants.doorWidth/2,
+                    this.room.wallHeight + game.player.box.width * 1.25,
+                    constants.doorWidth
+                );
+                this.trip = new VC.Box(
+                    this.room.box.x + this.room.box.width + 35,
+                    this.room.box.y + this.room.box.height / 2 + this.offset - constants.doorWidth/2,
+                    game.player.box.width,
+                    constants.doorWidth
                 );
                 break;
             case Direction.SOUTH:
                 this.box = new VC.Box(
-                    this.room.box.x + this.room.box.width/2 - this.door.offset - 62,
-                    this.room.box.y + this.room.box.height - 55,
-                    62 * 2,
-                    58
+                    this.room.box.x + this.room.box.width / 2 - this.offset - constants.doorWidth/2,
+                    this.room.box.y + this.room.box.height - this.room.wallHeight,
+                    constants.doorWidth,
+                    this.room.wallHeight + game.player.box.height * 1.25
+                );
+                this.trip = new VC.Box(
+                    this.room.box.x + this.room.box.width / 2 - this.offset - constants.doorWidth/2,
+                    this.room.box.y + this.room.box.height + 35,
+                    constants.doorWidth,
+                    game.player.box.height  
                 );
                 break;
             case Direction.WEST:
                 this.box = new VC.Box(
-                    this.room.box.x + 5,
-                    (this.room.box.y + this.room.box.height / 2 - this.door.offset) - 50,
-                    62,
-                    58 * 2
+                    this.room.box.x - this.room.wallHeight,
+                    this.room.box.y + this.room.box.height / 2 - this.offset - constants.doorWidth/2,
+                    this.room.wallHeight + game.player.box.width * 1.25,
+                    constants.doorWidth
                 );
-                break;   
-        }
-    }
-    attack(){
-        
-        this.state = State.ATTACKING;
-        
-        this.playSound(0, SoundEffects.FLOOR_SPIKES, .25, false);
-
-        let attackBox = this.box;
-        this.room.objects.forEach((o)=>{
-            if(o!=this && o.plane===Plane.PHYSICAL && attackBox.collidesWith(o.box) && o.hurt!=null && (o.z==null || o.z<=5)){
-                let rect = o.box.intersectRect(attackBox);
-                if(rect){
-                    o.hurt(5, Direction.NORTH)
-                    let sb = new Starburst(this.room);
-                    sb.box = rect
-                }
-            }
-        })
-    }
-    move(deltaT){
-        
-        super.move(deltaT);
-        if(this.state === State.IDLE && Date.now()-this._stateStart > 3000){
-            //WARN
-            this.state = State.WALKING;
-        }else if(this.state === State.WALKING && Date.now()-this._stateStart > 1000){
-            //ATTACK!
-           this.attack();
-
-        } else if (this.state === State.ATTACKING && Date.now()-this._stateStart>800) {
-            this.state = State.IDLE;
-        }
-            
-    }
-
-    render (deltaT, screen){
-        
-        if(!this.#sprite1){
-            this.#sprite1 = new VC.Sprite(screen,Images.FLOOR_SPIKES,496, 150, 62, 50,this.box.x, this.box.y);
-            if (this.door.wall == Direction.NORTH || this.door.wall == Direction.SOUTH){
-                this.#sprite2 = new VC.Sprite(screen,Images.FLOOR_SPIKES,496, 150, 62, 50,this.box.x + 62, this.box.y);
-            } else {
-                this.#sprite2 = new VC.Sprite(screen,Images.FLOOR_SPIKES,496, 150, 62, 50,this.box.x, this.box.y + 49);
-            }
-            screen.onClear(()=>{
-                this.#sprite1 = null;
-                this.#sprite2 = null;
-            })
-        }
-
-        if(this.state === State.IDLE){
-            //WARN
-            this.#sprite1.setFrame(0, State.IDLE, 0);
-            this.#sprite2.setFrame(0, State.IDLE, 0);
-        }else if(this.state === State.WALKING){
-            //ATTACK!
-            this.#sprite1.setFrame(0, State.WALKING, 0);
-            this.#sprite2.setFrame(0, State.WALKING, 0);
-        } else if (this.state === State.ATTACKING) {
-            let frame = VC.Math.constrain(0, Math.floor((Date.now()-this._stateStart)/100), 8);
-            this.#sprite1.setFrame(0, State.ATTACKING, frame);
-            this.#sprite2.setFrame(0, State.ATTACKING, frame);
-        }
-
-        this.#sprite1.render();
-        this.#sprite2.render();
-        if(DEBUG){
-            this.box.render(screen, "#FFF");
+                this.trip = new VC.Box(
+                    this.room.box.x - this.room.wallHeight,
+                    this.room.box.y + this.room.box.height / 2 - this.offset - constants.doorWidth/2,
+                    game.player.box.width,
+                    constants.doorWidth
+                );
+                break;
+            default:
+                console.warn({"unexpected wall": wall});  
         }
     }
 
-    clear(){
-        super.clear();
-        if(this.#sprite1){
-            this.#sprite1.remove();
-            this.#sprite1 = null;
+    contains(box){
+        if(box && box instanceof VC.Box && this.opened && !this.forceBars && !this.room.barred){
+            return box.inside(this.box);
         }
-        if(this.#sprite2){
-            this.#sprite2.remove();
-            this.#sprite2 = null;
-        }
-    }
-    remove(){
-        super.remove();
-        this.clear();
+        return false; 
     }
 }
 
@@ -2644,631 +2147,6 @@ class TreasureChest extends GameObject{
     remove(){
         super.remove();
         this.clear();
-    }
-}
-
-class CaveSpider extends Character {
-    constructor(room, controller){
-        super(room, controller);
-        this.box.x = Math.round(dimensions.width / 2)-100;
-        this.box.y = Math.round(dimensions.width / 2)-100;
-        this.box.height = 75;
-        this.box.width = 75;
-        this.team = Team.DUNGEON;
-        this.direction = Direction.EAST;
-        this.speed = 110;
-        this.health = 20;
-        this.maxHealth = 20;
-        this.damage = 5;
-        this._attackDuration = 500;
-        this._attackCooldown = 2000;
-        this.aggressive = false;
-    }
-    move(deltaT){
-        
-        if(!this.canAttack && this.state!==State.DYING && this.state!==State.DEAD) {
-            if(this.state === State.HURT){
-                if(Date.now()-this._stateStart < this._hurtDuration){
-                    return
-                }
-                this.state = State.IDLE;
-            }
-            return;
-        }
-        let state1 = this.state;
-        super.move(deltaT);
-        
-        if (this.state !== state1){           
-            switch(this.state){
-                case State.WALKING: 
-                    this.playSound(0, SoundEffects.SPIDER_WALK, .4, true, false);
-                    break;
-                default:
-                    this.stopSound(0, SoundEffects.SPIDER_WALK);
-            }
-        }
-    
-        switch(this.direction){
-            case Direction.NORTH:
-                this.box.width = 75;
-                this.box.height = 50;
-                break;
-            case Direction.WEST:
-                this.box.width = 75;
-                this.box.height = 50;
-                break;
-            case Direction.SOUTH:
-                this.box.width = 75;
-                this.box.height = 60;
-                break;
-            case Direction.EAST:
-                this.box.width = 75;
-                this.box.height = 50;
-                break;      
-        }
-    }
-
-    render(deltaT, screen){
-        if(!this.sprite){
-            this.sprite = new VC.Sprite(screen, Images.CAVE_SPIDER, 800, 500, 100, 100, 0, 0);
-        }
-        if(DEBUG){
-           this.box.render(screen, "#FFF");
-        } 
-  
-        this.sprite.location.x = this.box.x-15;
-        this.sprite.location.y = this.box.y-(this.direction=== Direction.SOUTH ? 20 : 40);
-        this.sprite.setAnimation(this.direction, this.state);
-        if (this.state === State.ATTACKING && this.sprite.animation.frame===7){
-            this.state = State.IDLE
-        }
-        this.sprite.render(deltaT);
-    }
-
-    clear(){
-        super.clear();
-        if(this.sprite){
-            this.sprite.remove();
-        }
-        if(DEBUG){
-            this.box.remove();
-        }
-    }
-    
-    remove(){
-        super.remove();
-        this.clear();
-    }
-
-    attack(){
-        if(this.state !== State.ATTACKING){
-            this.playSound(1, SoundEffects.SPIDER_BITE, .8, false, false);
-            this.state = State.ATTACKING;
-        }
-        let opposingTeam = Team.getOpposingTeam(this.team)
-        let targets = this.getObjectsInRangeOfAttack();
-        targets.forEach((o)=>{
-            if(o.team === opposingTeam){
-                let rect = this._attackBox.intersectRect(o.box)
-                if(rect){
-                    o.hurt(this.damage);
-                    let sb = new Starburst(this.room)
-                    sb.box = rect;
-                }
-            }
-        });
-    }
-
-    getObjectsInView(){
-        if(this.aggressive){
-            return this.room.objects;
-        }
-
-        //initialize the view box
-        if(!this._viewBox){
-            this._viewBox = new VC.Box(0,0,50,50);
-        }
-        //reposition the view box
-        switch(this.direction){
-            case Direction.NORTH:
-                this._viewBox.height = 500;
-                this._viewBox.width = 200;
-                this._viewBox.x = this.box.center().x - this._viewBox.width/2;
-                this._viewBox.y = this.box.y + this.box.height - this._viewBox.height
-                break;
-            case Direction.EAST:    
-                this._viewBox.width = 500;
-                this._viewBox.height = 200;
-                this._viewBox.x = this.box.x;
-                this._viewBox.y = this.box.center().y - this._viewBox.height/2
-                break;
-            case Direction.SOUTH:
-                this._viewBox.height = 500;
-                this._viewBox.width = 200;
-                this._viewBox.x = this.box.center().x - this._viewBox.width/2;
-                this._viewBox.y = this.box.y 
-                break;
-            case Direction.WEST:
-                this._viewBox.width = 500;
-                this._viewBox.height = 200;
-                this._viewBox.x = this.box.x + this.box.width - this._viewBox.width;
-                this._viewBox.y = this.box.center().y - this._viewBox.height/2
-                break;
-        }
-        let inView = [];
-        this.room.objects.forEach((o)=>{
-            if(o!=this && o.box.collidesWith(this._viewBox)){
-                inView.push(o);
-            }
-        })
-
-        return inView;
-    }
-    getObjectsInRangeOfAttack(){
-        //initialize the attack box
-        if(!this._attackBox){
-            this._attackBox = new VC.Box(0,0,25,25);
-        }
-        //reposition the attack box
-        switch(this.direction){
-            case Direction.NORTH:
-                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
-                this._attackBox.y = this.box.y - this._attackBox.height
-                break;
-            case Direction.EAST:
-                this._attackBox.x = this.box.x + this.box.width;
-                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);
-                break;
-            case Direction.SOUTH:
-                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
-                this._attackBox.y = this.box.y + this.box.height;
-                break;
-            case Direction.WEST:
-                this._attackBox.x = this.box.x - this._attackBox.width;
-                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);   
-                break;
-        }
-        let inRange = []
-        this.room.objects.forEach((o)=>{
-            if(o!==this && this._attackBox.collidesWith(o.box)){
-                inRange.push(o);
-            }
-        });
-        return inRange;
-    }
-   
-    hurt(damage, knockback, distance){
-        let startHealth = this.health;
-        super.hurt(damage, knockback, distance);
-        this.aggressive = true;
-        if(startHealth > 0 && this.health <= 0){
-            if(game && game.level && game.level.statistics) {
-                game.level.statistics.caveSpidersKilled++;
-                game.level.statistics.enemiesKilled++;
-            }
-            this.playSound(2, SoundEffects.SPIDER_DEATH, 1, false, false);
-        }
-    }
-}
-
-class Snake extends Character {
-    sprite = null;
-    constructor(room, controller){
-        super(room, controller);
-        this.box.x = Math.round(dimensions.width / 2)-100;
-        this.box.y = Math.round(dimensions.width / 2)-100;
-        this.box.height = 50;
-        this.box.width = 50;
-        this.team = Team.DUNGEON;
-        this.direction = Direction.EAST;
-        this.speed = 85;
-        this.health = 20;
-        this.maxHealth = 20;
-        this.damage = 5;
-        this._attackDuration = 500;
-        this._attackCooldown = 2000;
-        this._hurtDuration = 750;
-    }
-
-    move(deltaT){
-        super.move(deltaT);
-        
-    };
-    render(deltaT, screen){
-        if(!this.sprite){
-            this.sprite = new VC.Sprite(screen, Images.KING_COBRA, 800, 500, 100, 100, 0, 0);
-        }
-        if(DEBUG){
-           this.box.render(screen, "#FFF");
-        } 
-        
-        switch(this.direction){
-            case Direction.NORTH:
-                this.box.width = 50;
-                this.sprite.location.x = this.box.x-25;
-                this.sprite.location.y = this.box.y-25;
-                break;
-            case Direction.WEST:
-                this.box.width = 75;
-                this.sprite.location.x = this.box.x-10;
-                this.sprite.location.y = this.box.y-30;
-                break;
-            case Direction.SOUTH:
-                this.box.width = 50;
-                this.sprite.location.x = this.box.x-25;
-                this.sprite.location.y = this.box.y-10;
-                break;
-            case Direction.EAST:
-                this.box.width = 75;
-                this.sprite.location.x = this.box.x-15;
-                this.sprite.location.y = this.box.y-30;
-                break;
-                        
-        }
-
-        this.sprite.setAnimation(this.direction, this.state);
-        this.sprite.render(deltaT);
-    }
-    clear() {
-        super.clear();
-        if(this.sprite){
-            this.sprite.remove();
-        }
-      
-        if(DEBUG){
-            this.box.remove();
-        }
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-    attack(){
-        if(this.state !== State.ATTACKING){
-            this.playSound(0, SoundEffects.SNAKE_BITE, 1, false, false);
-            this.state = State.ATTACKING;
-        }
-        let opposingTeam = Team.getOpposingTeam(this.team)
-        let targets = this.getObjectsInRangeOfAttack();
-        targets.forEach((o)=>{
-            if(o.team === opposingTeam){
-                let rect = this._attackBox.intersectRect(o.box)
-                if(rect){
-                    o.hurt(this.damage);
-                    let sb = new Starburst(this.room);
-                    sb.box = rect;
-                }
-            }
-        });
-    }
-    getObjectsInView(){
-        //initialize the view box
-        if(!this._viewBox){
-            this._viewBox = new VC.Box(0,0,50,50);
-        }
-
-        this._viewBox.height = 500;
-        this._viewBox.width = 500;
-        this._viewBox.x = this.box.center().x - this._viewBox.width/2;
-        this._viewBox.y = this.box.center().y - this._viewBox.height/2;
-
-        let inView = [];
-        this.room.objects.forEach((o)=>{
-            if(o!=this && o.box.collidesWith(this._viewBox)){
-                inView.push(o);
-            }
-        })
-
-        return inView;
-    }
-    getObjectsInRangeOfAttack(){
-        //initialize the attack box
-        if(!this._attackBox){
-            this._attackBox = new VC.Box(0,0,25,25);
-        }
-        //reposition the attack box
-        switch(this.direction){
-            case Direction.NORTH:
-                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
-                this._attackBox.y = this.box.y - this._attackBox.height
-                break;
-            case Direction.EAST:
-                this._attackBox.x = this.box.x + this.box.width;
-                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);
-                break;
-            case Direction.SOUTH:
-                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
-                this._attackBox.y = this.box.y + this.box.height;
-                break;
-            case Direction.WEST:
-                this._attackBox.x = this.box.x - this._attackBox.width;
-                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);   
-                break;
-        }
-
-        let inRange = []
-        this.room.objects.forEach((o)=>{
-            if(o!==this && this._attackBox.collidesWith(o.box)){
-                inRange.push(o);
-            }
-        });
-        return inRange;
-    }
-    hurt(damage, knockback, distance){
-        let startHealth=this.health;
-        super.hurt(damage, knockback, distance);
-        if(startHealth>0 && this.health<=0){
-            if (game && game.level && game.level.statistics){
-                game.level.statistics.snakesKilled++;
-                game.level.statistics.enemiesKilled++;
-            }
-            this.playSound(0, SoundEffects.SNAKE_DEATH, 1, false, false);
-        }
-    }
-}
-
-class Format {
-    static numberWithCommas(number) {
-        return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    }
-
-    static msToTime(duration) {
-        let milliseconds = Math.floor((duration % 1000) / 100),
-          seconds = Math.floor((duration / 1000) % 60),
-          minutes = Math.floor((duration / (1000 * 60)) % 60),
-          hours = Math.floor((duration / (1000 * 60 * 60)));
-      
-        hours = hours > 0 ? ((hours < 10) ? "0" + hours + ":" : hours + ":") : "";
-        minutes = (minutes < 10) ? "0" + minutes : minutes;
-        seconds = (seconds < 10) ? "0" + seconds : seconds;
-      
-        return hours + minutes + ":" + seconds + "." + milliseconds;
-    }
-}
-class Controller{
-    up = 0;
-    left = 0;
-    down= 0;
-    right = 0;
-    attack = 0;
-    elements = [];
-    read(forObject){
-        return {
-            x: this.left * -1 + this.right,
-            y: this.up * -1  + this.down,
-            a: this.attack    
-        }
-    }
-}
-
-class AutoController extends Controller {
-
-    nextRandomization = Date.now();
-    reverseInput = 0; 
-
-    constructor(){
-        super()
-        this.randomize();
-    }
-
-    randomize(){
-        this.up = Math.round(Math.random());
-        this.down = Math.round(Math.random());
-        this.left = Math.round(Math.random());
-        this.right = Math.round(Math.random());
-        let time = Math.round(Math.random()*500)+250;
-        this.nextRandomization = Date.now() + time;
-        this.nextDirection = Date.now();
-        this.nextRetarget = Date.now();
-    }
-    
-    read(forObject){
-        this.attack = 0;
-        let opposingTeam = Team.getOpposingTeam(forObject.team);
-        forObject.getObjectsInRangeOfAttack().forEach((o)=>{
-            if(o.team === opposingTeam && !o.hidden){
-                this.attack = 1; 
-            }
-        });
-
-        //if(forObject.room === game.level.currentRoom) navigationBox.render(game.screen, "#88F");
-
-        if (this.attack === 0){
-            let directed = false;
-            //let target = null;
-            let minDist = null;
-            if(this.target==null || this.nextRetarget<Date.now()){     
-                let viewable = forObject.getObjectsInView();
-                
-                if(DEBUG && this.target){
-                    this.target.remove();
-                }
-
-                for(let i=0; i<viewable.length; i++){
-                    let o = viewable[i];
-                    if(o.team === opposingTeam){
-                        let dist = VC.Trig.distance(forObject.box.center().x, forObject.box.center().y, o.box.center().x, o.box.center().y)
-                        if(minDist!=null && dist>minDist) {
-                            continue;
-                        }
-                        minDist = dist;
-
-                        this.target = o.box.center();
-                    }
-                
-                }
-                
-                if(DEBUG && this.target){
-                    this.target.render(game.screen, "#F00");
-                }
-                if(this.target){
-                    this.nextRetarget = Date.now()+750;
-                }
-            }
-
-            if (this.target!=null &&  this.nextDirection < Date.now()){
-                let angle = VC.Trig.pointToAngle(this.target.y - forObject.box.center().y, this.target.x - forObject.box.center().x)
-                let deg = VC.Trig.radiansToDegrees(angle);
-                
-                if (deg>=22.5 && deg<67.5){
-                    this.right = 1;
-                    this.down = 1;
-                    this.left = 0;
-                    this.up = 0;
-                }else if (deg>=67.5 && deg<112.5){
-                    this.right = 0;
-                    this.down = 1;
-                    this.left = 0;
-                    this.up = 0;
-                }else if (deg>=112.5 && deg<157.5){
-                    this.right = 0;
-                    this.down = 1;
-                    this.left = 1;
-                    this.up = 0;
-                } else if (deg>=157.5 && deg<202.5){
-                    this.right = 0;
-                    this.down = 0;
-                    this.left = 1;
-                    this.up = 0;
-                } else if (deg>=202.5 && deg<247.5){
-                    this.right = 0;
-                    this.down = 0;
-                    this.left = 1;
-                    this.up = 1;
-                } else if (deg>=247.5 && deg<292.5){
-                    this.right = 0;
-                    this.down = 0;
-                    this.left = 0;
-                    this.up = 1;
-                } else if (deg>=292.5 && deg<337.5 || deg<0){   
-                    this.right = 1;
-                    this.down = 0;
-                    this.left = 0;
-                    this.up = 1;
-                } else {
-                    this.right = 1;
-                    this.down = 0;
-                    this.left = 0;
-                    this.up = 0;  
-                }
-                
-                directed = true;
-
-                this.nextDirection = Date.now() + 375;
-            }
-
-            if(directed && !(forObject instanceof Bat)){
-                let nvBoxScale=1.25;
-
-                let navigationBox = new VC.Box(
-                    forObject.box.center().x - (forObject.box.width * nvBoxScale / 2),
-                    forObject.box.center().y - (forObject.box.height * nvBoxScale / 2),
-                    forObject.box.width * nvBoxScale,
-                    forObject.box.height * nvBoxScale
-                );
-                switch(forObject.direction){
-                    case Direction.NORTH:
-                        navigationBox.y -= navigationBox.height/2;
-                        break;
-                    case Direction.EAST:
-                        navigationBox.x += navigationBox.width/2;
-                        break;
-                    case Direction.SOUTH:
-                        navigationBox.y += navigationBox.height/2;
-                        break;
-                    case Direction.WEST:
-                        navigationBox.x -= navigationBox.width/2;
-                        break;
-                }
-
-                let correctedCourse = false
-
-                forObject.getObjectsInView().forEach((o)=>{
-                    if(o!=forObject && navigationBox.collidesWith(o.box)){
-                        if(o.plane === Plane.PHYSICAL && o.team!=opposingTeam){
-                            correctedCourse = true;
-                            if(this.up && o.box.center().y < navigationBox.center().y){
-                                if(this.target.x<o.box.center().x){
-                                    this.left = 1;
-                                } else {
-                                    this.right = 1;
-                                }
-                                this.up = 1;
-                            } else if (this.down && o.box.center().y > navigationBox.center().y){
-                                if(this.target.x<o.box.center().x){
-                                    this.left = 1;
-                                } else {
-                                    this.right = 1;
-                                }
-                                this.down = 1;
-                            } else if(this.left && o.box.center().x < navigationBox.center().x){
-                                if(this.target.y<o.box.center().y){
-                                    this.up = 1;
-                                } else {
-                                    this.down = 1;
-                                }
-                                this.left = 1;
-                            } else if(this.right && o.box.center().x > navigationBox.center().x){
-                                if(this.target.y<o.box.center().y){
-                                    this.up = 1;
-                                } else {
-                                    this.down = 1;
-                                }
-                                this.right = 1;
-                            }
-                        }
-                    }
-                });
-               
-                if (!correctedCourse){
-                    if(!Room.contains(forObject.room, navigationBox)){
-                        if(this.up){
-                            if(this.target.x<forObject.box.center().x){
-                                this.left = 1;
-                            } else {
-                                this.right = 1;
-                            }
-                            this.up = 1;
-                        } else if (this.down){
-                            if(this.target.x<forObject.box.center().x){
-                                this.left = 1;
-                            } else {
-                                this.right = 1;
-                            }
-                            this.down = 1;
-                        } else if(this.left){
-                            if(this.target.y<forObject.box.center().y){
-                                this.up = 1;
-                            } else {
-                                this.down = 1;
-                            }
-                            this.left = 1;
-                        } else if(this.right){
-                            if(this.target.y<forObject.box.center().y){
-                                this.up = 1;
-                            } else {
-                                this.down = 1;
-                            }
-                            this.right = 1;
-                        }
-                        correctedCourse = true;
-                    }
-                }
-    
-            }
-
-            if(!directed && this.nextDirection<Date.now()){
-                if(this.nextRandomization<Date.now()){
-                    this.randomize();
-                }    
-            }
-        }
-
-        return {
-            x: (this.left * -1 + this.right) * (this.reverseInput ? -1 : 1),
-            y: (this.up * -1 + this.down) * (this.reverseInput ? -1 : 1),
-            a: this.attack
-        }
     }
 }
 class ManosState {
@@ -3803,823 +2681,19 @@ class Manos extends Character{
     }
 
 }
-
-const DEBUG = false;
-const SCREENBLACK = "#080808";
-
-const UP_ARROW = 38;
-const RIGHT_ARROW = 39;
-const DOWN_ARROW = 40;
-const LEFT_ARROW = 37;
-
-let ORIENTATION = VC.Orientation.UNSET;
-
-let constants =  {
-    brickHeight: 16,
-    brickWidth: 50,
-    lineThickness: 3,
-    doorWidth: 110,
-    doorFrameThickness: 10,
-    doorHeight: 70,
-    thresholdDepth: 20,
-    roomMinWidthInBricks: 5,
-    roomMinHeightInBricks: 5,
-    roomMaxWidthInBricks: 13,
-    roomMaxHeightInBricks: 13, 
-    spriteFamesPerSecond: 10,
-    controllerRadius: 210,
-    controllerCrossThickness: 80,
-    maxHeartContainers: 25,
-    tileWidth: (50 * 1.2)
-};
-
-constants.minArea = constants.roomMinHeightInBricks * constants.roomMinWidthInBricks * constants.brickWidth * constants.brickWidth;
-constants.maxArea = constants.roomMaxHeightInBricks * constants.roomMaxHeightInBricks * constants.brickWidth * constants.brickWidth;
-constants.thresholds = Math.round((constants.maxArea-constants.minArea) / 4);
-
-
-function changeOrientation(){
-    if(VC.Client.orientation === VC.Orientation.PORTRAIT){
-        document.getElementById("controller").style.display = "block";    
-        game.screen.setViewBox(0, -dimensions.infoHeight, dimensions.width, dimensions.height, true);    
-        game.infoScreen.setViewBox(0, 0, dimensions.width, dimensions.height, true); 
-        return;
-    }
-    document.getElementById("controller").style.display = "none";
-    game.screen.setViewBox(0, -dimensions.infoHeight, dimensions.width, dimensions.width + dimensions.infoHeight, true); 
-    game.infoScreen.setViewBox(0, 0, dimensions.width, dimensions.width + dimensions.infoHeight, true);    
-}
-
-VC.Client.OnOrientationChange(changeOrientation);
-
-function right(str,chr)
-{
-    return str.substr(str.length-chr,str.length)
-}
-
-const dimensions = {
-    width: 910, 
-    height: 1618,
-    infoHeight: 88,
-};
-
-const palette = {
-    doorFrame: "#928e85",
-    doorDefaultColor: "#4d3737",
-    doorBarColor: "#999"
-};
-
-function randomEntry(array){
-    if(array.length === 0){
-        return null;
-    }
-    let index =  Math.floor((array.length-1) * Math.random());
-    return array[index]; 
-}
-
-function filter(array, fun){
-    let array2 = [];
-    array.forEach((item)=>{
-        if(fun(item)){
-            array2.push(item);
-        }
-    })
-    return array2;
-}
-
-function remove(array, fun){
-    let itemsToDelete = filter(array,fun);
-    itemsToDelete.forEach((item)=>{
-        array.splice(array.indexOf(item),1);
-    });
-}
-
-function any(array, fun){
-    if(!array){
-        return false;
-    }
-    for(let i=0;i<array.length; i++){
-        if(fun(array[i], i)){
-            return true;
-        }
-    }
-    return false;
-}
-
-function all(array, fun){
-    if(!array){
-        return false;
-    }
-    for(let i=0;i<array.length; i++){
-        if(!fun(array[i], i)){
-            return false;
-        }
-    }
-    return true;
-}
-
-function minValue(array, fun){
-    if(!array){
-        return null
-    }
-    let m = null;
-    let val = null;
-    for(let i=0;i<array.length; i++){
-        let calc = fun(array[i]);
-        if(m == null || calc < m){
-            m = calc;
-            val = array[i];
-        }
-    }
-    return val;
-}
-
-function maxValue(array, fun){
-    if(!array){
-        return null
-    }
-    let m = null;
-    let val = null;
-    for(let i=0;i<array.length; i++){
-        let calc = fun(array[i]);
-        if(m == null || calc > m){
-            m = calc;
-            val = array[i];
-        }
-    }
-    return val;
-}
-
-function waitForAttack(callback){
-    let input = game.player.controller.read();
-    if(input.a){
-        callback();
-        return;
-    }
-    setTimeout(()=>{waitForAttack(callback)},50);
-}
-
-function regionColor(region){
-    switch (region){
-        case Treasure.SILVERKEY:
-            return "#606060";
-        case Treasure.GOLDKEY:
-            return "#997700";
-        case Treasure.REDKEY:
-            return "#600000";
-        case Treasure.GREENKEY: 
-            return "#006000";
-        case Treasure.BLUEKEY: 
-            return "#000070";
-    }
-    return "#864";
-}
-
-function drawMap(){
-    let screen = game.screen;
-    let level = game.level;
-    let roomSize=10;
-    let roomMargin=1;
-    let extents = level.extents();
-    level.rooms.forEach((r)=>{
-        let extentRoom = (extents.indexOf(r) > -1)
-        let centerX = dimensions.width/2 + r.x * (roomSize + roomMargin * 2);
-        let centerY = dimensions.width/2 + r.y * (roomSize + roomMargin * 2);
-        screen.drawRect(centerX-roomSize/2,centerY-roomSize/2, roomSize, roomSize, r.x===0 && r.y===0 ? "#00FF88" : regionColor(r.region), extentRoom ? "#fff": "#000",1);
-        r.doors.forEach((d)=>{
-            switch(d.wall){
-                case Direction.NORTH:
-                    screen.drawRect(centerX-2, centerY - roomSize/2 - roomMargin, 4, roomMargin, "#FFF","#000", 0);
-                    break;
-                
-                case Direction.EAST:
-                    screen.drawRect(centerX + roomSize/2, centerY - 2, roomMargin, 4, "#FFF","#000", 0);
-                    break;
-                case Direction.SOUTH:
-                    screen.drawRect(centerX-2, centerY + roomSize/2, 4, roomMargin, "#FFF","#000", 0);
-                    break;
-                case Direction.WEST:
-                    screen.drawRect(centerX- roomSize/2 - roomMargin, centerY - 2, roomMargin, 4, "#FFF","#000", 0);
-                    break;
-            }
-        })
-    });
-}
-
-function pause(){
-    if(game && game.level && game.state === VC.GameState.RUNNING){
-        game.pause();
-        let text = game.screen.text(dimensions.width/2, dimensions.infoHeight * 5,"- PAUSED -")
-        text.attr({ "font-size": "64px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "center"});
-        //Howler.mute(true);
-        waitForAttack(()=>{
-            game.play();
-            //Howler.mute(false);
-            text.remove();
-        });
-    }
-}
-
-class FireballExplosion extends GameObject{
-    
-    #sprite = null;
-    #lightEffect = null;
-    constructor(room, x, y){
-        super(room);
-        this.box.x = x - 32;
-        this.box.y = y - 32;
-        this.box.width = 64;
-        this.box.height = 64;
-        this.layer = Layer.DEFAULT;
-        this.plane = Plane.ETHEREAL;
-        this.#lightEffect = new FireballLightEffect(this);
-    }
-
-    move(deltaT){
-        if(this.state === State.IDLE){
-            this.state = State.ATTACKING;
-            this.room.objects.forEach((o)=>{
-                if((o.plane===Plane.PHYSICAL || (o.plane===Plane.ETHEREAL && o instanceof InvisibleObject)) && this.box.collidesWith(o.box) && o.hurt!=null && o !== this.parent){
-                    let rect = o.box.intersectRect(this.box);
-                    if(rect){
-                        o.hurt(10);
-                    }
-                }
-            })
-            super.move();
-            this.playSound(0, SoundEffects.FIREBALL_EXPLODE, 1, false)
-        }
-        if(this.state !== State.DEAD && Date.now()-this._stateStart>400){
-            this.state = State.DEAD;
-            this.#lightEffect.state = State.DEAD;
-        }
-    }       
-
-    render(deltaT, screen){ 
-        if(this.state === State.DEAD){
-            return;
-        }
-        if(!this.#sprite){
-            this.#sprite = new VC.Sprite(screen, Images.FIREBALL_EXPLOSION, 320, 64, 64, 64, this.box.x, this.box.y);
-            this.#sprite.setAnimation(0,0);
-            //this.#sprite.location.r = Math.round(Math.random() * 360);
-            //VC.VisualEffects.shake(screen,1, 200);
-        }
-        this.#sprite.render(deltaT);
-    }
-
-    clear(){
-        super.clear();
-        if(this.#sprite){
-            this.#sprite.remove();
-            this.#sprite = null;
-        }
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-}
-class GameOverScreen extends VC.Scene{
-    #statistics = null
-    #rendered = false;
-    #lastWorld = -1
-    constructor(statistics, world){
-        super();
-        this.#statistics = statistics; 
-        this.#lastWorld = world;
-    }
-    preDisplay(){
-        game.playMusic(Music.DEATH);
-        game.player.state = State.DEAD;
-    }
-    preRender(deltaT){}
-
-    render(deltaT, screen){
-        if(!this.#rendered){
-            screen.drawRect(0, 0, dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
-            game.player.sprite.location.x = 250;
-            game.player.sprite.location.y = -16;
-            game.player.sprite.lastLocation.x = game.player.sprite.location.x;
-            game.player.sprite.lastLocation.y = game.player.sprite.location.y;
-            game.player.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
-            game.player.sprite.render(0);
-            game.statistics.render(screen, "YOU DIED!", new VC.Box(50,0,dimensions.width-100,dimensions.width));
-            this.#rendered = true;
-        }
-    }
-    postRender(deltaT){
-        if (game && game.inputController){
-            let c = game.inputController.read();
-            if(c.a===1){
-                this.transitionTo = new LevelSelectScreen(this.#lastWorld - 1);
-            }
-        }
-    }
-    postDisplay(){}
-}
-class Door {
-    level = null;
-    room = null;
-    wall = 0;
-    color = palette.doorDefaultColor;
-    atmosphere = "#000";
-    offset = 0; 
-    forceBars = false;
+class Controller{
+    up = 0;
+    left = 0;
+    down= 0;
+    right = 0;
+    attack = 0;
     elements = [];
-    isEntrance = false;
-    isExit = false;
-
-    constructor(level, room, wall, offset){
-        this.level = level;
-        this.room = room;
-        this.wall = wall % 4;
-        this.offset = offset;
-        
-    }
-
-    render(screen){
-        if(this.elements.length>0){
-            //clear previous rendering
-            this.elements.forEach((e)=>e.remove());
-            this.elements = [];
+    read(forObject){
+        return {
+            x: this.left * -1 + this.right,
+            y: this.up * -1  + this.down,
+            a: this.attack    
         }
-        if (this.elements.length===0){
-            screen.onClear(()=>{this.elements = [];});
-            focus={};
-            focus.x =  (this.wall === Direction.NORTH || this.wall === Direction.SOUTH ? this.room.box.width : this.room.box.height) / 2
-            //focus.x = this.room.box.width /2
-            focus.y = VC.Trig.cotangent(VC.Trig.degreesToRadians(45)) * focus.x;
-        
-            let offset={};
-            offset.x = 0;//focus.x + this.room.box.x + this.room.wallHeight;
-            offset.y = 0;//focus.y + this.room.box.y + this.room.wallHeight + dimensions.infoHeight;
-        
-            //DOOR FRAME
-            let x1 = this.offset - constants.doorWidth/2 - constants.doorFrameThickness;
-            let y1 = -focus.x;
-            let x4 = this.offset + constants.doorWidth/2 + constants.doorFrameThickness;
-            let y4 = -focus.x;
-            let y2 = y1 - constants.doorHeight - constants.doorFrameThickness;
-            let x2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * y2;
-            let y3 = y4 - constants.doorHeight - constants.doorFrameThickness;
-            let x3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * y3;
-            this.elements.push(screen.drawQuad(x1,y1,x2,y2,x3,y3,x4,y4,offset.x,offset.y,palette.doorFrame,"#000",constants.lineThickness));
-        
-        
-            //DOOR
-            x1 = this.offset - constants.doorWidth / 2;
-            y1 = -focus.x;
-            x4 = this.offset + constants.doorWidth / 2;
-            y4 = -focus.x;
-            let dy2 = y1 - constants.doorHeight;
-            let dx2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * dy2;
-            let dy3 = y4 - constants.doorHeight;
-            let dx3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * dy3;
-            
-            this.opened = 1;
-            if(!this.isExit && this.level){
-                let portalTo = this.level.findNeighbor(this.room, this.wall);
-                if(portalTo){
-                    this.opened = portalTo.opened;
-                    if(!this.opened){
-                        this.lock = portalTo.lock;
-                        this.color = regionColor(portalTo.region);
-                    }
-                }
-            }
-            
-            this.elements.push(screen.drawQuad(x1,y1,dx2,dy2,dx3,dy3,x4,y4,offset.x,offset.y,"#000",0));
-            if(this.isEntrance || this.isExit){
-                this.elements.push(screen.drawQuad(x1+10,y1,dx2+10,dy2,dx3-10,dy3,x4-10,y4,offset.x,offset.y,this.atmosphere,0));
-            }
-            //THRESHOLD
-            x1 = this.offset - constants.doorWidth/2 ;
-            y1 = -focus.x + constants.lineThickness - 3;
-            x4 = this.offset + constants.doorWidth/2;
-            y4 = -focus.x + constants.lineThickness - 3;
-            y2 = y1 - constants.thresholdDepth;
-            if (x1 > 0){
-                x2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * y2;        
-            }else {
-                x2 = x1 - ((VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * y2)-x1)/3;
-            }
-            
-            y3 = y4 - constants.thresholdDepth;
-            if (x4 < 0){
-                x3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * y3;      
-            }else {
-                x3 = x4 - ((VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * y3)-x4)/3;
-            }
-            this.elements.push(screen.drawQuad(x1,y1,x2,y2,x3,y3,x4,y4,offset.x,offset.y,"90-" +this.room.palette.floorColor+ ":5-#000:95","#000",0));                
-        
-            
-            if (!this.opened){
-                //DOOR
-        
-                x1 = this.offset - constants.doorWidth / 2;
-                y1 = -focus.x - constants.doorFrameThickness;
-                x4 = this.offset + constants.doorWidth / 2;
-                y4 = -focus.x - constants.doorFrameThickness;
-                dy2 = y1 - constants.doorHeight + constants.doorFrameThickness ;
-                dx2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * dy2;
-                dy3 = y4 - constants.doorHeight + constants.doorFrameThickness;
-                dx3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * dy3;
-                this.elements.push(screen.drawQuad(x1,y1,dx2,dy2,dx3,dy3,x4,y4,offset.x,offset.y,this.color,constants.lineThickness));
-
-                
-                //KEYHOLE
-                let x0 = this.offset;
-                let y0 = -focus.x;
-                
-                y1 = -focus.x - constants.doorHeight/5;
-                x1 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y1) - constants.doorWidth/12;
-                
-                y4 = -focus.x - constants.doorHeight/5;
-                x4 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y1) + constants.doorWidth/12;
-        
-                y2 = y1 - 16;
-                x2 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y2) -1 ;        
-                y3 = y4 - 16;
-                x3 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y3) +1; 
-        
-                this.elements.push(screen.drawQuad(x1,y1,x2,y2,x3,y3,x4,y4,offset.x,offset.y,"#000","#000",0));
-                
-                this.elements.push(screen.drawEllipse( (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y3), y3, 8, 4,offset.x,offset.y,"#000","#000",0));
-        
-                
-            }
-        
-            if(this.room.barred || this.forceBars){
-                
-                let bars = 5;
-            
-                for(let i=1;i<bars; i++){
-                    let x0 = (this.offset - constants.doorWidth/2) + (constants.doorWidth/bars) * i;
-                    let y0 = -focus.x - constants.doorFrameThickness //-this.room.box.width/2;
-                    let y1 = y0-constants.doorHeight + constants.doorFrameThickness;
-                    let x1 = (VC.Trig.cotangent(VC.Trig.pointToAngle(y0,x0)) * y1);                    
-                    
-                    this.elements.push(screen.drawLine(x0, y0, x1, y1, "#000", constants.lineThickness*3));
-                    this.elements.push(screen.drawLine(x0, y0, x1, y1, palette.doorBarColor, constants.lineThickness));
-                    
-                }
-                this.elements.push(screen.drawLine(dx2, dy2, dx3, dy3, "#000", constants.lineThickness));
-                
-            }
-            let t = ""
-            switch (this.wall){
-                case Direction.NORTH:
-                    t = "t" + Math.round(focus.x + this.room.box.x) + "," + Math.round(focus.y + this.room.box.y);
-                    break;
-                case Direction.SOUTH:
-                    t = "r180,0,0t" + Math.round(focus.x + this.room.box.x) *-1+ "," + Math.round(-focus.y + this.room.box.y + this.room.box.height) *-1;
-                    break;
-                case Direction.EAST:
-                    t = "r90,0,0t" + Math.round(focus.x + this.room.box.y) + "," + Math.round(-focus.y + this.room.box.x + this.room.box.width) * -1;
-                    break;
-                case Direction.WEST:
-                    t = "r270,0,0t" + Math.round(focus.x + this.room.box.y) * -1 + "," + Math.round(focus.y + this.room.box.x);
-                    break;
-            }      
-            this.elements.forEach((element)=>{
-                element.transform(t)
-            })
-            
-            if (DEBUG && this.box ){
-                this.box.render(game.screen, "#0FF");
-            }
-            if (DEBUG && this.trip ){
-                this.trip.render(game.screen, "#F00");
-            }
-        }
-    
-    }
-
-    stabilize(){
-        switch(this.wall){
-            case Direction.NORTH:
-                this.box = new VC.Box(
-                    this.room.box.x + this.room.box.width / 2 + this.offset - constants.doorWidth/2,
-                    this.room.box.y - this.room.wallHeight,
-                    constants.doorWidth,
-                    this.room.wallHeight + game.player.box.height * 1.25
-                );
-                this.trip = new VC.Box(
-                    this.room.box.x + this.room.box.width / 2 + this.offset - constants.doorWidth/2,
-                    this.room.box.y - game.player.box.height - 25,
-                    constants.doorWidth,
-                    game.player.box.height  
-                );
-                break;
-            case Direction.EAST:
-                this.box = new VC.Box(
-                    this.room.box.x + this.room.box.width - game.player.box.width * 1.25,
-                    this.room.box.y + this.room.box.height / 2 + this.offset - constants.doorWidth/2,
-                    this.room.wallHeight + game.player.box.width * 1.25,
-                    constants.doorWidth
-                );
-                this.trip = new VC.Box(
-                    this.room.box.x + this.room.box.width + 35,
-                    this.room.box.y + this.room.box.height / 2 + this.offset - constants.doorWidth/2,
-                    game.player.box.width,
-                    constants.doorWidth
-                );
-                break;
-            case Direction.SOUTH:
-                this.box = new VC.Box(
-                    this.room.box.x + this.room.box.width / 2 - this.offset - constants.doorWidth/2,
-                    this.room.box.y + this.room.box.height - this.room.wallHeight,
-                    constants.doorWidth,
-                    this.room.wallHeight + game.player.box.height * 1.25
-                );
-                this.trip = new VC.Box(
-                    this.room.box.x + this.room.box.width / 2 - this.offset - constants.doorWidth/2,
-                    this.room.box.y + this.room.box.height + 35,
-                    constants.doorWidth,
-                    game.player.box.height  
-                );
-                break;
-            case Direction.WEST:
-                this.box = new VC.Box(
-                    this.room.box.x - this.room.wallHeight,
-                    this.room.box.y + this.room.box.height / 2 - this.offset - constants.doorWidth/2,
-                    this.room.wallHeight + game.player.box.width * 1.25,
-                    constants.doorWidth
-                );
-                this.trip = new VC.Box(
-                    this.room.box.x - this.room.wallHeight,
-                    this.room.box.y + this.room.box.height / 2 - this.offset - constants.doorWidth/2,
-                    game.player.box.width,
-                    constants.doorWidth
-                );
-                break;
-            default:
-                console.warn({"unexpected wall": wall});  
-        }
-    }
-
-    contains(box){
-        if(box && box instanceof VC.Box && this.opened && !this.forceBars && !this.room.barred){
-            return box.inside(this.box);
-        }
-        return false; 
-    }
-}
-
-class SecretDoor extends Door{
-    elements = [];
-    opened = false;
-    poly = null;
-    segments = null;
-    #centerPoint = null;
-    hurtBox = null;
-    constructor(level, room, wall, offset){
-        super(level,room, wall, offset)
-        //todo: add hurtbox
-
-    }
-
-    #angleForPoint(p){
-        this.#centerPoint = this.room.bounds.getBoundingBox().center();
-        //case Quadrant 1
-        console.log(p);
-        if(p.x>=this.#centerPoint.x && p.y>=this.#centerPoint.y){
-            return VC.Trig.degreesToRadians(45);
-        }else if(p.x<this.#centerPoint.x && p.y>=this.#centerPoint.y){
-            return VC.Trig.degreesToRadians(315);    
-        }else if(p.x<this.#centerPoint.x && p.y<this.#centerPoint.y){
-            return VC.Trig.degreesToRadians(225);    
-        }else if(p.x>=this.#centerPoint.x && p.y<this.#centerPoint.y){
-            return VC.Trig.degreesToRadians(135);    
-        }
-    }
-
-    #getFocalPoint(){
-        let x = this.room.box.x;
-        let y = this.room.box.y;
-        switch(this.wall){
-            case Direction.NORTH:
-                x+=(this.room.box.width/2) + this.offset;
-                break;
-            case Direction.EAST:
-                x+=this.room.box.width;
-                y+=(this.room.box.height/2) + this.offset;
-                break;
-            case Direction.SOUTH:
-                x+=(this.room.box.width/2) - this.offset;
-                y+=this.room.box.height;
-                break;
-            case Direction.WEST:
-                y+=(this.room.box.height/2) - this.offset;
-                break;
-            
-        }
-        return new VC.Point(x,y);
-    }
-
-    getMirror(ndOffset, ndBox, focusX){
-        let ndFocusX =  (this.wall === Direction.NORTH || this.wall === Direction.SOUTH ? ndBox.width : ndBox.height) / 2;
-        let points = this.poly.points;
-        let mirroredPoints=[];
-        let offset = ndOffset - this.offset;
-        let offsetY = focusX - ndFocusX;
-        for(let i = 0;i<points.length;i++){
-            mirroredPoints.push(new VC.Point((points[i].x - offset) * -1, points[i].y + offsetY));
-        }
-
-        return new VC.Polygon(mirroredPoints);
-    }
-
-    render(screen){
-        if(this.elements.length>0){
-            //clear previous rendering
-            this.elements.forEach((e)=>e.remove());
-            this.elements = [];
-        }
-        if (this.elements.length===0){
-            screen.onClear(()=>{this.elements = [];});
-            focus=new VC.Point(0,0);
-            focus.x =  (this.wall === Direction.NORTH || this.wall === Direction.SOUTH ? this.room.box.width : this.room.box.height) / 2
-            focus.y = VC.Trig.cotangent(VC.Trig.degreesToRadians(45)) * focus.x;  
-
-            if(this.opened){
-                if(this.hurtBox){
-                    this.hurtBox.remove();
-                }
-                if(!this.poly){
-                    
-                    //DOOR FRAME
-                    let x1 = this.offset - constants.doorWidth/2 - constants.doorFrameThickness;
-                    let y1 = -focus.x;
-                    let x4 = this.offset + constants.doorWidth/2 + constants.doorFrameThickness;
-                    let y4 = -focus.x;
-                    let y2 = y1 - constants.doorHeight - constants.doorFrameThickness;
-                    let x2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * y2;
-                    let y3 = y4 - constants.doorHeight - constants.doorFrameThickness;
-                    let x3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * y3;
-                    //this.elements.push(screen.drawQuad(x1,y1,x2,y2,x3,y3,x4,y4,offset.x,offset.y,palette.doorFrame,"#000",constants.lineThickness));
-                
-                    
-                    x1 = this.offset - constants.doorWidth / 2;
-                    y1 = -focus.x;
-                    x4 = this.offset + constants.doorWidth / 2;
-                    y4 = -focus.x;
-                    let dy2 = y1 - constants.doorHeight;
-                    let dx2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * dy2;
-                    let dy3 = y4 - constants.doorHeight;
-                    let dx3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * dy3
-                    
-                    var points = [];
-                    points.push(new VC.Point(x1,y1));
-                    //points.push(new VC.Point(dx2,dy2));
-                    //points.push(new VC.Point(dx3,dy3));
-                    points.push(new VC.Point(x4,y4));
-                    
-                    //jitter
-                    let r = VC.Math.random(3,7);
-                    let tan = (x1-dx2)/(y1-dy2);
-                    let len = VC.Trig.distance(x1, y1, dx2, dy2);
-                    for(let i = 0;i<r;i++){
-                        let dist = VC.Math.random(0, len/r) + i*len/r;
-                        let jy = y1 - dist;
-                        let jx = tan * jy;
-                        jx += VC.Math.random (-15, +15);
-                        //jy += VC.Math.random (-5, +5);
-                        let p = new VC.Point(jx,jy)
-                        //p.render(screen);
-                        points.push(p);
-                    }
-                    
-                    r = VC.Math.random(3,7);
-                    tan = (x4-dx3)/(y4-dy3);
-                    len = VC.Trig.distance(x4, y4, dx3, dy3);
-                    for(let i = 0;i<r;i++){
-                        let dist = VC.Math.random(0, len/r) + i*len/r;
-                        let jy = y4 - dist;
-                        let jx = tan * jy;
-                        jx += VC.Math.random (-15, +15);
-                        //jy += VC.Math.random (-5, +5);
-                        let p = new VC.Point(jx,jy)
-                        //p.render(screen);
-                        points.push(p);
-                    }
-                    
-                    r = VC.Math.random(3,5);
-                    
-                    len = VC.Trig.distance(dx2, dy2, dx3, dy3);
-                    for(let i = 0;i<r;i++){
-                        let dist = VC.Math.random(0, len/r) + i*len/r;
-                        let jx = dx2 + dist;
-                        let jy = dy2;
-                        jy += VC.Math.random (-5, +5);
-                        //jy += VC.Math.random (-5, +5);
-                        let p = new VC.Point(jx,jy)
-                        //p.render(screen);
-                        points.push(p);
-                    }
-                    
-                    
-                    this.poly = new VC.Polygon(points);
-
-                    
-                    
-                    
-                }
-
-                this.elements.push(screen.drawPoly(this.poly.points,"90-" +this.room.palette.floorColor+ ":5-#000:50","#FFF", 0));
-                
-                if (DEBUG && this.box ){
-                    this.box.render(game.screen, "#0FF");
-                }
-                if (DEBUG && this.trip ){
-                    this.trip.render(game.screen, "#F00");
-                }
-
-                let t = ""
-                switch (this.wall){
-                    case Direction.NORTH:
-                        t = "t" + Math.round(focus.x + this.room.box.x) + "," + Math.round(focus.y + this.room.box.y);
-                        break;
-                    case Direction.SOUTH:
-                        t = "r180,0,0t" + Math.round(focus.x + this.room.box.x) *-1+ "," + Math.round(-focus.y + this.room.box.y + this.room.box.height) *-1;
-                        break;
-                    case Direction.EAST:
-                        t = "r90,0,0t" + Math.round(focus.x + this.room.box.y) + "," + Math.round(-focus.y + this.room.box.x + this.room.box.width) * -1;
-                        break;
-                    case Direction.WEST:
-                        t = "r270,0,0t" + Math.round(focus.x + this.room.box.y) * -1 + "," + Math.round(focus.y + this.room.box.x);
-                        break;
-                }      
-                this.elements.forEach((element)=>{
-                    element.transform(t)
-                })
-                
-                        
-            } else {
-                if(this.segments==null){
-                    if(this.hurtBox == null){
-                        this.hurtBox = new InvisibleObject(this.room);
-                        this.hurtBox.plane = Plane.ETHEREAL;
-                        this.hurtBox.box = this.trip;
-                        this.hurtBox.hurt = (damage)=>{
-                            if(damage>100 && !this.opened ){
-                                this.opened = true; 
-                                this.stabilize();
-                                let ex = new Explosion(this.room, this.box.center().x, this.box.center().y);
-                                ex.suppressScorch = true;
-                                if(this.room == game.level.currentRoom){
-                                    this.render(screen);
-                                }
-                                if(this.hurtBox){
-                                    this.hurtBox.remove();
-                                }
-                                let n = this.level.findNeighbor(this.room,this.wall);
-                                let nd = n.findDoor((this.wall + 2) % 4)
-                                nd.opened = true;
-                                nd. stabilize();
-                                nd.poly = this.getMirror(nd.offset, n.box, focus.x);
-                                nd.elements = [];
-                                let hb = nd.hurtBox
-                                if(hb){
-                                    hb.remove();
-                                }   
-                            }
-                        }
-                    }
-                    this.segments = [];
-                    let focalPoint = this.#getFocalPoint()
-                    let segStartPoint = this.#getFocalPoint();
-                    //segStartPoint.render(screen);
-
-                    let length = 0;
-                    do {
-                        let segmentAngle = this.#angleForPoint(segStartPoint) + Math.random(5,15) * (this.segments.length % 2 == 1 ? -1 : 1);
-                        
-                        if(this.segments.length>0){
-                            let lastSeg = this.segments[this.segments.length-1];
-                            //random point on segment to grow
-                            let perc = Math.random();
-                            segStartPoint = new VC.Point( 
-                                VC.Math.percentToRange(perc, lastSeg.startPoint.x, lastSeg.endPoint.x),
-                                VC.Math.percentToRange(perc, lastSeg.startPoint.y, lastSeg.endPoint.y)
-                            )
-                        }
-                        let segEndPoint = new VC.Point(Math.sin(segmentAngle) * constants.brickHeight + segStartPoint.x, Math.cos(segmentAngle) * constants.brickHeight+ segStartPoint.y)
-                        this.segments.push({startPoint:segStartPoint, endPoint: segEndPoint});
-                        length = VC.Trig.distance(focalPoint.x, focalPoint.y, segEndPoint.x, segEndPoint.y);
-                    } while (length<this.room.wallHeight)
-                }
-
-                for(let s = 0; s<this.segments.length; s++){
-                    this.elements.push(screen.drawLine(this.segments[s].startPoint.x, this.segments[s].startPoint.y,this.segments[s].endPoint.x, this.segments[s].endPoint.y,"#000",1.5).attr({"opacity":.3}));
-                }
-            }   
-        }
-    }
-
-    stabilize(){
-        super.stabilize();
     }
 }
 
@@ -4853,6 +2927,250 @@ class BossLevelFactory {
 
         return level;
     }
+}
+//Used to make invsibile walls (used in Exit)
+class InvisibleObject extends GameObject{
+    constructor (room){
+        super(room);
+         this.immovable = true;
+    }
+    move(){}
+    render(deltaT, screen){
+        if(DEBUG){
+            this.box.render(screen, "#F0F");
+        }
+    }
+    clear(){
+        super.clear();
+        this.box.remove();
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+}
+
+class Exit extends GameObject {
+    #elements = [];
+    #invisibleObjects = [];
+    #hasBeenTripped = false;
+    
+    constructor(room){
+        super(room);
+        this.box.width = constants.doorWidth;
+        this.box.height = constants.brickWidth * 4;
+        this.plane = Plane.ETHEREAL;
+    }
+
+    move(deltaT){
+        if(this.#invisibleObjects.length===0){
+            
+            let io = new InvisibleObject(this.room);
+            io.box.x = this.box.x - constants.doorFrameThickness;
+            io.box.y = this.box.y;
+            io.box.height = this.box.height;
+            io.box.width = constants.doorFrameThickness*2;
+            //this.room.objects.push(io);
+            this.#invisibleObjects.push(io);
+
+            io = new InvisibleObject(this.room);
+            io.box.x = this.box.x + constants.doorWidth;
+            io.box.y = this.box.y;
+            io.box.height = this.box.height;
+            io.box.width = constants.doorFrameThickness;
+            //this.room.objects.push(io);
+            this.#invisibleObjects.push(io);
+            
+            io = new InvisibleObject(this.room);
+            io.box.x = this.box.x;
+            io.box.y = this.box.y;
+            io.box.width = this.box.width;
+            io.box.height = constants.doorFrameThickness;
+            //this.room.objects.push(io);
+            this.#invisibleObjects.push(io);
+        }
+        if (!this.tripBox){
+            this.tripBox = new VC.Box(this.box.x, this.box.y + constants.doorFrameThickness * 3, this.box.width, this.box.height/2);
+        }
+    }
+
+    render(deltaT, screen){
+        if (this.#elements.length===0){
+            
+            //let exitHeight = constants.brickWidth * 3;
+
+            this.#elements.push(screen.drawRect(this.box.x - constants.doorFrameThickness, this.box.y,  (constants.doorWidth + constants.doorFrameThickness*2),  this.box.height, palette.doorFrame, "#000", constants.lineThickness));
+            this.#elements.push(screen.drawRect(this.box.x, this.box.y + constants.doorFrameThickness, this.box.width,  this.box.height - constants.doorFrameThickness, "#000", "#000", constants.lineThickness));
+            let steps = 6;
+            
+            for(let step = steps; step>0; step--){
+                let stepWidth = constants.doorWidth - step * 4;
+                let stepThickness = constants.brickHeight+2 - step
+                this.#elements.push(screen.drawRect(this.box.center().x - stepWidth/2,  (this.box.y + this.box.height)-stepThickness*step,  stepWidth,  stepThickness, "#888", "#000", constants.lineThickness).attr({opacity:(steps-step)/steps}));
+            }
+            
+            screen.onClear(()=>{this.#elements=[]});
+        }
+
+        //can only check player position when we're rendering.
+        if(game.player.box.inside(this.box)){
+            game.player.sprite.scale= VC.Math.constrain(.85,Math.round(((game.player.box.y - this.box.y) * 100 / this.box.height))/100 +.25,1);
+            game.player.speed = VC.Math.constrain(100,((game.player.box.y - this.box.y) / this.box.height)*150,150);
+        }
+        if(game.player.box.inside(this.tripBox) && !this.#hasBeenTripped){
+            this.#hasBeenTripped = true;
+            this.onTrip();
+        }
+
+        if(DEBUG){
+            this.box.render(screen, "#0FF")
+            //this.tripBox.render(screen, "#F80");
+        }
+    }
+
+    clear(){
+        this.#elements.forEach((e)=>e.remove());
+    }
+    remove(){
+        super.remove();
+        //this.clear();
+    }
+
+    onTrip(){
+        if(game.level){
+            game.level.statistics.roomsVisited = filter(game.level.rooms,(r)=>{return r.visited}).length
+            game.level.statistics.roomsSpawned = game.level.rooms.length
+            game.level.statistics.levelsCleared = 1;
+            game.statistics.add(game.level.statistics); 
+            game.slot.statistics.add(game.level.statistics);   
+            game.slot.save();
+            game.level.transitionTo = new EndLevelSummary(game.level.number + 1, game.level.statistics);
+        }
+    }
+}
+
+class ScorchMark extends GameObject{
+    #sprite = null;
+    constructor(room,x,y){
+        super(room);
+        this.box.x = x-38;
+        this.box.y = y-38;
+        this.box.width = 0;
+        this.box.height = 0;
+        this.rotation = Math.round(Math.random() * 360);
+        this.style = Math.round(Math.random() * 2);
+        this.layer = Layer.STAIN;
+        this.plane = Plane.ETHEREAL;
+    }
+
+    move(deltaT){
+        return;
+    }   
+
+    render(deltaT, screen){   
+        if(!this.#sprite){
+            this.#sprite = new VC.Sprite(screen, Images.SCORCH_MARK, 75, 225, 75, 75, this.box.x, this.box.y);
+            this.#sprite.setAnimation(0,this.style);
+            this.#sprite.location.r = this.rotation;
+        }
+        this.#sprite.render(deltaT); 
+    
+    }
+    clear(){
+        if(this.#sprite){
+            this.#sprite.remove();
+            this.#sprite = null;
+        }
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+}
+
+class Explosion extends GameObject{
+    
+    #sprite = null;
+    constructor(room, x, y, parent){
+        super(room);
+        this.box.x = x - 100;
+        this.box.y = y - 100;
+        this.box.width = 200;
+        this.box.height = 200;
+        this.layer = Layer.EFFECT;
+        this.plane = Plane.ETHEREAL;
+        this.parent = parent;
+        this.suppressScorch = false;
+    }
+
+    move(deltaT){
+        if(this.state === State.IDLE){
+            this.state = State.ATTACKING;
+            this.room.objects.forEach((o)=>{
+                if((o.plane===Plane.PHYSICAL || (o.plane===Plane.ETHEREAL && o instanceof InvisibleObject)) && this.box.collidesWith(o.box) && o.hurt!=null && o !== this.parent){
+                    let rect = o.box.intersectRect(this.box);
+                    if(rect){
+                        let diffY = o.box.center().y - this.box.center().y
+                        let diffX = o.box.center().x - this.box.center().x
+
+                        let tan = diffY / diffX;
+
+                        if (isNaN(tan)){
+                            tan = 1;
+                        }
+                        let damage = Math.round((rect.height*rect.width)/16);
+
+                        let box = o.box.clone();
+                        let box2 = o.box.clone();
+                        box.x = diffX * damage;
+                        box.y = tan * box.x;
+
+                        o.hurt(damage, Direction.NORTH);
+                        
+                        o.box = box2;
+                        if(o!=game.player && !(o instanceof Manos)){
+                            o.box = o.room.constrain(o, box.x, box.y);
+                        }
+                    }
+                }
+            })
+            super.move();
+            this.playSound(0, SoundEffects.EXPLOSION, 1, false)
+        }
+        if(this.state !== State.DEAD && Date.now()-this._stateStart>400){
+            this.state = State.DEAD;
+            if(!this.suppressScorch){
+                new ScorchMark(this.room, this.box.center().x, this.box.center().y);
+            }
+        }
+    }       
+
+    render(deltaT, screen){ 
+        if(this.state === State.DEAD){
+            return;
+        }
+        if(!this.#sprite){
+            this.#sprite = new VC.Sprite(screen, Images.EXPLOSION, 1000, 200, 200, 200, this.box.x, this.box.y);
+            this.#sprite.setAnimation(0,0);
+            this.#sprite.location.r = Math.round(Math.random() * 360);
+            VC.VisualEffects.shake(screen,1, 200);
+        }
+        this.#sprite.render(deltaT);
+    }
+    
+    clear(){
+        super.clear();
+        if(this.#sprite){
+            this.#sprite.remove();
+            this.#sprite = null;
+        } 
+    }
+
+    remove(){
+        super.remove();
+        this.clear();
+    }
+
 }
 class Room extends VC.Scene {
     
@@ -5687,6 +4005,921 @@ class Room extends VC.Scene {
         screen.drawRect()
     }
 }
+class Format {
+    static numberWithCommas(number) {
+        return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+
+    static msToTime(duration) {
+        let milliseconds = Math.floor((duration % 1000) / 100),
+          seconds = Math.floor((duration / 1000) % 60),
+          minutes = Math.floor((duration / (1000 * 60)) % 60),
+          hours = Math.floor((duration / (1000 * 60 * 60)));
+      
+        hours = hours > 0 ? ((hours < 10) ? "0" + hours + ":" : hours + ":") : "";
+        minutes = (minutes < 10) ? "0" + minutes : minutes;
+        seconds = (seconds < 10) ? "0" + seconds : seconds;
+      
+        return hours + minutes + ":" + seconds + "." + milliseconds;
+    }
+}
+
+class Statistics {
+    #screen = null;
+    levelsCleared = 0;
+    damageDealt = 0;
+    damageReceived = 0;
+    goldCollected = 0;
+    keysCollected = 0;
+    keysSpawned = 0;
+    heartsCollected = 0;
+    chestsSpawned = 0;
+    chestsOpened = 0;
+    enemiesKilled = 0;
+    enemiesSpawned = 0;
+    caveSpidersSpawned = 0;
+    caveSpidersKilled = 0;
+    swordSkeletonsSpawned = 0;
+    swordSkeletonsKilled = 0;
+    maceSkeletonsSpawned = 0;
+    maceSkeletonsKilled = 0;
+    bossesSpawned = 0;
+    bossesKilled = 0;
+    snakesSpawned = 0;
+    snakesKilled = 0;
+    ratsSpawned = 0;
+    ratsKilled = 0;
+    batsSpawned = 0;
+    batsKilled = 0;
+    doorsUnlocked = 0;
+    doorsSpawned = 0;
+    roomsVisited = 0;
+    roomsSpawned = 0;
+    timeSpent = 0;
+    tntCollected = 0;
+    tntThrown = 0; 
+
+    constructor(){
+    }
+    zeroIfNull(val){
+        if(isNaN(val)){
+            return 0
+        }
+        return val
+    }
+    add(s){
+        if(s){
+            this.levelsCleared += this.zeroIfNull(s.levelsCleared);
+            this.damageDealt += this.zeroIfNull(s.damageDealt);
+            this.damageReceived += this.zeroIfNull(s.damageReceived);
+            this.goldCollected += this.zeroIfNull(s.goldCollected);
+            this.keysCollected += this.zeroIfNull(s.keysCollected);
+            this.keysSpawned += this.zeroIfNull(s.keysSpawned);
+            this.heartsCollected += this.zeroIfNull(s.heartsCollected);
+            this.chestsSpawned += this.zeroIfNull(s.chestsSpawned);
+            this.chestsOpened += this.zeroIfNull(s.chestsOpened);
+            this.enemiesKilled += this.zeroIfNull(s.enemiesKilled);
+            this.enemiesSpawned += this.zeroIfNull(s.enemiesSpawned);
+            this.caveSpidersSpawned += this.zeroIfNull(s.caveSpidersSpawned);
+            this.caveSpidersKilled += this.zeroIfNull(s.caveSpidersKilled);
+            this.swordSkeletonsSpawned += this.zeroIfNull(s.swordSkeletonsSpawned);
+            this.swordSkeletonsKilled += this.zeroIfNull(s.swordSkeletonsKilled);
+            this.maceSkeletonsSpawned += this.zeroIfNull(s.maceSkeletonsSpawned);
+            this.maceSkeletonsKilled += this.zeroIfNull(s.maceSkeletonsKilled);
+            this.snakesSpawned += this.zeroIfNull(s.snakesSpawned);
+            this.snakesKilled += this.zeroIfNull(s.snakesKilled);
+            this.bossesSpawned += this.zeroIfNull(s.bossesSpawned);
+            this.bossesKilled += this.zeroIfNull(s.bossesKilled);
+            this.ratsSpawned += this.zeroIfNull(s.ratsSpawned);
+            this.ratsKilled += this.zeroIfNull(s.ratsKilled);
+            this.batsSpawned += this.zeroIfNull(s.batsSpawned);
+            this.batsKilled += this.zeroIfNull(s.batsKilled);
+            this.doorsUnlocked += this.zeroIfNull(s.doorsUnlocked);
+            this.doorsSpawned += this.zeroIfNull(s.doorsSpawned);
+            this.roomsVisited += this.zeroIfNull(s.roomsVisited);
+            this.roomsSpawned += this.zeroIfNull(s.roomsSpawned);
+            this.timeSpent += this.zeroIfNull(s.timeSpent);
+            this.tntCollected += this.zeroIfNull(s.tntCollected);    
+            this.tntThrown += this.zeroIfNull(s.tntThrown);   
+        }
+    }
+
+    render(screen, title, box){
+        let y = box.y + 64;
+        let titleElement = screen.text(box.center().x, y,title)
+        titleElement.attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "middle", "font-weight": "bold"});
+
+        let x1 = box.x + 40;
+        let x2 = box.x + box.width - 40;
+        let indent = 40;
+        let attrHeaderLeft = { "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "start", opacity:0};
+        let attrHeaderRight = { "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "end", opacity:0};
+        
+        let attrStatLeft = { "font-size": "24px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "start", opacity:0};
+        let attrStatRight = { "font-size": "24px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "end", opacity:0};
+        
+        let stats=[];
+
+        y += 64;
+        stats.push(screen.text(x1, y, "LEVELS CLEARED:").attr(attrHeaderLeft))
+        
+        stats.push(screen.text(x2, y,  Format.numberWithCommas(this.levelsCleared)).attr(attrHeaderRight));
+
+        y += 64;
+        stats.push(screen.text(x1, y, "TIME SPENT:").attr(attrHeaderLeft));
+        stats.push(screen.text(x2, y,  Format.msToTime(this.timeSpent)).attr(attrHeaderRight));
+        
+        y += 64;
+        stats.push(screen.text(x1, y, "ROOMS DISCOVERED:").attr(attrHeaderLeft));
+        stats.push(screen.text(x2, y,  Format.numberWithCommas(this.roomsVisited) + " / " + Format.numberWithCommas(this.roomsSpawned)).attr(attrHeaderRight));
+        
+        y += 40;
+        stats.push(screen.text(x1 + indent, y,"DOORS UNLOCKED:").attr(attrStatLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.doorsUnlocked) + " / " + Format.numberWithCommas(this.doorsSpawned)).attr(attrStatRight));
+
+        y += 40;
+        stats.push(screen.text(x1 + indent, y,"KEYS COLLECTED:").attr(attrStatLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.keysCollected) + " / " + Format.numberWithCommas(this.keysSpawned)).attr(attrStatRight));
+
+        y += 64;
+        stats.push(screen.text(x1, y,"CHESTS OPENED:").attr(attrHeaderLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.chestsOpened) + " / " + Format.numberWithCommas(this.chestsSpawned)).attr(attrHeaderRight));
+        
+        y += 40;
+        stats.push(screen.text(x1 + indent, y,"GOLD COLLECTED:").attr(attrStatLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.goldCollected)).attr(attrStatRight));
+
+        y += 40;
+        stats.push(screen.text(x1 + indent, y,"HEARTS COLLECTED:").attr(attrStatLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.heartsCollected)).attr(attrStatRight));
+        
+        y += 40;
+        stats.push(screen.text(x1 + indent, y,"TNT COLLECTED:").attr(attrStatLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.tntCollected)).attr(attrStatRight));
+
+        y += 64;
+        stats.push(screen.text(x1, y,"ENEMIES KILLED:").attr(attrHeaderLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.enemiesKilled) + " / " + Format.numberWithCommas(this.enemiesSpawned)).attr(attrHeaderRight));
+
+        y += 40;
+        stats.push(screen.text(x1 + indent, y,"DAMAGE DEALT:").attr(attrStatLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.damageDealt)).attr(attrStatRight));
+
+        y += 40;
+        stats.push(screen.text(x1 + indent, y,"DAMAGE RECEIVED:").attr(attrStatLeft));
+        stats.push(screen.text(x2, y, Format.numberWithCommas(this.damageReceived)).attr(attrStatRight));
+
+        if(this.bossesSpawned>0){       
+            y += 40;
+            stats.push(screen.text(x1 + indent, y,"BOSSES BEATEN:").attr(attrStatLeft));
+            stats.push(screen.text(x2, y, Format.numberWithCommas(this.bossesKilled) + " / " + Format.numberWithCommas(this.bossesSpawned)).attr(attrStatRight));
+        }
+
+        if(this.caveSpidersSpawned>0){       
+            y += 40;
+            stats.push(screen.text(x1 + indent, y,"SPIDERS SQUASHED:").attr(attrStatLeft));
+            stats.push(screen.text(x2, y, Format.numberWithCommas(this.caveSpidersKilled) + " / " + Format.numberWithCommas(this.caveSpidersSpawned)).attr(attrStatRight));
+        }
+        if(this.swordSkeletonsSpawned>0){       
+            y += 40;
+            stats.push(screen.text(x1 + indent, y,"SKELETONS SMASHED:").attr(attrStatLeft));
+            stats.push(screen.text(x2, y, Format.numberWithCommas(this.swordSkeletonsKilled+this.maceSkeletonsKilled) + " / " + Format.numberWithCommas(this.swordSkeletonsSpawned+this.maceSkeletonsSpawned)).attr(attrStatRight));
+        }
+        if(this.snakesSpawned>0){       
+            y += 40;
+            stats.push(screen.text(x1 + indent, y,"SNAKES STOMPED:").attr(attrStatLeft));
+            stats.push(screen.text(x2, y, Format.numberWithCommas(this.snakesKilled) + " / " + Format.numberWithCommas(this.snakesSpawned)).attr(attrStatRight));
+        }
+        if(this.ratsSpawned>0){       
+            y += 40;
+            stats.push(screen.text(x1 + indent, y,"RATS RUINED:").attr(attrStatLeft));
+            stats.push(screen.text(x2, y, Format.numberWithCommas(this.ratsKilled) + " / " + Format.numberWithCommas(this.ratsSpawned)).attr(attrStatRight));
+        }
+        if(this.batsSpawned>0){       
+            y += 40;
+            stats.push(screen.text(x1 + indent, y,"BATS BANISHED:").attr(attrStatLeft));
+            stats.push(screen.text(x2, y, Format.numberWithCommas(this.batsKilled) + " / " + Format.numberWithCommas(this.batsSpawned)).attr(attrStatRight));
+        }
+
+        let ms = 0;
+        stats.forEach((s,i)=>{
+            if(i % 2 == 0){
+                ms += 100;
+            }
+            setTimeout(()=>{s.animate({opacity:1},250)}, ms);
+        });
+
+ 
+    }
+
+}
+
+class SecretDoor extends Door{
+    elements = [];
+    opened = false;
+    poly = null;
+    segments = null;
+    #centerPoint = null;
+    hurtBox = null;
+    constructor(level, room, wall, offset){
+        super(level,room, wall, offset)
+        //todo: add hurtbox
+
+    }
+
+    #angleForPoint(p){
+        this.#centerPoint = this.room.bounds.getBoundingBox().center();
+        //case Quadrant 1
+        console.log(p);
+        if(p.x>=this.#centerPoint.x && p.y>=this.#centerPoint.y){
+            return VC.Trig.degreesToRadians(45);
+        }else if(p.x<this.#centerPoint.x && p.y>=this.#centerPoint.y){
+            return VC.Trig.degreesToRadians(315);    
+        }else if(p.x<this.#centerPoint.x && p.y<this.#centerPoint.y){
+            return VC.Trig.degreesToRadians(225);    
+        }else if(p.x>=this.#centerPoint.x && p.y<this.#centerPoint.y){
+            return VC.Trig.degreesToRadians(135);    
+        }
+    }
+
+    #getFocalPoint(){
+        let x = this.room.box.x;
+        let y = this.room.box.y;
+        switch(this.wall){
+            case Direction.NORTH:
+                x+=(this.room.box.width/2) + this.offset;
+                break;
+            case Direction.EAST:
+                x+=this.room.box.width;
+                y+=(this.room.box.height/2) + this.offset;
+                break;
+            case Direction.SOUTH:
+                x+=(this.room.box.width/2) - this.offset;
+                y+=this.room.box.height;
+                break;
+            case Direction.WEST:
+                y+=(this.room.box.height/2) - this.offset;
+                break;
+            
+        }
+        return new VC.Point(x,y);
+    }
+
+    getMirror(ndOffset, ndBox, focusX){
+        let ndFocusX =  (this.wall === Direction.NORTH || this.wall === Direction.SOUTH ? ndBox.width : ndBox.height) / 2;
+        let points = this.poly.points;
+        let mirroredPoints=[];
+        let offset = ndOffset - this.offset;
+        let offsetY = focusX - ndFocusX;
+        for(let i = 0;i<points.length;i++){
+            mirroredPoints.push(new VC.Point((points[i].x - offset) * -1, points[i].y + offsetY));
+        }
+
+        return new VC.Polygon(mirroredPoints);
+    }
+
+    render(screen){
+        if(this.elements.length>0){
+            //clear previous rendering
+            this.elements.forEach((e)=>e.remove());
+            this.elements = [];
+        }
+        if (this.elements.length===0){
+            screen.onClear(()=>{this.elements = [];});
+            focus=new VC.Point(0,0);
+            focus.x =  (this.wall === Direction.NORTH || this.wall === Direction.SOUTH ? this.room.box.width : this.room.box.height) / 2
+            focus.y = VC.Trig.cotangent(VC.Trig.degreesToRadians(45)) * focus.x;  
+
+            if(this.opened){
+                if(this.hurtBox){
+                    this.hurtBox.remove();
+                }
+                if(!this.poly){
+                    
+                    //DOOR FRAME
+                    let x1 = this.offset - constants.doorWidth/2 - constants.doorFrameThickness;
+                    let y1 = -focus.x;
+                    let x4 = this.offset + constants.doorWidth/2 + constants.doorFrameThickness;
+                    let y4 = -focus.x;
+                    let y2 = y1 - constants.doorHeight - constants.doorFrameThickness;
+                    let x2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * y2;
+                    let y3 = y4 - constants.doorHeight - constants.doorFrameThickness;
+                    let x3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * y3;
+                    //this.elements.push(screen.drawQuad(x1,y1,x2,y2,x3,y3,x4,y4,offset.x,offset.y,palette.doorFrame,"#000",constants.lineThickness));
+                
+                    
+                    x1 = this.offset - constants.doorWidth / 2;
+                    y1 = -focus.x;
+                    x4 = this.offset + constants.doorWidth / 2;
+                    y4 = -focus.x;
+                    let dy2 = y1 - constants.doorHeight;
+                    let dx2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * dy2;
+                    let dy3 = y4 - constants.doorHeight;
+                    let dx3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * dy3
+                    
+                    var points = [];
+                    points.push(new VC.Point(x1,y1));
+                    //points.push(new VC.Point(dx2,dy2));
+                    //points.push(new VC.Point(dx3,dy3));
+                    points.push(new VC.Point(x4,y4));
+                    
+                    //jitter
+                    let r = VC.Math.random(3,7);
+                    let tan = (x1-dx2)/(y1-dy2);
+                    let len = VC.Trig.distance(x1, y1, dx2, dy2);
+                    for(let i = 0;i<r;i++){
+                        let dist = VC.Math.random(0, len/r) + i*len/r;
+                        let jy = y1 - dist;
+                        let jx = tan * jy;
+                        jx += VC.Math.random (-15, +15);
+                        //jy += VC.Math.random (-5, +5);
+                        let p = new VC.Point(jx,jy)
+                        //p.render(screen);
+                        points.push(p);
+                    }
+                    
+                    r = VC.Math.random(3,7);
+                    tan = (x4-dx3)/(y4-dy3);
+                    len = VC.Trig.distance(x4, y4, dx3, dy3);
+                    for(let i = 0;i<r;i++){
+                        let dist = VC.Math.random(0, len/r) + i*len/r;
+                        let jy = y4 - dist;
+                        let jx = tan * jy;
+                        jx += VC.Math.random (-15, +15);
+                        //jy += VC.Math.random (-5, +5);
+                        let p = new VC.Point(jx,jy)
+                        //p.render(screen);
+                        points.push(p);
+                    }
+                    
+                    r = VC.Math.random(3,5);
+                    
+                    len = VC.Trig.distance(dx2, dy2, dx3, dy3);
+                    for(let i = 0;i<r;i++){
+                        let dist = VC.Math.random(0, len/r) + i*len/r;
+                        let jx = dx2 + dist;
+                        let jy = dy2;
+                        jy += VC.Math.random (-5, +5);
+                        //jy += VC.Math.random (-5, +5);
+                        let p = new VC.Point(jx,jy)
+                        //p.render(screen);
+                        points.push(p);
+                    }
+                    
+                    
+                    this.poly = new VC.Polygon(points);
+
+                    
+                    
+                    
+                }
+
+                this.elements.push(screen.drawPoly(this.poly.points,"90-" +this.room.palette.floorColor+ ":5-#000:50","#FFF", 0));
+                
+                if (DEBUG && this.box ){
+                    this.box.render(game.screen, "#0FF");
+                }
+                if (DEBUG && this.trip ){
+                    this.trip.render(game.screen, "#F00");
+                }
+
+                let t = ""
+                switch (this.wall){
+                    case Direction.NORTH:
+                        t = "t" + Math.round(focus.x + this.room.box.x) + "," + Math.round(focus.y + this.room.box.y);
+                        break;
+                    case Direction.SOUTH:
+                        t = "r180,0,0t" + Math.round(focus.x + this.room.box.x) *-1+ "," + Math.round(-focus.y + this.room.box.y + this.room.box.height) *-1;
+                        break;
+                    case Direction.EAST:
+                        t = "r90,0,0t" + Math.round(focus.x + this.room.box.y) + "," + Math.round(-focus.y + this.room.box.x + this.room.box.width) * -1;
+                        break;
+                    case Direction.WEST:
+                        t = "r270,0,0t" + Math.round(focus.x + this.room.box.y) * -1 + "," + Math.round(focus.y + this.room.box.x);
+                        break;
+                }      
+                this.elements.forEach((element)=>{
+                    element.transform(t)
+                })
+                
+                        
+            } else {
+                if(this.segments==null){
+                    if(this.hurtBox == null){
+                        this.hurtBox = new InvisibleObject(this.room);
+                        this.hurtBox.plane = Plane.ETHEREAL;
+                        this.hurtBox.box = this.trip;
+                        this.hurtBox.hurt = (damage)=>{
+                            if(damage>100 && !this.opened ){
+                                this.opened = true; 
+                                this.stabilize();
+                                let ex = new Explosion(this.room, this.box.center().x, this.box.center().y);
+                                ex.suppressScorch = true;
+                                if(this.room == game.level.currentRoom){
+                                    this.render(screen);
+                                }
+                                if(this.hurtBox){
+                                    this.hurtBox.remove();
+                                }
+                                let n = this.level.findNeighbor(this.room,this.wall);
+                                let nd = n.findDoor((this.wall + 2) % 4)
+                                nd.opened = true;
+                                nd. stabilize();
+                                nd.poly = this.getMirror(nd.offset, n.box, focus.x);
+                                nd.elements = [];
+                                let hb = nd.hurtBox
+                                if(hb){
+                                    hb.remove();
+                                }   
+                            }
+                        }
+                    }
+                    this.segments = [];
+                    let focalPoint = this.#getFocalPoint()
+                    let segStartPoint = this.#getFocalPoint();
+                    //segStartPoint.render(screen);
+
+                    let length = 0;
+                    do {
+                        let segmentAngle = this.#angleForPoint(segStartPoint) + Math.random(5,15) * (this.segments.length % 2 == 1 ? -1 : 1);
+                        
+                        if(this.segments.length>0){
+                            let lastSeg = this.segments[this.segments.length-1];
+                            //random point on segment to grow
+                            let perc = Math.random();
+                            segStartPoint = new VC.Point( 
+                                VC.Math.percentToRange(perc, lastSeg.startPoint.x, lastSeg.endPoint.x),
+                                VC.Math.percentToRange(perc, lastSeg.startPoint.y, lastSeg.endPoint.y)
+                            )
+                        }
+                        let segEndPoint = new VC.Point(Math.sin(segmentAngle) * constants.brickHeight + segStartPoint.x, Math.cos(segmentAngle) * constants.brickHeight+ segStartPoint.y)
+                        this.segments.push({startPoint:segStartPoint, endPoint: segEndPoint});
+                        length = VC.Trig.distance(focalPoint.x, focalPoint.y, segEndPoint.x, segEndPoint.y);
+                    } while (length<this.room.wallHeight)
+                }
+
+                for(let s = 0; s<this.segments.length; s++){
+                    this.elements.push(screen.drawLine(this.segments[s].startPoint.x, this.segments[s].startPoint.y,this.segments[s].endPoint.x, this.segments[s].endPoint.y,"#000",1.5).attr({"opacity":.3}));
+                }
+            }   
+        }
+    }
+
+    stabilize(){
+        super.stabilize();
+    }
+}
+
+class Rat extends Character {
+    sprite = null;
+    constructor(room, controller){
+        super(room, controller);
+        this.box.x = Math.round(dimensions.width / 2)-100;
+        this.box.y = Math.round(dimensions.width / 2)-100;
+        this.box.height = 50;
+        this.box.width = 50;
+        this.team = Team.DUNGEON;
+        this.direction = Direction.EAST;
+        this.speed = 125;
+        this.health = 10;
+        this.maxHealth = 10;
+        this.damage = 5;
+        this._attackDuration = 500; 
+        this._attackCooldown = 3000;
+        this.style = VC.Math.random(0,3);
+    }
+
+    move(deltaT){
+        this.controller.reverseInput = ((Date.now() - this._lastAttack) < this._attackCooldown);
+        this.speed = this.controller.reverseInput ? 200 : this.getObjectsInView().indexOf(game.player) === -1 ? 115 : 150;
+        super.move(deltaT);
+        if(this.state === State.WALKING){
+            this.playSound(1, SoundEffects.RAT_WALK, .05, true);
+        } else {
+            this.stopSound(1, SoundEffects.RAT_WALK);
+        }
+        
+    }
+    
+    render(deltaT, screen){
+        if(!this.sprite){
+            let image = null;
+            switch(this.style){
+                case 1:
+                    image = Images.RAT_BLACK;
+                    break;
+                case 2:
+                    image = Images.RAT_BROWN;
+                    break;
+                default:
+                    if(VC.Math.random(0,4)===4){                        
+                        image = Images.RAT_WHITE;
+                    }
+                    image = Images.RAT_GRAY;
+            }
+            this.sprite = new VC.Sprite(screen, image, 800, 500, 100, 100, 0, 0);
+        }
+        if(DEBUG){
+           this.box.render(screen, "#FF0");
+            /*
+                if(this._viewBox1){
+                    this._viewBox1.render(screen,"#0ff");
+                }
+                if(this._viewBox2){
+                    this._viewBox2.render(screen,"#0ff");
+                }
+            */
+            if(this._attackBox){
+                this._attackBox.render(screen, "#f00");
+            }
+        } 
+        
+        switch(this.direction){
+            case Direction.NORTH:
+                this.box.width = 50;
+                this.sprite.location.x = this.box.x-25;
+                this.sprite.location.y = this.box.y-15;
+                break;
+            case Direction.WEST:
+                this.box.width = 50;
+                this.sprite.location.x = this.box.x-10;
+                this.sprite.location.y = this.box.y-32;
+                break;
+            case Direction.SOUTH:
+                this.box.width = 50;
+                this.sprite.location.x = this.box.x-25;
+                this.sprite.location.y = this.box.y-25;
+                break;
+            case Direction.EAST:
+                this.box.width = 50;
+                this.sprite.location.x = this.box.x-50;
+                this.sprite.location.y = this.box.y-32;
+                break;
+                        
+        }
+        this.sprite.setAnimation(this.direction, this.state);
+        this.sprite.render(deltaT);
+    }
+    clear() {
+        super.clear();
+        if(this.sprite){
+            this.sprite.remove();
+        }
+       
+        if(DEBUG){
+            this.box.remove();
+            if(this._viewBox2){
+                this._viewBox2.remove();
+            }
+            if(this._viewBox){
+                this._attackBox.remove();
+            }
+            if(this._attackBox){
+                this._attackBox.remove();
+            }
+        }
+    }
+
+    remove(){
+        super.remove();
+        this.clear();
+    }
+    
+    attack(){
+        if(this.state !== State.ATTACKING){
+            this.playSound(0, SoundEffects.RAT_ATTACK, .9, false);
+            this.state = State.ATTACKING;
+        }
+        let opposingTeam = Team.getOpposingTeam(this.team)
+        let targets = this.getObjectsInRangeOfAttack();
+        targets.forEach((o)=>{
+            if(o.team === opposingTeam){
+                let rect = this._attackBox.intersectRect(o.box)
+                if(rect){
+                    o.hurt(this.damage);
+                    let sb = new Starburst(this.room);
+                    sb.box = rect;
+                }
+            }
+        });
+    }
+    getObjectsInView(){
+        //initialize the view box
+        if(!this._viewBox1){
+            this._viewBox1 = new VC.Box(0,0,50,50);
+        }
+
+        this._viewBox1.height = 1000;
+        this._viewBox1.width = Date.now() - this._lastAttack > this._attackCooldown ? this.box.width : 1000;
+        this._viewBox1.center(this.box.center());
+        
+        if(!this._viewBox2){
+            this._viewBox2 = new VC.Box(0,0,50,50);
+        }
+
+        this._viewBox2.height = this.box.height;
+        this._viewBox2.width = 1000;
+        this._viewBox2.center(this.box.center());
+
+        let inView = [];
+        this.room.objects.forEach((o)=>{
+            if(o!=this && (o.box.collidesWith(this._viewBox1) || o.box.collidesWith(this._viewBox2))){
+                inView.push(o);
+            }
+        })
+
+        return inView;
+    }
+    getObjectsInRangeOfAttack(){
+        //initialize the attack box
+        if(!this._attackBox){
+            this._attackBox = new VC.Box(0,0,25,25);
+        }
+        //reposition the attack box
+        switch(this.direction){
+            case Direction.NORTH:
+                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
+                this._attackBox.y = this.box.y - this._attackBox.height
+                break;
+            case Direction.EAST:
+                this._attackBox.x = this.box.x + this.box.width;
+                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);
+                break;
+            case Direction.SOUTH:
+                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
+                this._attackBox.y = this.box.y + this.box.height;
+                break;
+            case Direction.WEST:
+                this._attackBox.x = this.box.x - this._attackBox.width;
+                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);   
+                break;
+        }
+
+        let inRange = []
+        this.room.objects.forEach((o)=>{
+            if(o!==this && this._attackBox.collidesWith(o.box)){
+                inRange.push(o);
+            }
+        });
+        return inRange;
+    }
+    hurt(damage, knockback, distance){
+        let startHealth=this.health;
+        super.hurt(damage, knockback, distance);
+        if(startHealth>0 && this.health<=0){
+            if (game && game.level && game.level.statistics){
+                game.level.statistics.ratsKilled++;
+                game.level.statistics.enemiesKilled++;
+            }
+            this.playSound(0, SoundEffects.RAT_DEATH, .6, false);
+        }
+    }
+}
+
+class CaveSpider extends Character {
+    constructor(room, controller){
+        super(room, controller);
+        this.box.x = Math.round(dimensions.width / 2)-100;
+        this.box.y = Math.round(dimensions.width / 2)-100;
+        this.box.height = 75;
+        this.box.width = 75;
+        this.team = Team.DUNGEON;
+        this.direction = Direction.EAST;
+        this.speed = 110;
+        this.health = 20;
+        this.maxHealth = 20;
+        this.damage = 5;
+        this._attackDuration = 500;
+        this._attackCooldown = 2000;
+        this.aggressive = false;
+    }
+    move(deltaT){
+        
+        if(!this.canAttack && this.state!==State.DYING && this.state!==State.DEAD) {
+            if(this.state === State.HURT){
+                if(Date.now()-this._stateStart < this._hurtDuration){
+                    return
+                }
+                this.state = State.IDLE;
+            }
+            return;
+        }
+        let state1 = this.state;
+        super.move(deltaT);
+        
+        if (this.state !== state1){           
+            switch(this.state){
+                case State.WALKING: 
+                    this.playSound(0, SoundEffects.SPIDER_WALK, .4, true, false);
+                    break;
+                default:
+                    this.stopSound(0, SoundEffects.SPIDER_WALK);
+            }
+        }
+    
+        switch(this.direction){
+            case Direction.NORTH:
+                this.box.width = 75;
+                this.box.height = 50;
+                break;
+            case Direction.WEST:
+                this.box.width = 75;
+                this.box.height = 50;
+                break;
+            case Direction.SOUTH:
+                this.box.width = 75;
+                this.box.height = 60;
+                break;
+            case Direction.EAST:
+                this.box.width = 75;
+                this.box.height = 50;
+                break;      
+        }
+    }
+
+    render(deltaT, screen){
+        if(!this.sprite){
+            this.sprite = new VC.Sprite(screen, Images.CAVE_SPIDER, 800, 500, 100, 100, 0, 0);
+        }
+        if(DEBUG){
+           this.box.render(screen, "#FFF");
+        } 
+  
+        this.sprite.location.x = this.box.x-15;
+        this.sprite.location.y = this.box.y-(this.direction=== Direction.SOUTH ? 20 : 40);
+        this.sprite.setAnimation(this.direction, this.state);
+        if (this.state === State.ATTACKING && this.sprite.animation.frame===7){
+            this.state = State.IDLE
+        }
+        this.sprite.render(deltaT);
+    }
+
+    clear(){
+        super.clear();
+        if(this.sprite){
+            this.sprite.remove();
+        }
+        if(DEBUG){
+            this.box.remove();
+        }
+    }
+    
+    remove(){
+        super.remove();
+        this.clear();
+    }
+
+    attack(){
+        if(this.state !== State.ATTACKING){
+            this.playSound(1, SoundEffects.SPIDER_BITE, .8, false, false);
+            this.state = State.ATTACKING;
+        }
+        let opposingTeam = Team.getOpposingTeam(this.team)
+        let targets = this.getObjectsInRangeOfAttack();
+        targets.forEach((o)=>{
+            if(o.team === opposingTeam){
+                let rect = this._attackBox.intersectRect(o.box)
+                if(rect){
+                    o.hurt(this.damage);
+                    let sb = new Starburst(this.room)
+                    sb.box = rect;
+                }
+            }
+        });
+    }
+
+    getObjectsInView(){
+        if(this.aggressive){
+            return this.room.objects;
+        }
+
+        //initialize the view box
+        if(!this._viewBox){
+            this._viewBox = new VC.Box(0,0,50,50);
+        }
+        //reposition the view box
+        switch(this.direction){
+            case Direction.NORTH:
+                this._viewBox.height = 500;
+                this._viewBox.width = 200;
+                this._viewBox.x = this.box.center().x - this._viewBox.width/2;
+                this._viewBox.y = this.box.y + this.box.height - this._viewBox.height
+                break;
+            case Direction.EAST:    
+                this._viewBox.width = 500;
+                this._viewBox.height = 200;
+                this._viewBox.x = this.box.x;
+                this._viewBox.y = this.box.center().y - this._viewBox.height/2
+                break;
+            case Direction.SOUTH:
+                this._viewBox.height = 500;
+                this._viewBox.width = 200;
+                this._viewBox.x = this.box.center().x - this._viewBox.width/2;
+                this._viewBox.y = this.box.y 
+                break;
+            case Direction.WEST:
+                this._viewBox.width = 500;
+                this._viewBox.height = 200;
+                this._viewBox.x = this.box.x + this.box.width - this._viewBox.width;
+                this._viewBox.y = this.box.center().y - this._viewBox.height/2
+                break;
+        }
+        let inView = [];
+        this.room.objects.forEach((o)=>{
+            if(o!=this && o.box.collidesWith(this._viewBox)){
+                inView.push(o);
+            }
+        })
+
+        return inView;
+    }
+    getObjectsInRangeOfAttack(){
+        //initialize the attack box
+        if(!this._attackBox){
+            this._attackBox = new VC.Box(0,0,25,25);
+        }
+        //reposition the attack box
+        switch(this.direction){
+            case Direction.NORTH:
+                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
+                this._attackBox.y = this.box.y - this._attackBox.height
+                break;
+            case Direction.EAST:
+                this._attackBox.x = this.box.x + this.box.width;
+                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);
+                break;
+            case Direction.SOUTH:
+                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
+                this._attackBox.y = this.box.y + this.box.height;
+                break;
+            case Direction.WEST:
+                this._attackBox.x = this.box.x - this._attackBox.width;
+                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);   
+                break;
+        }
+        let inRange = []
+        this.room.objects.forEach((o)=>{
+            if(o!==this && this._attackBox.collidesWith(o.box)){
+                inRange.push(o);
+            }
+        });
+        return inRange;
+    }
+   
+    hurt(damage, knockback, distance){
+        let startHealth = this.health;
+        super.hurt(damage, knockback, distance);
+        this.aggressive = true;
+        if(startHealth > 0 && this.health <= 0){
+            if(game && game.level && game.level.statistics) {
+                game.level.statistics.caveSpidersKilled++;
+                game.level.statistics.enemiesKilled++;
+            }
+            this.playSound(2, SoundEffects.SPIDER_DEATH, 1, false, false);
+        }
+    }
+}
+
+class Starburst extends GameObject{
+    #sprite = null;
+    constructor(room){
+        super(room)
+        this.box.width = 25;
+        this.box.height = 25;
+        this.layer = Layer.EFFECT
+        this.plane = Plane.ETHEREAL;
+    }
+    
+    render(deltaT, screen){
+        if(this.state === State.DEAD){
+            return;
+        }
+        if(!this.#sprite){
+            this.#sprite = new VC.Sprite(screen, Images.STARBURST, 100, 25, 25, 25, this.box.center().x-12, this.box.center().y-12);
+            this.#sprite.setAnimation(0,0);
+            this.#sprite.location.r = Math.round(Math.random() * 360);
+        }
+        this.#sprite.render(deltaT); 
+    }
+
+    move(deltaT){
+        if(Date.now()-this._stateStart>250){
+            this.state = State.DEAD;
+        }
+    }
+
+    clear(){
+        super.clear();
+        if(this.#sprite){
+            this.#sprite.remove();
+            this.#sprite = null;
+        }
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+}
 
 class SwordSkeleton extends Character{
     constructor(room, controller){
@@ -5849,6 +5082,162 @@ class SwordSkeleton extends Character{
             game.level.statistics.swordSkeletonsKilled++;
             game.level.statistics.enemiesKilled++;
             this.playSound(2, SoundEffects.SKELETON_DEATH, 1, false, false);
+        }
+    }
+}
+
+class Snake extends Character {
+    sprite = null;
+    constructor(room, controller){
+        super(room, controller);
+        this.box.x = Math.round(dimensions.width / 2)-100;
+        this.box.y = Math.round(dimensions.width / 2)-100;
+        this.box.height = 50;
+        this.box.width = 50;
+        this.team = Team.DUNGEON;
+        this.direction = Direction.EAST;
+        this.speed = 85;
+        this.health = 20;
+        this.maxHealth = 20;
+        this.damage = 5;
+        this._attackDuration = 500;
+        this._attackCooldown = 2000;
+        this._hurtDuration = 750;
+    }
+
+    move(deltaT){
+        super.move(deltaT);
+        
+    };
+    render(deltaT, screen){
+        if(!this.sprite){
+            this.sprite = new VC.Sprite(screen, Images.KING_COBRA, 800, 500, 100, 100, 0, 0);
+        }
+        if(DEBUG){
+           this.box.render(screen, "#FFF");
+        } 
+        
+        switch(this.direction){
+            case Direction.NORTH:
+                this.box.width = 50;
+                this.sprite.location.x = this.box.x-25;
+                this.sprite.location.y = this.box.y-25;
+                break;
+            case Direction.WEST:
+                this.box.width = 75;
+                this.sprite.location.x = this.box.x-10;
+                this.sprite.location.y = this.box.y-30;
+                break;
+            case Direction.SOUTH:
+                this.box.width = 50;
+                this.sprite.location.x = this.box.x-25;
+                this.sprite.location.y = this.box.y-10;
+                break;
+            case Direction.EAST:
+                this.box.width = 75;
+                this.sprite.location.x = this.box.x-15;
+                this.sprite.location.y = this.box.y-30;
+                break;
+                        
+        }
+
+        this.sprite.setAnimation(this.direction, this.state);
+        this.sprite.render(deltaT);
+    }
+    clear() {
+        super.clear();
+        if(this.sprite){
+            this.sprite.remove();
+        }
+      
+        if(DEBUG){
+            this.box.remove();
+        }
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+    attack(){
+        if(this.state !== State.ATTACKING){
+            this.playSound(0, SoundEffects.SNAKE_BITE, 1, false, false);
+            this.state = State.ATTACKING;
+        }
+        let opposingTeam = Team.getOpposingTeam(this.team)
+        let targets = this.getObjectsInRangeOfAttack();
+        targets.forEach((o)=>{
+            if(o.team === opposingTeam){
+                let rect = this._attackBox.intersectRect(o.box)
+                if(rect){
+                    o.hurt(this.damage);
+                    let sb = new Starburst(this.room);
+                    sb.box = rect;
+                }
+            }
+        });
+    }
+    getObjectsInView(){
+        //initialize the view box
+        if(!this._viewBox){
+            this._viewBox = new VC.Box(0,0,50,50);
+        }
+
+        this._viewBox.height = 500;
+        this._viewBox.width = 500;
+        this._viewBox.x = this.box.center().x - this._viewBox.width/2;
+        this._viewBox.y = this.box.center().y - this._viewBox.height/2;
+
+        let inView = [];
+        this.room.objects.forEach((o)=>{
+            if(o!=this && o.box.collidesWith(this._viewBox)){
+                inView.push(o);
+            }
+        })
+
+        return inView;
+    }
+    getObjectsInRangeOfAttack(){
+        //initialize the attack box
+        if(!this._attackBox){
+            this._attackBox = new VC.Box(0,0,25,25);
+        }
+        //reposition the attack box
+        switch(this.direction){
+            case Direction.NORTH:
+                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
+                this._attackBox.y = this.box.y - this._attackBox.height
+                break;
+            case Direction.EAST:
+                this._attackBox.x = this.box.x + this.box.width;
+                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);
+                break;
+            case Direction.SOUTH:
+                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
+                this._attackBox.y = this.box.y + this.box.height;
+                break;
+            case Direction.WEST:
+                this._attackBox.x = this.box.x - this._attackBox.width;
+                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);   
+                break;
+        }
+
+        let inRange = []
+        this.room.objects.forEach((o)=>{
+            if(o!==this && this._attackBox.collidesWith(o.box)){
+                inRange.push(o);
+            }
+        });
+        return inRange;
+    }
+    hurt(damage, knockback, distance){
+        let startHealth=this.health;
+        super.hurt(damage, knockback, distance);
+        if(startHealth>0 && this.health<=0){
+            if (game && game.level && game.level.statistics){
+                game.level.statistics.snakesKilled++;
+                game.level.statistics.enemiesKilled++;
+            }
+            this.playSound(0, SoundEffects.SNAKE_DEATH, 1, false, false);
         }
     }
 }
@@ -6409,1229 +5798,147 @@ class LevelFactory {
     }
 }
 
-class Statistics {
-    #screen = null;
-    levelsCleared = 0;
-    damageDealt = 0;
-    damageReceived = 0;
-    goldCollected = 0;
-    keysCollected = 0;
-    keysSpawned = 0;
-    heartsCollected = 0;
-    chestsSpawned = 0;
-    chestsOpened = 0;
-    enemiesKilled = 0;
-    enemiesSpawned = 0;
-    caveSpidersSpawned = 0;
-    caveSpidersKilled = 0;
-    swordSkeletonsSpawned = 0;
-    swordSkeletonsKilled = 0;
-    maceSkeletonsSpawned = 0;
-    maceSkeletonsKilled = 0;
-    bossesSpawned = 0;
-    bossesKilled = 0;
-    snakesSpawned = 0;
-    snakesKilled = 0;
-    ratsSpawned = 0;
-    ratsKilled = 0;
-    batsSpawned = 0;
-    batsKilled = 0;
-    doorsUnlocked = 0;
-    doorsSpawned = 0;
-    roomsVisited = 0;
-    roomsSpawned = 0;
-    timeSpent = 0;
-    tntCollected = 0;
-    tntThrown = 0; 
-
-    constructor(){
-    }
-    zeroIfNull(val){
-        if(isNaN(val)){
-            return 0
-        }
-        return val
-    }
-    add(s){
-        if(s){
-            this.levelsCleared += this.zeroIfNull(s.levelsCleared);
-            this.damageDealt += this.zeroIfNull(s.damageDealt);
-            this.damageReceived += this.zeroIfNull(s.damageReceived);
-            this.goldCollected += this.zeroIfNull(s.goldCollected);
-            this.keysCollected += this.zeroIfNull(s.keysCollected);
-            this.keysSpawned += this.zeroIfNull(s.keysSpawned);
-            this.heartsCollected += this.zeroIfNull(s.heartsCollected);
-            this.chestsSpawned += this.zeroIfNull(s.chestsSpawned);
-            this.chestsOpened += this.zeroIfNull(s.chestsOpened);
-            this.enemiesKilled += this.zeroIfNull(s.enemiesKilled);
-            this.enemiesSpawned += this.zeroIfNull(s.enemiesSpawned);
-            this.caveSpidersSpawned += this.zeroIfNull(s.caveSpidersSpawned);
-            this.caveSpidersKilled += this.zeroIfNull(s.caveSpidersKilled);
-            this.swordSkeletonsSpawned += this.zeroIfNull(s.swordSkeletonsSpawned);
-            this.swordSkeletonsKilled += this.zeroIfNull(s.swordSkeletonsKilled);
-            this.maceSkeletonsSpawned += this.zeroIfNull(s.maceSkeletonsSpawned);
-            this.maceSkeletonsKilled += this.zeroIfNull(s.maceSkeletonsKilled);
-            this.snakesSpawned += this.zeroIfNull(s.snakesSpawned);
-            this.snakesKilled += this.zeroIfNull(s.snakesKilled);
-            this.bossesSpawned += this.zeroIfNull(s.bossesSpawned);
-            this.bossesKilled += this.zeroIfNull(s.bossesKilled);
-            this.ratsSpawned += this.zeroIfNull(s.ratsSpawned);
-            this.ratsKilled += this.zeroIfNull(s.ratsKilled);
-            this.batsSpawned += this.zeroIfNull(s.batsSpawned);
-            this.batsKilled += this.zeroIfNull(s.batsKilled);
-            this.doorsUnlocked += this.zeroIfNull(s.doorsUnlocked);
-            this.doorsSpawned += this.zeroIfNull(s.doorsSpawned);
-            this.roomsVisited += this.zeroIfNull(s.roomsVisited);
-            this.roomsSpawned += this.zeroIfNull(s.roomsSpawned);
-            this.timeSpent += this.zeroIfNull(s.timeSpent);
-            this.tntCollected += this.zeroIfNull(s.tntCollected);    
-            this.tntThrown += this.zeroIfNull(s.tntThrown);   
-        }
-    }
-
-    render(screen, title, box){
-        let y = box.y + 64;
-        let titleElement = screen.text(box.center().x, y,title)
-        titleElement.attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "middle", "font-weight": "bold"});
-
-        let x1 = box.x + 40;
-        let x2 = box.x + box.width - 40;
-        let indent = 40;
-        let attrHeaderLeft = { "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "start", opacity:0};
-        let attrHeaderRight = { "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "end", opacity:0};
+class EndLevelSummary extends Room {
+    statistics = null;
+    constructor(nextLevel, statistics){
         
-        let attrStatLeft = { "font-size": "24px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "start", opacity:0};
-        let attrStatRight = { "font-size": "24px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "end", opacity:0};
-        
-        let stats=[];
-
-        y += 64;
-        stats.push(screen.text(x1, y, "LEVELS CLEARED:").attr(attrHeaderLeft))
-        
-        stats.push(screen.text(x2, y,  Format.numberWithCommas(this.levelsCleared)).attr(attrHeaderRight));
-
-        y += 64;
-        stats.push(screen.text(x1, y, "TIME SPENT:").attr(attrHeaderLeft));
-        stats.push(screen.text(x2, y,  Format.msToTime(this.timeSpent)).attr(attrHeaderRight));
-        
-        y += 64;
-        stats.push(screen.text(x1, y, "ROOMS DISCOVERED:").attr(attrHeaderLeft));
-        stats.push(screen.text(x2, y,  Format.numberWithCommas(this.roomsVisited) + " / " + Format.numberWithCommas(this.roomsSpawned)).attr(attrHeaderRight));
-        
-        y += 40;
-        stats.push(screen.text(x1 + indent, y,"DOORS UNLOCKED:").attr(attrStatLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.doorsUnlocked) + " / " + Format.numberWithCommas(this.doorsSpawned)).attr(attrStatRight));
-
-        y += 40;
-        stats.push(screen.text(x1 + indent, y,"KEYS COLLECTED:").attr(attrStatLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.keysCollected) + " / " + Format.numberWithCommas(this.keysSpawned)).attr(attrStatRight));
-
-        y += 64;
-        stats.push(screen.text(x1, y,"CHESTS OPENED:").attr(attrHeaderLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.chestsOpened) + " / " + Format.numberWithCommas(this.chestsSpawned)).attr(attrHeaderRight));
-        
-        y += 40;
-        stats.push(screen.text(x1 + indent, y,"GOLD COLLECTED:").attr(attrStatLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.goldCollected)).attr(attrStatRight));
-
-        y += 40;
-        stats.push(screen.text(x1 + indent, y,"HEARTS COLLECTED:").attr(attrStatLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.heartsCollected)).attr(attrStatRight));
-        
-        y += 40;
-        stats.push(screen.text(x1 + indent, y,"TNT COLLECTED:").attr(attrStatLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.tntCollected)).attr(attrStatRight));
-
-        y += 64;
-        stats.push(screen.text(x1, y,"ENEMIES KILLED:").attr(attrHeaderLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.enemiesKilled) + " / " + Format.numberWithCommas(this.enemiesSpawned)).attr(attrHeaderRight));
-
-        y += 40;
-        stats.push(screen.text(x1 + indent, y,"DAMAGE DEALT:").attr(attrStatLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.damageDealt)).attr(attrStatRight));
-
-        y += 40;
-        stats.push(screen.text(x1 + indent, y,"DAMAGE RECEIVED:").attr(attrStatLeft));
-        stats.push(screen.text(x2, y, Format.numberWithCommas(this.damageReceived)).attr(attrStatRight));
-
-        if(this.bossesSpawned>0){       
-            y += 40;
-            stats.push(screen.text(x1 + indent, y,"BOSSES BEATEN:").attr(attrStatLeft));
-            stats.push(screen.text(x2, y, Format.numberWithCommas(this.bossesKilled) + " / " + Format.numberWithCommas(this.bossesSpawned)).attr(attrStatRight));
-        }
-
-        if(this.caveSpidersSpawned>0){       
-            y += 40;
-            stats.push(screen.text(x1 + indent, y,"SPIDERS SQUASHED:").attr(attrStatLeft));
-            stats.push(screen.text(x2, y, Format.numberWithCommas(this.caveSpidersKilled) + " / " + Format.numberWithCommas(this.caveSpidersSpawned)).attr(attrStatRight));
-        }
-        if(this.swordSkeletonsSpawned>0){       
-            y += 40;
-            stats.push(screen.text(x1 + indent, y,"SKELETONS SMASHED:").attr(attrStatLeft));
-            stats.push(screen.text(x2, y, Format.numberWithCommas(this.swordSkeletonsKilled+this.maceSkeletonsKilled) + " / " + Format.numberWithCommas(this.swordSkeletonsSpawned+this.maceSkeletonsSpawned)).attr(attrStatRight));
-        }
-        if(this.snakesSpawned>0){       
-            y += 40;
-            stats.push(screen.text(x1 + indent, y,"SNAKES STOMPED:").attr(attrStatLeft));
-            stats.push(screen.text(x2, y, Format.numberWithCommas(this.snakesKilled) + " / " + Format.numberWithCommas(this.snakesSpawned)).attr(attrStatRight));
-        }
-        if(this.ratsSpawned>0){       
-            y += 40;
-            stats.push(screen.text(x1 + indent, y,"RATS RUINED:").attr(attrStatLeft));
-            stats.push(screen.text(x2, y, Format.numberWithCommas(this.ratsKilled) + " / " + Format.numberWithCommas(this.ratsSpawned)).attr(attrStatRight));
-        }
-        if(this.batsSpawned>0){       
-            y += 40;
-            stats.push(screen.text(x1 + indent, y,"BATS BANISHED:").attr(attrStatLeft));
-            stats.push(screen.text(x2, y, Format.numberWithCommas(this.batsKilled) + " / " + Format.numberWithCommas(this.batsSpawned)).attr(attrStatRight));
-        }
-
-        let ms = 0;
-        stats.forEach((s,i)=>{
-            if(i % 2 == 0){
-                ms += 100;
-            }
-            setTimeout(()=>{s.animate({opacity:1},250)}, ms);
-        });
-
- 
-    }
-
-}
-
-class NewGameScene extends VC.Scene{
-    #statistics = null
-    #rendered = false;
-    
-    constructor(levelNumber){
-        super();
-        game.player.maxHealth = 10 * game.slot.hearts;
-        game.player.health = game.player.maxHealth;
-        game.player.state = State.IDLE;
-        game.player.gold = 0;
-        game.player.tntCount = 5 * game.slot.tntBags;
-        game.player.keys = [];
-        game.statistics = new Statistics();
-        this.transitionTo = LevelFactory.Construct(levelNumber);
-    }
-   
-}
-
-class Slot {
-    slot = 0;
-    name = "HUGH";
-    statistics = new Statistics();
-    sfxVolume = 1.0;
-    musicVolume = 0.15;
-    hearts = 3;
-    whip = 0;
-    tntBags = 1
-    levelState = [2,2,2,2,2];
-
-    constructor(data){
-        if (data && !isNaN(data.slot)){
-            this.slot = data.slot;
-            this.name = data.name; 
-            this.hearts = VC.Math.constrain(3, data.hearts, 8);
-            this.whip = VC.Math.constrain(0, data.whip, 2);
-            this.tntBags = VC.Math.constrain(1, data.tntBags, 4);
-            this.statistics.add(data.statistics);
-            this.sfxVolume = VC.Math.constrain(0, data.sfxVolume, 1);
-            this.musicVolume = VC.Math.constrain(0, data.musicVolume, 0.15);
-            this.levelState = Array.isArray(data.levelState) ? data.levelState : [2,2,2,2,2];
-            while (this.levelState.length < 5) {
-                this.levelState.push(2);
-            }
-            while (this.levelState.length > 5) {
-                this.levelState.pop();
-            }
-        }
-    }
-
-    save(){
-        localStorage.setItem('GR_slot_' + this.slot, JSON.stringify(this));
-    }
-
-    delete(){
-        localStorage.removeItem('GR_slot_' + this.slot);
-    }
-
-    static load(slot){
-        let data = localStorage.getItem('GR_slot_' + slot);
-        if(data){
-            return new Slot(JSON.parse(data));
-        }
-        return null;
-    }
-}
-
-class Dossier {
-    selected = 0;
-    opened = false;
-    x = 0;
-    currentX = 200;
-    y = 0;
-    elements = [];
-    rotElements = [];
-    reportSprites = [];
-    speed = 250;
-    slot = null;
-    slotNum = 0;
-    constructor(slot, slotNum){
-        this.slot = slot
-        this.slotNum = slotNum;
-    }
-    sprite = null;
-    structureRendered = false;
-    
-    render(deltaT, screen){
-        if(!this.structureRendered){
-            let slotHeight = (dimensions.width-150)/3
-            let slotWidth = dimensions.width - 300;
-            let slotX = 0;
-            let slotY = 0;
-
-            this.elements.push(screen.drawRect(slotX,slotY, slotWidth, slotHeight, "#f1d592",SCREENBLACK,2, 15));
-            this.elements.push(screen.drawRect(slotX,slotY-35, 250, 100, "#f1d592",SCREENBLACK,2, 15));
-
-            //render pages
-            if(this.slot!=null){
-                this.elements.push(screen.drawRect(slotX+10,slotY-2, slotWidth-20, slotHeight-100, "#F8F8F8", SCREENBLACK, .5, 0));
-                this.elements.push(screen.drawRect(slotX+12,slotY+3, slotWidth-20, slotHeight-100, "#F8F8F8", SCREENBLACK, .5, 0));
-                this.elements.push(screen.drawRect(slotX+8,slotY+8, slotWidth-20, slotHeight-100, "#F8F8F8", SCREENBLACK, .5, 0));
-                this.elements.push(screen.drawRect(slotX,slotY+13, slotWidth, slotHeight-13, "#f1d592",SCREENBLACK,2, 15));
-            } else{
-                this.elements.push(screen.drawRect(slotX,slotY, slotWidth, slotHeight, "#f1d592",SCREENBLACK,2, 15));
-            }
-
-            let text = screen.text(slotX + 125, slotY-17, "File " + String.fromCharCode(65 + this.slotNum))
-            text.attr({ "font-size": "24px", "font-family": "monospace", "fill": "#000"});
-            this.elements.push(text);
-
-            if(this.slot==null){
-                //render post-it note
-                let postit=screen.drawRect(slotX+80, slotY+45, 100, 100, "#FFEBA1", SCREENBLACK, 1, 0);
-                postit.transform("r-10");
-                this.rotElements.push(postit);
-                this.elements.push(postit);
-                text = screen.text(slotX+125, slotY+90, "New\nGame")
-                text.attr({ "font-size": "25px", "font-family": "Comic Sans MS, Textile, cursive", "fill": "#880000"});    
-                text.transform("r-10");
-                this.rotElements.push(text);
-                this.elements.push(text);
-            } else {
-                //render polaroid 
-                let p1 = screen.drawRect(slotX+40, slotY+25, 35*4, 42*4, "#F8F8F8",SCREENBLACK, 2).transform({"r":-5})
-                this.rotElements.push(p1);
-                this.elements.push(p1); 
-                let p2 = screen.drawRect(slotX+46, slotY+33, 31*4, 31*4, "#864",SCREENBLACK, 2).transform({"r":-5})
-                this.rotElements.push(p2);
-                this.elements.push(p2);
-                this.sprite = new VC.Sprite(screen, Images.ADVENTURER, 800, 600, 100, 100, slotX+55, slotY+50);
-                this.sprite.location.r = -5; 
-                //render paperclip
-                this.elements.push(screen.rect(slotX+50, slotY+10, 10, 40,5).attr({"stroke-width": 3, "stroke":"#BBB "}));
-                this.elements.push(screen.drawLine(slotX+55,slotY+13, slotX+100, slotY+13,SCREENBLACK,2)); 
-                this.elements.push(screen.drawRect(slotX+55, slotY+14, 10, 7, "#f1d592",SCREENBLACK,0, 0));
-                //render report
-                let reportX = slotWidth/2-25;
-                let reportY = slotY + 60;
-                this.elements.push(screen.drawRect(reportX, slotY+30, slotWidth/2, slotHeight-45, "#F8F8F8", SCREENBLACK, 2, 7))
-                this.elements.push(screen.drawRect(reportX, slotY+42, slotWidth/2, 20, "#AA0000", SCREENBLACK, 1, 0))
-                this.elements.push(screen.drawRect(reportX, slotY+30, slotWidth/2, 30, "#AA0000", SCREENBLACK, 0, 7))
-                text = screen.text(slotWidth*.75 - 25, slotY + 45, "STATUS REPORT")
-                text.attr({ "font-size": "25px", "font-family": "monospace", "fill": "#EEE", "font-weight": "bold"});
-                this.elements.push(text);
-
-                //name
-                text = screen.text(reportX + 8, reportY + 18, this.slot.name)
-                text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#000", "font-weight": "bold", "text-anchor": "start"});    
-                this.elements.push(text);
-
-                //hearts
-                for(let i=0; i<this.slot.hearts; i++){ 
-                    
-                    let offsetX = i * 36 + reportX + 8
-                    let offsetY =  reportY + 40
-                    let bottom = 30;
-                    let top = 0;
-                    let curve = 5;
-                    let curve2 = 15;
-                    this.elements.push(
-                        screen.drawPoly(
-                            [
-                                new VC.Point(16 + offsetX,bottom+offsetY),    
-                                new VC.Point(0 + offsetX,curve2+offsetY),
-                                new VC.Point(0 + offsetX,curve+offsetY),
-                                new VC.Point(5 + offsetX,top+offsetY),
-                                new VC.Point(10 + offsetX,top+offsetY),
-                                new VC.Point(16 + offsetX,curve+offsetY),
-                                new VC.Point(21 + offsetX,top+offsetY),
-                                new VC.Point(26 + offsetX,top+offsetY),
-                                new VC.Point(32 + offsetX,curve+offsetY),
-                                new VC.Point(32 + offsetX,curve2+offsetY)
-                            ],
-                            "#CC0000",
-                            "#000",
-                            2
-                        )
-                    )       
-                }
-
-                text = screen.text(reportX+slotWidth/2 - 40, reportY + 86, "ALL-TIME STATS")
-                text.attr({ "font-size": "12px", "font-family": "sans-serif", "fill": "#000", "text-anchor": "end"});
-                this.elements.push(text);
-
-
-                //money
-                this.elements.push(screen.drawEllipse(reportX+slotWidth/2 - 20, reportY+111,12,13,0,0,"#ffd700",SCREENBLACK, 2));
-                this.elements.push(screen.drawRect(reportX+slotWidth/2 - 22, reportY+105, 4, 12, SCREENBLACK, SCREENBLACK,0,2))
-                text = screen.text(reportX+slotWidth/2 - 40, reportY + 111, Format.numberWithCommas(this.slot.statistics.goldCollected))
-                text.attr({ "font-size": "24px", "font-family": "sans-serif", "fill": "#000", "text-anchor": "end"});    
-                this.elements.push(text);
-
-                //time
-                this.elements.push(screen.drawEllipse(reportX+slotWidth/2 - 21, reportY+146,14,14,0,0,"#0CD",SCREENBLACK, 1.5));
-                this.elements.push(screen.drawEllipse(reportX+slotWidth/2 - 21, reportY+146,10,10,0,0,"#FFF",SCREENBLACK, .5));
-                this.elements.push(screen.drawLine(reportX+slotWidth/2 - 21, reportY+149, reportX+slotWidth/2 - 15, reportY+139, "#000", 2))
-                this.elements.push(screen.drawLine(reportX+slotWidth/2 - 21, reportY+149, reportX+slotWidth/2 - 26, reportY+142, "#000", 2))
-                this.elements.push(screen.drawLine(reportX+slotWidth/2 - 21, reportY+149, reportX+slotWidth/2 - 24, reportY+156, "#F00", 1.5))
-
-                text = screen.text(reportX+slotWidth/2 - 40, reportY + 146, Format.msToTime(this.slot.statistics.timeSpent))
-                text.attr({ "font-size": "24px", "font-family": "sans-serif", "fill": "#000", "text-anchor": "end"});    
-                this.elements.push(text);
-
-                //menu
-                
-            }
-            
-            this.structureRendered = true;
-        } 
-
-
-        let offset = ((this.speed / 1000) * deltaT) * (this.currentX>this.x ? -1 : 1)
-        if (offset > Math.abs(this.currentX - this.x)){
-            this.currentX =this.x; 
+        let floor = null;
+        if (nextLevel<6){
+            floor = new HexagonalTileFloor(constants.tileWidth/2);
         } else {
-            this.currentX += offset
-        }
-        this.elements.forEach(e=>{ 
-            let transformStr = "T" + this.currentX + "," + this.y 
-            if (this.rotElements.indexOf(e)>-1){
-                transformStr += 'R' + (this.slot==null ? '-10' : '-5');
-                
-            } 
-            e.animate({transform:transformStr},0,'linear')
-
-        })
-        if(this.sprite){
-            this.sprite.location.x = this.currentX + 55;
-            this.sprite.location.y = this.y + 50;
-            
-            this.sprite.setAnimation(Direction.SOUTH, this.selected  ? State.WALKING : State.IDLE)
-            this.sprite.render(deltaT)
-        }
-        for(let s = 0 ; s< this.reportSprites.length; s++){
-            let sprite = this.reportSprites[s]; 
-            sprite.location.x = this.currentX + sprite.offsetX;
-            sprite.location.y = this.y + sprite.offsetY;
-            
-            sprite.render(deltaT);
+            floor = new RectangularTileFloor(constants.tileWidth, constants.tileWidth);
         }
         
+
+        super(0, 0, 3 * constants.brickWidth, constants.roomMaxHeightInBricks * constants.brickWidth, 5,  floor);
+        this.volume = 1;
+        this.statistics = statistics;
+        statistics.levelsCleared = game.statistics.levelsCleared
+        this.box.x = this.wallHeight;
+        this.box.y = Math.round((dimensions.width - this.box.height - this.wallHeight*2) / 2) + this.wallHeight;
+        this.palette = game.level.palette;
+        this.palette.clipColor = SCREENBLACK;
+        
+
+        let exit = new Exit(this)
+        exit.box.x = this.box.center().x - exit.box.width / 2 ;
+        exit.box.y = this.box.y + constants.doorFrameThickness;
+        let els = this;
+        exit.onTrip = function(){
+            game.player.keys = [];
+            els.transitionTo = LevelFactory.Construct(nextLevel);
+        }; 
+
+        let entrance = new Door(null, this, Direction.SOUTH, 0);
+        entrance.forceBars = true;
+        this.doors.push(entrance);
+
+        game.player.box.x = this.box.center().x - game.player.box.width/2;
+        game.player.box.y = this.box.height;
+        game.player.sprite.lastLocation.x =  game.player.box.x;
+        game.player.sprite.lastLocation.y = game.player.box.y;
+        game.player.sprite.scale = 1;
+        game.player.speed = 150;
+        game.player.direction = Direction.NORTH;
+        game.player.room = this;
+        
+        let wTorch = new Torch(this);
+        wTorch.wall = Direction.WEST;
+        wTorch.box.x = this.box.x - this.wallHeight / 2;
+        wTorch.box.y = dimensions.width * 2 / 3;
+        new TorchLightEffect(wTorch);
+
+        let eTorch = new Torch(this);
+        eTorch.wall = Direction.EAST;
+        eTorch.box.x = this.box.x + this.box.width + this.wallHeight / 2;
+        eTorch.box.y = dimensions.width  / 3;
+        new TorchLightEffect(eTorch);
+
+        this.finalize();
+        this.doors.forEach((d)=>{d.stabilize()});
+        this.secret = true;
+        LevelFactory.getTemple(game.level.world).themeRoom(this);
+
     }
-}
-
-class SlotSelectScreen extends VC.Scene {
-
-    slots = []
-    selectedSlot = 0;
-    selectedOption = 0;
-    selectedModalOption = 1;
-    structureRendered = false;
-    dossiers = []; 
-    readReady = true;
-    showMenu = false;
-    showDeleteModal = false;
-    menuStartTime = Date.now();
-    pressed = false;
-    menuElements = [];
-    modalElements = [];
-    
-    selectedOption = 0
-    options = ["PLAY", "STATS", "COPY", "DELETE", "BACK"]
-    canCopy = false;
-    constructor(){
-        super();
-        this.slots.push(Slot.load(0))
-        this.slots.push(Slot.load(1))
-        this.slots.push(Slot.load(2))
-        for(let s=0; s<this.slots.length;s++){
-            if(this.slots[s]==null){
-                this.canCopy = true;
-            }
-        }
-    }
-
-    nextAudioChannel=0;
-    audioChannels = [
-        new VC.AudioChannel(),
-        new VC.AudioChannel(),
-        new VC.AudioChannel(),
-        new VC.AudioChannel(),
-        new VC.AudioChannel()
-    ];
-    get audioChannel(){
-        let n=this.nextAudioChannel;
-        this.nextAudioChannel = this.nextAudioChannel + 1;
-        this.nextAudioChannel = this.nextAudioChannel % this.audioChannels.length;
-        return this.audioChannels[n];
-    }
-
     preDisplay(){
-        //TODO: Game selection music
-        game.playMusic(Music.CHARGE); 
-        this.audioChannel.play(SoundEffects.TNT, .4, false);
-    }
-    preRender(deltaT){
-        let beep = false;
-        let boop = false;
-        let shuffle = false;
-        if(game && game.inputController){
-            let input = game.inputController.read();
-            
-            if(this.showDeleteModal){
-                if(input.y < 0 && this.readReady){
-                    beep = true;
-                    this.selectedModalOption = 0
-                    this.readReady = false;
-                } else if(input.y > 0 && this.readReady){
-                    beep = true;
-                    this.selectedModalOption = 1;
-                    this.readReady = false;
-                } else if(input.y == 0){
-                    this.readReady = true;
-                } 
-            } else if(this.showMenu){
-                if(input.y < 0 && this.readReady){
-                    beep = true;
-                    this.selectedOption = this.selectedOption - 1;
-                    this.selectedOption = this.selectedOption < 0 ? 4 : this.selectedOption ;
-                    this.readReady = false;
-                } else if(input.y > 0 && this.readReady){
-                    beep = true;
-                    this.selectedOption = (this.selectedOption + 1) % 5;
-                    this.readReady  = false;
-                } else if(input.y == 0){
-                    this.readReady = true;
-                } 
-            } else {
-                if(input.y < 0 && this.readReady){
-                    shuffle = true;
-                    this.selectedSlot = this.selectedSlot - 1;
-                    this.selectedSlot = this.selectedSlot < 0 ? 2 : this.selectedSlot ;
-                    this.readReady = false;
-                } else if(input.y > 0 && this.readReady){
-                    shuffle = true;
-                    this.selectedSlot = (this.selectedSlot + 1) % 3;
-                    this.readReady  = false;
-                } else if(input.y == 0){
-                    this.readReady = true;
-                } 
-            }
-            
-            if(input.a){
-                if(!this.pressed){
-                    this.startTime = Date.now();
-                    this.pressed = true;
-                }
-                
-                if (this.showMenu == false) {    
-                    let duration = Date.now() - this.startTime;
-                    if (duration>400){
-                        this.showMenu = true;
-                        boop = true;
-                        this.menuStartTime = Date.now();
-                    }
-                }
-                
-            } else if (!input.a && this.pressed){ //released
-                
-                if(!this.showMenu){
-                    //start game
-                    this.#startGame();
-                    
-                } else if (this.pressed && this.startTime>this.menuStartTime){
-                    if(this.showDeleteModal){
-                        if(this.selectedModalOption==0){
-                            boop = true;
-                            this.#delete();
-                        }else{
-                            this.showDeleteModal = false;;
-                            boop = true;
-                        }
-                    }else {
-                        switch(this.selectedOption){
-                            case 0:
-                                boop = true;
-                                this.#startGame();
-                                break;
-                            case 1: 
-                                boop = true;
-                                this.#showStats();
-                                break;
-                            case 2:
-                                boop = true;
-                                this.#copy();
-                                break;
-                            case 3:
-                                if(this.slots[this.selectedSlot]!=null) {   
-                                    boop = true;  
-                                    this.showDeleteModal = true;
-                                }
-                                break;
-                            case 4:
-                                this.selectedOption=0;
-                                boop = true;
-                                this.showMenu = false;
-                                break;
-                        }
-                    }
-                }
-                this.pressed = false;
-
-            }
-        }
-        if(shuffle){
-            this.audioChannel.play(SoundEffects.TNT, .4, false);
-        }else if (boop){
-            this.audioChannel.play(SoundEffects.KEY_BOOP, .2, false);
-        }else if (beep){
-            this.audioChannel.play(SoundEffects.KEY_BEEP, .2, false);
-        }
-    } 
+        game.playMusic(Music.EXIT_LEVEL);
     
-    #startGame(){                   
-        let slot = this.slots[this.selectedSlot];
-        if(slot == null){
-            slot = new Slot()
-            slot.slot = this.selectedSlot;
-            game.currentScene.transitionTo = new SlotRenameScreen(slot);
-            return;    
-        }
-        game.slot = slot;
-        slot.save();
-        game.currentScene.transitionTo = new LevelSelectScreen();//new NewGameScene(4);
     }
-
-    #showStats(){
-        let slot = this.slots[this.selectedSlot];
-        if(slot != null){
-            game.currentScene.transitionTo = new SlotStatsScreen(slot);
-        }
-    }
-
-    #copy(){
-        if(this.canCopy){
-            //find the empty slot
-            if(this.slots[this.selectedSlot]!=null) {       
-                for(let s=0; s<this.slots.length;s++){
-                    if(this.slots[s]==null){
-                        this.slots[this.selectedSlot].slot = s;
-                        this.slots[this.selectedSlot].save();
-                        break;
-                    }
-                }
-                game.currentScene.transitionTo = new SlotSelectScreen();
-            }
-        }
-    }
-    
-    #delete(){
-        if(this.slots[this.selectedSlot]!=null) {     
-            this.slots[this.selectedSlot].delete();
-            game.currentScene.transitionTo = new SlotSelectScreen();
-        }
-    }
-    
+    statsRendered = false
     render(deltaT, screen){
-        if (this.structureRendered == false){
-            //background
-            screen.drawRect(0,0,dimensions.width, dimensions.width,	"#06402B",SCREENBLACK,0, 15);
-            let text = screen.text(dimensions.width/2,30, "SELECT A FILE")
-            text.attr({ "font-size": "40px", "font-family": "monospace", "fill": "#FFF", "font-weight": "bold"});
-            if(VC.Client.orientation != VC.Orientation.PORTRAIT){
-                text = screen.text(dimensions.width/2,dimensions.width-20, "ARROW KEYS TO CHOOSE, SPACE BAR TO SELECT, HOLD SPACE FOR OPTIONS")
-                text.attr({ "font-size": "22px", "font-family": "monospace", "fill": "#FFF"});
-            } else {
-                text = screen.text(dimensions.width/2,dimensions.width-20, "HOLD FIRE FOR OPTIONS")
-                text.attr({ "font-size": "24px", "font-family": "monospace", "fill": "#FFF"});
-            }
-            for(let i=0; i<3; i++){    
-                let d = new Dossier(this.slots[i], i) 
-                d.x = 150;
-                
-                let slotHeight = (dimensions.width-150)/3;
-
-                d.y =  (i * (slotHeight+10) ) + 90;
-                this.dossiers.push(d)   
-                this.dossiers[i].render(deltaT, screen);
-            }
-
-            this.menuElements.push(screen.drawRect(0,0,dimensions.width/5 - 32, 184, "#F8F8F8", SCREENBLACK, 3, 10))
-            for(let o=0; o<this.options.length; o++){
-                text = screen.text(32, o * 32 + 24, this.options[o])    
-                text.attr({ "font-size": "24px", "font-family": "sans-serif", "fill": o==2 && !this.canCopy ? "#888" : "#000", "text-anchor": "start"});  
-                this.menuElements.push(text);   
-            }
-            this.menuElements.push(screen.drawTriangle(10,14,28,24,10,34,null,null,SCREENBLACK, SCREENBLACK, 0));  
-
-            let modalX = dimensions.width/4;
-            let modalY = dimensions.width/2-184/2; 
-
-            this.modalElements.push(screen.drawRect(modalX,modalY,dimensions.width/2, 184, "#F8F8F8", "#AA0000", 6, 10))
-
-            text = screen.text(dimensions.width/2, modalY + 32, "DELETE FILE?");
-            text.attr({ "font-size": "32px", "font-family": "sans-serif", "fill": "#000", "font-weight": "bold"});  
-            this.modalElements.push(text)
-
-            text = screen.text(dimensions.width/2, modalY + 36*2, "DATA WILL BE LOST FOREVER.");
-            text.attr({ "font-size": "24px", "font-family": "sans-serif", "fill": "#000", });  
-            this.modalElements.push(text)
         
-            text = screen.text(modalX + 32, modalY + 36*3 , "YES, DELETE THIS FILE");
-            text.attr({ "font-size": "28px", "font-family": "sans-serif", "fill": "#000","text-anchor": "start", "font-weight": "bold"});  
-            this.modalElements.push(text)
+        if(!this.statsRendered){
+            screen.drawRect(0,0,dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
+        }
+        super.render(deltaT, screen)
+        if(!this.statsRendered){
+            let statsBox = new VC.Box(this.box.x + this.box.width + this.wallHeight, 0, dimensions.width - (this.box.x + this.box.width + this.wallHeight), dimensions.width);
+            this.statistics.render(screen, "LEVEL COMPLETE!", statsBox);
+            this.statsRendered = true
             
-            text = screen.text(modalX + 32, modalY + 36*4, "NO, GO BACK");
-            text.attr({ "font-size": "28px", "font-family": "sans-serif", "fill": "#000","text-anchor": "start", "font-weight": "bold"});  
-            this.modalElements.push(text)
-
-            this.modalElements.push(screen.drawTriangle(modalX + 10, modalY + 36*3 - 10, modalX + 28,  modalY + 36*3,modalX + 10, modalY + 36*3 + 10,null,null,SCREENBLACK, SCREENBLACK, 0));  
-
-            this.structureRendered = true;
         }
-        
-        for(let i=0; i<3; i++){   
-            this.dossiers[i].selected = this.selectedSlot == i;
-            if(this.selectedSlot == i){
-                this.dossiers[i].x = 100;
-            }else {
-                this.dossiers[i].x = 200;
-            }
-            this.dossiers[i].render(deltaT, screen);
-        }
-        
-        let slotHeight = (dimensions.width-150)/3;
-        let menuY = (this.selectedSlot * (slotHeight+10) ) + 120;
-
-        var transForm = "T" + (dimensions.width-184) + "," + menuY
-        this.menuElements.forEach((e,i)=>{
-            switch(i-1){
-                case 1://stats
-                case 3://delete
-                    e.attr({"fill": this.slots[this.selectedSlot]==null ? "#C0C0C0" : "#000"})
-                    break;
-                case 2://copy
-                    e.attr({"fill": this.slots[this.selectedSlot]==null || !this.canCopy ? "#C0C0C0" : "#000"})
-                    break;
-            }
-            e.attr({"transform":transForm, "opacity": (this.showMenu ? 1 : 0)})}
-        );
-
-        transForm = "T" + (dimensions.width-184) + "," + (menuY + (this.selectedOption * 32))
-        this.menuElements[this.menuElements.length-1].attr({"transform":transForm, "opacity": (this.showMenu ? 1 : 0)});
-
-        this.modalElements.forEach(e=>{
-            e.attr({"opacity": (this.showDeleteModal ? 1 : 0)})
-            e.toFront();
-        });
-        
-        transForm = "T0," + (this.selectedModalOption * 36);
-        this.modalElements[this.modalElements.length-1].attr({"transform":transForm});
     }
 
-    postDisplay(){
-        this.audioChannels.forEach(ac=>ac.dispose());
-        this.audioChannels=[];
-    }
 }
 
-class GlyphButton {
-    leftGlyph = null;
-    rightGlyph = null;
-    aboveGlyph = null;
-    belowGlyph = null;    
-    elements=[]
-
-    selected = false;
-
-    screenText = "";
-    value = null;
-    x = 0;
-    y = 0;
-    width = 0;
-    height = 0;
-
-    structureRendered = false;
-    elements = [];
-
-    constructor(screenText, value, x, y, width, height){
-        this.screenText = screenText;
-        this.value = value;
-        this.x = x;
-        this.y = y;
-        this.width = width;
-        this.height = height;
-    }
-
-    render(screen){
-        if(!this.structureRendered){
-            let text = screen.text(this.x, this.y, this.screenText)
-            let glyphColor = "#FFF";
-            let borderColor = "#ffd700";
-            
-            text.attr({ "font-size": "48px", "font-family": "monospace", "font-weight":"bold", "fill": glyphColor});
-            this.elements.push(text);
-            let x = this.x-this.width/2;
-            let y = this.y-this.height/2;
-            
-            //border
-            this.elements.push(screen.drawLine(x, y, x + this.height/4, y, borderColor, 5));
-            this.elements.push(screen.drawLine(x, y, x, y + this.height/4, borderColor, 5));
-            this.elements.push(screen.drawLine(x, y+this.height, x + this.height/4, y+this.height, borderColor, 5));
-            this.elements.push(screen.drawLine(x, y+this.height, x, y+this.height - + this.height/4, borderColor, 5));
-
-            this.elements.push(screen.drawLine(x + this.width, y, x + this.width - this.height/4, y, borderColor, 5));
-            this.elements.push(screen.drawLine(x + this.width, y, x + this.width, y + this.height/4, borderColor, 5));
-            this.elements.push(screen.drawLine(x + this.width, y+this.height, x + this.width - this.height/4, y+this.height, borderColor, 5));
-            this.elements.push(screen.drawLine(x + this.width, y+this.height, x + this.width, y+this.height - + this.height/4, borderColor, 5));
-
-            this.structureRendered = true;
-        }
-
-        this.elements.forEach((e,i)=>{e.attr({"opacity":this.selected||i==0 ? 1 : 0})});
-    }
-}
-
-class SlotRenameScreen extends VC.Scene {
-
+class FireballExplosion extends GameObject{
     
-    text = "";
-    slot = null;
-    structureRendered = false;
-    sprite = null;
-    glyphs = [];
-    currentGlyph = null;
-
-    constructor(slot){
-        super();
-        this.slot = slot;
-
-    }
-    
-    nextAudioChannel=0;
-    audioChannels = [
-        new VC.AudioChannel(),
-        new VC.AudioChannel(),
-        new VC.AudioChannel(),
-        new VC.AudioChannel(),
-        new VC.AudioChannel()
-    ];
-    get audioChannel(){
-        let n=this.nextAudioChannel;
-        this.nextAudioChannel = this.nextAudioChannel + 1;
-        this.nextAudioChannel = this.nextAudioChannel % this.audioChannels.length;
-        return this.audioChannels[n];
+    #sprite = null;
+    #lightEffect = null;
+    constructor(room, x, y){
+        super(room);
+        this.box.x = x - 32;
+        this.box.y = y - 32;
+        this.box.width = 64;
+        this.box.height = 64;
+        this.layer = Layer.DEFAULT;
+        this.plane = Plane.ETHEREAL;
+        this.#lightEffect = new FireballLightEffect(this);
     }
 
-    #initializeGlyphs(){
-        
-        let buttonSize = dimensions.width/10;
-        let keyboardLeft = buttonSize / 2 + buttonSize;
-        let keyboardTop = dimensions.width - (buttonSize * 6) - buttonSize/2 - 5;
-        
-
-        
-        //row 1
-        let a = new GlyphButton("A", "A", keyboardLeft + buttonSize * 0, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
-        this.glyphs.push(a);
-        let b = new GlyphButton("B", "B", keyboardLeft + buttonSize * 1, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
-        this.glyphs.push(b);
-        let c = new GlyphButton("C", "C", keyboardLeft + buttonSize * 2, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
-        this.glyphs.push(c);
-        
-        let d = new GlyphButton("D", "D", keyboardLeft + buttonSize * 5, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
-        this.glyphs.push(d);
-        let e = new GlyphButton("E", "E", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
-        this.glyphs.push(e);
-        let f = new GlyphButton("F", "F", keyboardLeft + buttonSize * 7, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
-        this.glyphs.push(f);
-        
-        //row 2
-        let g = new GlyphButton("G", "G", keyboardLeft + buttonSize * 0, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
-        this.glyphs.push(g);
-        let h = new GlyphButton("H", "H", keyboardLeft + buttonSize * 1, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
-        this.glyphs.push(h);
-        let i = new GlyphButton("I", "I", keyboardLeft + buttonSize * 2, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
-        this.glyphs.push(i);
-        
-        let j = new GlyphButton("J", "J", keyboardLeft + buttonSize * 5, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
-        this.glyphs.push(j);
-        let k = new GlyphButton("K", "K", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
-        this.glyphs.push(k);
-        let l = new GlyphButton("L", "L", keyboardLeft + buttonSize * 7, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
-        this.glyphs.push(l);
-        
-        //row 3
-        let m = new GlyphButton("M", "M", keyboardLeft + buttonSize * 0, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
-        this.glyphs.push(m);
-        let n = new GlyphButton("N", "N", keyboardLeft + buttonSize * 1, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
-        this.glyphs.push(n);
-        let o = new GlyphButton("O", "O", keyboardLeft + buttonSize * 2, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
-        this.glyphs.push(o);
-        
-        let p = new GlyphButton("P", "P", keyboardLeft + buttonSize * 3, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
-        this.glyphs.push(p);
-        let q = new GlyphButton("Q", "Q", keyboardLeft + buttonSize * 4, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
-        this.glyphs.push(q);
-        
-        let r = new GlyphButton("R", "R", keyboardLeft + buttonSize * 5, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
-        this.glyphs.push(r);
-        let s = new GlyphButton("S", "S", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
-        this.glyphs.push(s);
-        let t = new GlyphButton("T", "T", keyboardLeft + buttonSize * 7, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
-        this.glyphs.push(t);
-        
-        //row 4
-        let u = new GlyphButton("U", "U", keyboardLeft + buttonSize * 0, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
-        this.glyphs.push(u);
-        let v = new GlyphButton("V", "V", keyboardLeft + buttonSize * 1, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
-        this.glyphs.push(v);
-        let w = new GlyphButton("W", "W", keyboardLeft + buttonSize * 2, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
-        this.glyphs.push(w);
-        
-        let x = new GlyphButton("X", "X", keyboardLeft + buttonSize * 5, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
-        this.glyphs.push(x);
-        let y = new GlyphButton("Y", "Y", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
-        this.glyphs.push(y);
-        let z = new GlyphButton("Z", "Z", keyboardLeft + buttonSize * 7, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
-        this.glyphs.push(z);
-        
-        //row 5
-        let del = new GlyphButton("DELETE", null, keyboardLeft + buttonSize, keyboardTop + buttonSize * 4, buttonSize * 3, buttonSize)
-        this.glyphs.push(del);
-        let per = new GlyphButton(".", ".", keyboardLeft + buttonSize * 3, keyboardTop + buttonSize * 4, buttonSize, buttonSize)
-        this.glyphs.push(per);
-        let com = new GlyphButton(",", ",", keyboardLeft + buttonSize * 4, keyboardTop + buttonSize * 4, buttonSize, buttonSize)
-        this.glyphs.push(com);
-        let spc = new GlyphButton("SPACE", " ", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 4, buttonSize * 3, buttonSize)
-        this.glyphs.push(spc);
-        
-        //row 6
-        let done = new GlyphButton("DONE", "*", keyboardLeft + buttonSize * 3.5, keyboardTop + buttonSize * 5, buttonSize * 2, buttonSize)
-        this.glyphs.push(done);
-
-        a.leftGlyph = f;
-        a.aboveGlyph = del;
-        a.rightGlyph = b;
-        a.belowGlyph = g;
-
-        b.leftGlyph = a;
-        b.rightGlyph = c;
-        b.aboveGlyph = del;
-        b.belowGlyph = h;
-
-        c.leftGlyph = b;
-        c.rightGlyph = d;
-        c.aboveGlyph = del;
-        c.belowGlyph = i;
-        
-        d.leftGlyph = c;
-        d.rightGlyph = e;
-        d.aboveGlyph = spc;
-        d.belowGlyph = j;
-
-        e.leftGlyph = d;
-        e.rightGlyph = f;
-        e.aboveGlyph = spc;
-        e.belowGlyph = k;
-        
-        f.leftGlyph = e;
-        f.rightGlyph = a;
-        f.aboveGlyph = spc;
-        f.belowGlyph = l;
-        
-        g.leftGlyph = l;
-        g.rightGlyph = h;
-        g.aboveGlyph = a;
-        g.belowGlyph = m;
-        
-        h.leftGlyph = g;
-        h.rightGlyph = i;
-        h.aboveGlyph = b;
-        h.belowGlyph = n;
-       
-        i.leftGlyph = h;
-        i.rightGlyph = j;
-        i.aboveGlyph = c;
-        i.belowGlyph = o;
-
-        j.leftGlyph = i;
-        j.rightGlyph = k;
-        j.aboveGlyph = d;
-        j.belowGlyph = r;
-
-        k.leftGlyph = j;
-        k.rightGlyph = l;
-        k.aboveGlyph = e;
-        k.belowGlyph = s;
-
-        l.leftGlyph = k;
-        l.rightGlyph = g;
-        l.aboveGlyph = f;
-        l.belowGlyph = t;
-        
-        m.leftGlyph = t;
-        m.rightGlyph = n;
-        m.aboveGlyph = g;
-        m.belowGlyph = u;
-
-        n.leftGlyph = m;
-        n.rightGlyph = o;
-        n.aboveGlyph = h;
-        n.belowGlyph = v;
-
-        o.leftGlyph = n;
-        o.rightGlyph = p;
-        o.aboveGlyph = i;
-        o.belowGlyph = w;
-        
-        p.leftGlyph = o;
-        p.rightGlyph = q;
-        p.aboveGlyph = done;
-        p.belowGlyph = per;
-
-        q.leftGlyph = p;
-        q.rightGlyph = r;
-        q.aboveGlyph = done;
-        q.belowGlyph = com;
-        
-        r.leftGlyph = q;
-        r.rightGlyph = s;
-        r.aboveGlyph = j;
-        r.belowGlyph = x;
-
-        s.leftGlyph = r;
-        s.rightGlyph = t;
-        s.aboveGlyph = k;
-        s.belowGlyph = y;
-
-        t.leftGlyph = s;
-        t.rightGlyph = m;
-        t.aboveGlyph = l;
-        t.belowGlyph = z;
-       
-        u.leftGlyph = z;
-        u.rightGlyph = v;
-        u.aboveGlyph = m;
-        u.belowGlyph = del;
-
-        v.leftGlyph = u;
-        v.rightGlyph = w;
-        v.aboveGlyph = n;
-        v.belowGlyph = del;
-        
-        w.leftGlyph = v;
-        w.rightGlyph = x;
-        w.aboveGlyph = o;
-        w.belowGlyph = del;
-        
-        x.leftGlyph = w;
-        x.rightGlyph = y;
-        x.aboveGlyph = r;
-        x.belowGlyph = spc;
-
-        y.leftGlyph = x;
-        y.rightGlyph = z;
-        y.aboveGlyph = s;
-        y.belowGlyph = spc;
-
-        z.leftGlyph = y;
-        z.rightGlyph = u;
-        z.aboveGlyph = t;
-        z.belowGlyph = spc;
-        
-        del.leftGlyph = spc;
-        del.rightGlyph = per;
-        del.aboveGlyph = v;
-        del.belowGlyph = done;
-        
-        per.leftGlyph = del;
-        per.rightGlyph = com;
-        per.aboveGlyph = p;
-        per.belowGlyph = done;
-
-        com.leftGlyph = per;
-        com.rightGlyph = spc;
-        com.aboveGlyph = q;
-        com.belowGlyph = done;
-
-        spc.leftGlyph = com;
-        spc.rightGlyph = del;
-        spc.aboveGlyph = y;
-        spc.belowGlyph = done;
-        
-        done.leftGlyph = done;
-        done.rightGlyph = done;
-        done.aboveGlyph = per;
-        done.belowGlyph = p;
-
-        a.selected=true;
-        this.currentGlyph = a;
-
-    }
-
-
-    preDisplay(){
-        //TODO: Game selection music
-        game.playMusic(Music.CHARGE);
-        this.#initializeGlyphs();
-    }
-    lastRead = Date.now();
-    preRender(deltaT){
-        let keyBeep = false;
-        let keyBoop = false;
-        if(game && game.inputController){
-            if(Date.now()-this.lastRead>150){
-                let input = game.inputController.read();
-                if(input.x<0){
-                    keyBeep = true;
-                    this.currentGlyph.selected = false;
-                    this.currentGlyph = this.currentGlyph.leftGlyph;
-                    this.currentGlyph.selected = true;
-                    this.lastRead = Date.now();
-                } else if (input.x>0){
-                    keyBeep = true;
-                    this.currentGlyph.selected = false;
-                    this.currentGlyph = this.currentGlyph.rightGlyph;
-                    this.currentGlyph.selected = true;
-                    this.lastRead = Date.now();
-                }
-                if(input.y<0){
-                    keyBeep = true;
-                    this.currentGlyph.selected = false;
-                    this.currentGlyph = this.currentGlyph.aboveGlyph;
-                    this.currentGlyph.selected = true;
-                    this.lastRead = Date.now();
-                } else if (input.y>0){
-                    keyBeep = true;
-                    this.currentGlyph.selected = false;
-                    this.currentGlyph = this.currentGlyph.belowGlyph;
-                    this.currentGlyph.selected = true;
-                    this.lastRead = Date.now();
-                }
-                if(input.a==1){
-                    keyBoop = true;
-                    if(this.currentGlyph.value){
-                        if (this.currentGlyph.value=="*"){
-                            this.audioChannel.play(SoundEffects.KEY_BOOP, .2, false);
-                            this.slot.name = this.text=="" ? "HUGH" : this.text;
-                            this.slot.save();
-                            game.slot = this.slot;
-                            game.currentScene.transitionTo = new LevelSelectScreen(0);
-                            //start game
-                        }else{
-                            this.text = (this.text + this.currentGlyph.value).slice(0, 16)
-                        }
-                    }else {
-                        this.text = this.text.slice(0, -1);
+    move(deltaT){
+        if(this.state === State.IDLE){
+            this.state = State.ATTACKING;
+            this.room.objects.forEach((o)=>{
+                if((o.plane===Plane.PHYSICAL || (o.plane===Plane.ETHEREAL && o instanceof InvisibleObject)) && this.box.collidesWith(o.box) && o.hurt!=null && o !== this.parent){
+                    let rect = o.box.intersectRect(this.box);
+                    if(rect){
+                        o.hurt(10);
                     }
-                    this.lastRead = Date.now();
                 }
-                if(keyBoop){
-                    this.audioChannel.play(SoundEffects.KEY_BOOP, .2, false);
-                } else if (keyBeep){
-                    this.audioChannel.play(SoundEffects.KEY_BEEP, .2, false);
-                }
-            }
+            })
+            super.move();
+            this.playSound(0, SoundEffects.FIREBALL_EXPLODE, 1, false)
         }
-    } 
-    
-    textElement = null;
+        if(this.state !== State.DEAD && Date.now()-this._stateStart>400){
+            this.state = State.DEAD;
+            this.#lightEffect.state = State.DEAD;
+        }
+    }       
+
     render(deltaT, screen){ 
-        if (this.structureRendered == false){
-            //background
-            screen.drawRect(0,0,dimensions.width, dimensions.width,	"#06402B",SCREENBLACK,0, 15);
-        
-            let buttonSize = dimensions.width/10;
-            let keyboardLeft = buttonSize / 2 + buttonSize;
-            let keyboardTop = dimensions.width - (buttonSize * 6) - buttonSize/2 - 5;
-            
-        
-            screen.drawRect(keyboardLeft - buttonSize, keyboardTop - buttonSize, keyboardLeft + buttonSize * 7 + buttonSize * .5, buttonSize * 7, "#000","#FFF", 3, 5).attr({opacity:.5}); 
-            
-            
-            
-            let text = screen.text(dimensions.width/2,30, "NAME YOUR FILE")
-            text.attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "font-weight": "bold"});
-            
-            let left = 300;
-
-
-            text = screen.text(left+20, 92 + 64/2, "HUGH"); 
-            text.attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "font-weight": "bold","text-anchor": "start", "opacity":.5});
-            
-            this.defaultTextElement = text;
-
-
-            text = screen.text(left+20, 92 + 64/2, "0123456789ABCDEF"); 
-            text.attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "font-weight": "bold","text-anchor": "start"});
-            
-            this.textElement = text;
-
-            let charWidth = this.textElement.getBBox().width / 16;
-            let width = charWidth * 17 + charWidth/2;
-            
-            screen.drawRect(left, 92, width, 64, "#000","#fff", 3, 5).attr({opacity:.5}); 
-            this.textElement.toFront();
-            
-
-
-            
-            screen.drawRect(125, 60, 125, 125, "#864","#AAA", 3, 5) ; 
-            
-
-            this.sprite = new VC.Sprite(screen, Images.ADVENTURER, 800, 600, 100, 100, 125 + 12, 75);
-            this.sprite.setAnimation(Direction.SOUTH, State.WALKING)
- 
-
-            
-            
-
-            if(VC.Client.orientation != VC.Orientation.PORTRAIT){
-                text = screen.text(dimensions.width/2,dimensions.width-20, "ARROW KEYS TO SELECT, SPACE BAR TO CHOOSE")
-                text.attr({ "font-size": "24px", "font-family": "monospace", "fill": "#FFF"});
-            } 
-
-            this.structureRendered = true;
-
+        if(this.state === State.DEAD){
+            return;
         }
-
-        this.glyphs.forEach(g=>g.render(screen));
-        this.sprite.render(deltaT); 
-        this.textElement.attr({"text": this.text});
-        if(this.text==""){
-            this.defaultTextElement.attr({"opacity":.5});
-        }else{
-            this.defaultTextElement.attr({"opacity": 0})
+        if(!this.#sprite){
+            this.#sprite = new VC.Sprite(screen, Images.FIREBALL_EXPLOSION, 320, 64, 64, 64, this.box.x, this.box.y);
+            this.#sprite.setAnimation(0,0);
+            //this.#sprite.location.r = Math.round(Math.random() * 360);
+            //VC.VisualEffects.shake(screen,1, 200);
         }
-
+        this.#sprite.render(deltaT);
     }
 
-    postDisplay(){
-        this.audioChannels.forEach(ac=>ac.dispose());
-        this.audioChannels=[];
+    clear(){
+        super.clear();
+        if(this.#sprite){
+            this.#sprite.remove();
+            this.#sprite = null;
+        }
+    }
+    remove(){
+        super.remove();
+        this.clear();
     }
 }
 //Requires Music
@@ -7683,155 +5990,2299 @@ class Temple{
         })
     }
 }
-class ForestTemple extends Temple{
+class Torch extends GameObject{
+    sprite = null;
+    #particles=[];
+    #releaseSpark = false;
+    intensity = 1;
+    wall = Direction.NORTH;
+    nextFlicker = new Date(0);
+    constructor(room){
+        super(room)
+        this.box.width=0;
+        this.box.height=0;
+        this.plane = Plane.ETHEREAL;
+        this.layer = Layer.DEFAULT;
+        new TorchLightEffect(this);
+    }
+
+    //TODO: Move Particle Effects to their own class; part of Engine, maybe?
+    move(deltaT){
+        if(!this.nextFlicker || this.nextFlicker<Date.now()){
+            this.intensity = Math.random();
+            this.nextFlicker = Date.now() + Math.random() * 50 + 50;
+            if(this.sprite){
+                this.sprite.setFrame(0, Math.floor(this.intensity * 4) % 4, Math.floor(Math.random()*8) % 8)
+            }
+            
+            if(this.intensity > .75){
+                this.#releaseSpark = true
+            }
+        }
+
+    };
+    render(deltaT, screen){
+        this.box.render(screen, "#FFF");
+        if(this.sprite==null){
+            this.sprite = new VC.Sprite(screen, Images.TORCH, 512,256, 64, 64,this.box.x-32, this.box.y-32);
+            this.sprite.lastLocation.r = this.sprite.location.r = this.wall * 90;
+            screen.onClear(()=>{
+                 this.sprite = null;
+            });
+        }
+
+        this.sprite.render()
+        if(this.#releaseSpark){
+            let particle = screen.drawRect(this.box.center().x + Math.random() * 10 - 5, this.box.center().y + Math.random() * 10 - 5,2,2,"#fea","#000",0).attr("opacity",.75);
+            particle.kill = Date.now() + 1000 * Math.random() + 250;
+            this.#particles.push(particle);
+            this.#releaseSpark = false;
+        }
+        this.#particles.forEach((p)=>{
+            switch(this.wall) {
+                case Direction.NORTH:
+                    p.attr({y: p.attr("y")-deltaT/1000 * 50})
+                    break;
+                case Direction.EAST:
+                    p.attr({x: p.attr("x")+deltaT/1000 * 50})   
+                    break; 
+                case Direction.SOUTH:
+                    p.attr({y: p.attr("y")+deltaT/1000 * 50})
+                    break;
+                case Direction.WEST:
+                    p.attr({x: p.attr("x")-deltaT/1000 * 50})
+                    break;
+            }
+        });
+
+        remove(this.#particles, (p)=>{
+            if(p.kill<Date.now()){
+                p.remove();
+                return true;
+            }
+            return false;
+        })
+    };
+    clear(){
+        super.clear();
+        if(this.sprite) {
+            this.sprite.remove();
+            this.sprite = null;
+        }
+        if(this.#particles){
+            this.#particles.forEach((p)=>{p.remove();});
+            this.#particles = [];
+        }
+    }
+    remove(){
+        super.remove();
+        //this.clear();
+    }
+}
+
+class TitleScreen extends VC.Scene {
+    #prompt = null;
+    #message = null;
+    #torch1 = null;
+    #torch2 = null;
+    #volume1 = null;
+    #volume2 = null;
     
-    #palette = new Palette(
-        "#19351A",//clip color
-        "#442A01",//floor color
-        "#505347"//wall color
-    );
+    #kcode = "UUDDLRLR";
+    #seq = "";
+    #r = 1;
+    #l = {x:null, y:null};
+    #k = 0;
+    #exiting = false;
+    #rendered = false;
+    audioChannel = new VC.AudioChannel();
+    message = "LAVA POOLS!"
+    
     constructor(){
         super();
-    }
-
-    get name(){
-        return "Vaelmorra"
-    }
-    
-    get description(){
-        return "The Forest Temple"
-    }
-
-    //read-only properties
-    get music(){
-        return Music.FOREST;
-    }
-    
-    get palette(){
-        return this.#palette;
-    }
-
-    themeLevel(level){
-        super.themeLevel(level);
-        Temple.addTorches(level);
         
-        level.rooms.forEach((room, index) => this.themeRoom(room, index, level));
+        this.#torch1 = new Torch();
+        this.#torch1.box.y = 375;
+        this.#torch1.box.x = 100;
+        this.#torch1.wall = Direction.NORTH;
+        
+        this.#torch2 = new Torch();
+        this.#torch2.box.y = 375;
+        this.#torch2.box.x = 800;
+        this.#torch1.wall = Direction.NORTH;
+        
+    }
 
-        if (level.number % 5 === 0){
-            level.message = this.name;
+    preDisplay(){
+        
+    }
+    preRender(deltaT){
+        this.#torch1.move(deltaT);
+        this.#torch2.move(deltaT);
+        if (game && game.inputController){
+            let c = game.inputController.read();
+            if(this.#l.x !== c.x || this.#l.y !== c.y){
+                if(this.#r===1){
+                    if(c.y===-1 && c.x===0){
+                        this.#seq += "U";
+                    }
+                    if(c.y===1 && c.x===0){
+                        this.#seq += "D"
+                    }
+                    if(c.y===0 && c.x===-1){
+                        this.#seq += "L"
+                    }
+                    if(c.y===0 && c.x===1){
+                        this.#seq += "R"
+                    }
+                    this.#r = 0;
+                }
+                if(c.x === 0 && c.y === 0){
+                    this.#r=1;
+                }
+                
+                this.#l = c;
+            }
+            
+            if(this.#seq.indexOf(this.#kcode)>-1){//HACK, check suffix only
+                this.#k=1;
+            }
+            if(c.a===1 && !this.#exiting){
+                this.#exiting = true;
+                this.#prompt.animate({opacity:0},100, "elastic",()=>{
+                    game.playMusic(Music.START);
+                    this.#prompt.animate({opacity:1},100, "elastic",()=>{            
+                        this.#prompt.animate({opacity:0},100, "elastic",()=>{
+                            this.#prompt.animate({opacity:1},100, "elastic",()=>{
+                                this.#prompt.animate({opacity:0},100, "elastic",()=>{
+                                    this.#prompt.animate({opacity:1},100, "elastic",()=>{
+                                    });
+                                });
+                                //game.slot = Slot.load(0);
+                                //this.transitionTo = new NewGameScene(4);
+                                this.transitionTo = new SlotSelectScreen();
+                            });
+                        });
+                    });
+                });
+            }
+        }
+    }
+    render(deltaT, screen){
+        if(this.#rendered === false){
+            screen.drawRect(0,0,dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
+            screen.image(Images.LOGO, 150, 150, 600, 320);
+            this.#prompt = screen.text(dimensions.width/2, dimensions.width-300, "PRESS " + (VC.Client.orientation === VC.Orientation.PORTRAIT ? "FIRE" : "SPACE BAR") + " TO BEGIN").attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "middle", "font-weight": "bold"});  
+            this.#message = screen.text(dimensions.width/2, dimensions.width-380, this.message).attr({ "font-size": "36px", "font-family": "monospace", "fill": "#ffe355", "text-anchor": "middle", "font-weight": "bold", "font-style": 'italic'}).transform("r-2.5");  
+            
+            screen.text(dimensions.width/2, dimensions.width-220, "In Stereo").attr({ "font-size": "22px", "font-family": "monospace", "fill": "#DDD", "text-anchor": "middle", "font-weight": "bold"}); 
+            screen.text(dimensions.width/2, dimensions.width-190, "Where Available").attr({ "font-size": "22px", "font-family": "monospace", "fill": "#DDD", "text-anchor": "middle", "font-weight": "bold"});   
+            screen.text(dimensions.width/2, dimensions.width-133, VERSION).attr({ "font-size": "28px", "font-family": "monospace", "fill": "#888", "text-anchor": "middle", "font-weight": "bold"});  
+            this.#rendered = true
+            this.#volume1 = new VC.Sprite(screen, Images.VOLUME, 500, 25, 50, 25, dimensions.width/2 + 65, dimensions.width-232);
+            this.#volume1.setAnimation(0, 0);
+            this.#volume2 = new VC.Sprite(screen, Images.VOLUME, 500, 25, 50, 25, dimensions.width/2 - 115, dimensions.width-233);
+            this.#volume2.setAnimation(0, 0);
+            this.#volume2.location.r = this.#volume2.lastLocation.r = 180;
+        }
+
+        if (this.#volume1.animation.frame!==9){
+            this.#volume1.render(deltaT);
+        }
+        if (this.#volume2.animation.frame!==9){
+            this.#volume2.render(deltaT);
+        }
+
+        var time = Date.now() % 1000;
+        console.log(time)
+        let px = 0;
+        let y = 0;
+        if (time<500){
+            px = VC.Math.percentToRange(time/500, 37, 44);
+            y = VC.Math.percentToRange(time/500, 381, 384);
+        } else {
+            px = VC.Math.inversePercentToRange((time-500)/500, 37, 44);
+            y = VC.Math.inversePercentToRange((time-500)/500, 381, 384);    
+        }
+
+        this.#message.attr({"font-size": px + "px", "y": dimensions.width-y});
+
+
+        if(this.#torch1){
+            this.#torch1.render(deltaT, screen);
+        }
+        if(this.#torch2){
+            this.#torch2.render(deltaT, screen);
+        }
+        this.#prompt.attr({"text": "PRESS " + (VC.Client.orientation === VC.Orientation.PORTRAIT ? "FIRE" : "SPACE BAR") + " TO BEGIN"});
+    }
+    postDisplay(){
+        this.audioChannel.dispose();
+    }
+}
+
+class TNT extends GameObject{
+    sprite = null;
+    #shadow = null;
+    #forceRender = false;
+    constructor(room){
+        super(room);
+        this.box.width = 24;
+        this.box.height = 24;
+        this.layer = Layer.DEFAULT;
+        this.stop = false;
+        this._fuseStart = Date.now();
+        this.z = 100;
+        window.setTimeout(()=>{
+            this.attack()
+        },2000)
+
+        this.playSound(0, SoundEffects.FUSE, .6, false)
+    }
+
+    attack(){
+        if(this.room == null){
+            if(game && game.level && game.level.currentRoom){
+                this.room = game.level.currentRoom;
+            }else{
+                return;
+            }
+        }
+
+        if(this.state !== State.DEAD){       
+            if(this.sprite){
+                new Explosion(this.room, this.sprite.location.x + this.sprite.size.width/2, this.sprite.location.y + this.sprite.size.height/2)
+            } else {
+                new Explosion(this.room, this.box.center().x, this.box.center().y);
+            }
+        }
+    
+        window.setTimeout(()=>{
+            this.stopSound(0, SoundEffects.FUSE)
+        },200);
+
+        this.state = State.DEAD;
+    
+    }
+
+    hurt(){
+        this.attack();
+    }
+
+
+    move(deltaT){
+        if(this.state===State.DEAD){
+            return;
+        }
+        let speed = 0 
+        if(this.state !== State.IDLE){
+            this.#forceRender = true;
+            let releaseSpeed = 400;
+            let msPassed = new Date() - this._stateStart;
+            let factor = (1-(msPassed/2000));
+            speed = releaseSpeed * factor
+            //console.log(factor);    
+        }
+
+        let proposed = {
+            room: this.room,
+            x: this.box.x,
+            y: this.box.y
+        } 
+        switch(this.direction){
+            case Direction.NORTH:
+                proposed.y = this.box.y - speed * deltaT/1000;
+                break;
+            case Direction.EAST:
+                proposed.x = this.box.x + speed * deltaT/1000;
+                break;
+            case Direction.SOUTH: 
+                proposed.y = this.box.y + speed * deltaT/1000;
+                break;
+            case Direction.WEST:
+                proposed.x = this.box.x - speed * deltaT/1000;
+                break;
+        }
+
+        let constrained = this.room.constrain(this,
+            proposed.x,
+            proposed.y
+        )
+        if ((constrained.x !== proposed.x || constrained.y !== proposed.y) && proposed.room === this.room)
+        {
+            this.state = State.IDLE;
+        }
+        this.box.x = constrained.x;
+        this.box.y = constrained.y;
+
+        this.z = 0;
+        if(this.state!==State.IDLE || this.forceRender){
+            let msPassed = new Date() - this._stateStart;
+            let perc = 1-(msPassed/2000);
+            let factor = Math.PI - ((Math.PI-1)*(perc));
+            this.z = VC.Math.constrain(0, 50 * Math.sin(factor*1.5), 50);
+        }
+        if(this.z==0 && this.plane != Plane.ETHEREAL){
+            this.plane = Plane.ETHEREAL;
+            this.layer = Layer.SHADOW;
+        }
+
+        super.move();
+    }    
+
+    render(deltaT, screen){
+        if(this.state === State.DEAD || this.room !== game.level.currentRoom){
+            return;
+        }
+        
+        if(!this.sprite){
+            this.sprite = new VC.Sprite(screen, Images.TNT, 384, 24, 24, 24, this.box.center().x-12, this.box.center().y-12);
+            this.sprite.setAnimation(0,0);
+        }
+           
+        let x = this.box.center().x - 4;
+        let y = this.box.center().y + 5;
+        if(!this.#shadow){
+            this.#shadow = screen.drawEllipse(x, y, 8, 2, 0, 0, "#111","#111",".5");
+            this.#shadow.transform("r0,0,45");// + x +"," + y +  ",1") 
+            this.#shadow.attr({"opacity": .5, "r":45});
+        }
+        this.#shadow.animate({"cx":x, "cy":y}, deltaT, 'linear');
+        
+
+
+        if(DEBUG){
+            this.box.render(screen, "#800");
+        }
+
+        this.sprite.location.x = this.box.x;
+        this.sprite.location.y = this.box.y - this.z;
+
+        this.sprite.setFrame(0,0,Math.round(VC.Math.percentToRange((Date.now()-this._fuseStart)/2000,0,15)))
+        this.sprite.render(deltaT); 
+    }
+
+
+    clear(){
+        super.clear();
+        this.box.remove();
+        if(this.sprite){
+            this.sprite.remove();
+            this.sprite = null;
+        }
+        if(this.#shadow){
+            this.#shadow.remove();
+            this.#shadow = null;
         }
     }
     
-    themeRoom(room, index, level){
-        super.themeRoom(room, index);
-        if (index !== 0 && !room.exit && level && level.number % 5 != 4 && !room.secret){
+    remove(){
+        super.remove();
+        this.clear();
+    }
+   
+}
+
+class TorchLightEffect extends GameObject{
+    #torch = null;
+    #element = null;
+    #offsetX = 0;
+    #offsetY = 0;
+    constructor(torch){
+        super(torch.room)
+        this.#torch = torch;
+        this.box = torch.box;   
+        this.plane = Plane.ETHEREAL;
+        this.layer = Layer.EFFECT;
+    }
+    move(deltaT){
+        this.#offsetX = Math.random() * 7 - 3.5;
+        this.#offsetY = Math.random() * 7 - 3.5;
+    };
+    render(deltaT, screen){
+        if(this.#element==null){
+            this.#element = screen.drawEllipse(this.box.center().x, this.box.center().y, this.#torch.intensity * 10 + 140, this.#torch.intensity * 10 + 140, 0, 0, "#fea","#000",0)
+            this.#element.attr({"fill":"#fea","opacity": .15});
+            screen.onClear(()=>{this.#element = null});
+        }
+        if (this.#torch){
+            this.#element.attr({
+                "rx": this.#torch.intensity * 10 + 140,
+                "ry": this.#torch.intensity * 10 + 140,
+                "opacity": this.#torch.intensity * .0125 + .025,
+                //"clip-rect": "" + this.box.center().x + "," + this.box.center().y + "," + 140 + "," + 140 
+            });
+        }
+
+        this.#element.transform("t" + this.#offsetX + "," + this.#offsetY); 
+        this.#element.toFront();    
+
+    };
+    clear(){
+        if(this.#element){
+            this.#element.remove();
+        }
+        this.#element = null;
+        this.box.remove();
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+}
+class SpikeTrap extends GameObject{
+    #sprite1 = null;
+    #sprite2 = null;
+    constructor(door, offsetT){
+        super(door.room);
+        this.door = door;
+        this.layer = Layer.SHADOW;
+        this.plane = Plane.ETHEREAL;
+        this.state = State.IDLE;    
+        this._stateStart += offsetT % 3000;
+        this.immovable = true;
+
+        switch (this.door.wall){
+            case Direction.NORTH:
+                this.box = new VC.Box(
+                    this.room.box.x + this.room.box.width/2 + this.door.offset - 62,
+                    this.room.box.y,
+                    62 * 2,
+                    58
+                );
+                break;
+            case Direction.EAST:
+                this.box = new VC.Box(
+                    this.room.box.x + this.room.box.width - 62 - 5,
+                    this.room.box.y + this.room.box.height / 2 + this.door.offset - 50,
+                    62,
+                    58 * 2
+                );
+                break;
+            case Direction.SOUTH:
+                this.box = new VC.Box(
+                    this.room.box.x + this.room.box.width/2 - this.door.offset - 62,
+                    this.room.box.y + this.room.box.height - 55,
+                    62 * 2,
+                    58
+                );
+                break;
+            case Direction.WEST:
+                this.box = new VC.Box(
+                    this.room.box.x + 5,
+                    (this.room.box.y + this.room.box.height / 2 - this.door.offset) - 50,
+                    62,
+                    58 * 2
+                );
+                break;   
+        }
+    }
+    attack(){
+        
+        this.state = State.ATTACKING;
+        
+        this.playSound(0, SoundEffects.FLOOR_SPIKES, .25, false);
+
+        let attackBox = this.box;
+        this.room.objects.forEach((o)=>{
+            if(o!=this && o.plane===Plane.PHYSICAL && attackBox.collidesWith(o.box) && o.hurt!=null && (o.z==null || o.z<=5)){
+                let rect = o.box.intersectRect(attackBox);
+                if(rect){
+                    o.hurt(5, Direction.NORTH)
+                    let sb = new Starburst(this.room);
+                    sb.box = rect
+                }
+            }
+        })
+    }
+    move(deltaT){
+        
+        super.move(deltaT);
+        if(this.state === State.IDLE && Date.now()-this._stateStart > 3000){
+            //WARN
+            this.state = State.WALKING;
+        }else if(this.state === State.WALKING && Date.now()-this._stateStart > 1000){
+            //ATTACK!
+           this.attack();
+
+        } else if (this.state === State.ATTACKING && Date.now()-this._stateStart>800) {
+            this.state = State.IDLE;
+        }
             
-            var enemyRange = level.number + 1 ;
-            if (enemyRange > 3){
-                enemyRange = 3;
+    }
+
+    render (deltaT, screen){
+        
+        if(!this.#sprite1){
+            this.#sprite1 = new VC.Sprite(screen,Images.FLOOR_SPIKES,496, 150, 62, 50,this.box.x, this.box.y);
+            if (this.door.wall == Direction.NORTH || this.door.wall == Direction.SOUTH){
+                this.#sprite2 = new VC.Sprite(screen,Images.FLOOR_SPIKES,496, 150, 62, 50,this.box.x + 62, this.box.y);
+            } else {
+                this.#sprite2 = new VC.Sprite(screen,Images.FLOOR_SPIKES,496, 150, 62, 50,this.box.x, this.box.y + 49);
+            }
+            screen.onClear(()=>{
+                this.#sprite1 = null;
+                this.#sprite2 = null;
+            })
+        }
+
+        if(this.state === State.IDLE){
+            //WARN
+            this.#sprite1.setFrame(0, State.IDLE, 0);
+            this.#sprite2.setFrame(0, State.IDLE, 0);
+        }else if(this.state === State.WALKING){
+            //ATTACK!
+            this.#sprite1.setFrame(0, State.WALKING, 0);
+            this.#sprite2.setFrame(0, State.WALKING, 0);
+        } else if (this.state === State.ATTACKING) {
+            let frame = VC.Math.constrain(0, Math.floor((Date.now()-this._stateStart)/100), 8);
+            this.#sprite1.setFrame(0, State.ATTACKING, frame);
+            this.#sprite2.setFrame(0, State.ATTACKING, frame);
+        }
+
+        this.#sprite1.render();
+        this.#sprite2.render();
+        if(DEBUG){
+            this.box.render(screen, "#FFF");
+        }
+    }
+
+    clear(){
+        super.clear();
+        if(this.#sprite1){
+            this.#sprite1.remove();
+            this.#sprite1 = null;
+        }
+        if(this.#sprite2){
+            this.#sprite2.remove();
+            this.#sprite2 = null;
+        }
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+}
+
+
+class AutoController extends Controller {
+
+    nextRandomization = Date.now();
+    reverseInput = 0; 
+
+    constructor(){
+        super()
+        this.randomize();
+    }
+
+    randomize(){
+        this.up = Math.round(Math.random());
+        this.down = Math.round(Math.random());
+        this.left = Math.round(Math.random());
+        this.right = Math.round(Math.random());
+        let time = Math.round(Math.random()*500)+250;
+        this.nextRandomization = Date.now() + time;
+        this.nextDirection = Date.now();
+        this.nextRetarget = Date.now();
+    }
+    
+    read(forObject){
+        this.attack = 0;
+        let opposingTeam = Team.getOpposingTeam(forObject.team);
+        forObject.getObjectsInRangeOfAttack().forEach((o)=>{
+            if(o.team === opposingTeam && !o.hidden){
+                this.attack = 1; 
+            }
+        });
+
+        //if(forObject.room === game.level.currentRoom) navigationBox.render(game.screen, "#88F");
+
+        if (this.attack === 0){
+            let directed = false;
+            //let target = null;
+            let minDist = null;
+            if(this.target==null || this.nextRetarget<Date.now()){     
+                let viewable = forObject.getObjectsInView();
+                
+                if(DEBUG && this.target){
+                    this.target.remove();
+                }
+
+                for(let i=0; i<viewable.length; i++){
+                    let o = viewable[i];
+                    if(o.team === opposingTeam){
+                        let dist = VC.Trig.distance(forObject.box.center().x, forObject.box.center().y, o.box.center().x, o.box.center().y)
+                        if(minDist!=null && dist>minDist) {
+                            continue;
+                        }
+                        minDist = dist;
+
+                        this.target = o.box.center();
+                    }
+                
+                }
+                
+                if(DEBUG && this.target){
+                    this.target.render(game.screen, "#F00");
+                }
+                if(this.target){
+                    this.nextRetarget = Date.now()+750;
+                }
             }
 
-            let enemies = VC.Math.random(room.spawnDensity-1, room.spawnDensity + 1)
-            for(let i=0; i<enemies; i++){   
-                switch(VC.Math.random(0,enemyRange)){
-                    case 0:
-                        if(room.spawn(new CaveSpider(room, new AutoController()))){
-                            level.statistics.caveSpidersSpawned++;
-                            level.statistics.enemiesSpawned++;
-                        }
+            if (this.target!=null &&  this.nextDirection < Date.now()){
+                let angle = VC.Trig.pointToAngle(this.target.y - forObject.box.center().y, this.target.x - forObject.box.center().x)
+                let deg = VC.Trig.radiansToDegrees(angle);
+                
+                if (deg>=22.5 && deg<67.5){
+                    this.right = 1;
+                    this.down = 1;
+                    this.left = 0;
+                    this.up = 0;
+                }else if (deg>=67.5 && deg<112.5){
+                    this.right = 0;
+                    this.down = 1;
+                    this.left = 0;
+                    this.up = 0;
+                }else if (deg>=112.5 && deg<157.5){
+                    this.right = 0;
+                    this.down = 1;
+                    this.left = 1;
+                    this.up = 0;
+                } else if (deg>=157.5 && deg<202.5){
+                    this.right = 0;
+                    this.down = 0;
+                    this.left = 1;
+                    this.up = 0;
+                } else if (deg>=202.5 && deg<247.5){
+                    this.right = 0;
+                    this.down = 0;
+                    this.left = 1;
+                    this.up = 1;
+                } else if (deg>=247.5 && deg<292.5){
+                    this.right = 0;
+                    this.down = 0;
+                    this.left = 0;
+                    this.up = 1;
+                } else if (deg>=292.5 && deg<337.5 || deg<0){   
+                    this.right = 1;
+                    this.down = 0;
+                    this.left = 0;
+                    this.up = 1;
+                } else {
+                    this.right = 1;
+                    this.down = 0;
+                    this.left = 0;
+                    this.up = 0;  
+                }
+                
+                directed = true;
+
+                this.nextDirection = Date.now() + 375;
+            }
+
+            if(directed && !(forObject instanceof Bat)){
+                let nvBoxScale=1.25;
+
+                let navigationBox = new VC.Box(
+                    forObject.box.center().x - (forObject.box.width * nvBoxScale / 2),
+                    forObject.box.center().y - (forObject.box.height * nvBoxScale / 2),
+                    forObject.box.width * nvBoxScale,
+                    forObject.box.height * nvBoxScale
+                );
+                switch(forObject.direction){
+                    case Direction.NORTH:
+                        navigationBox.y -= navigationBox.height/2;
                         break;
-                    case 1:
-                        if(room.spawn(new Snake(room, new AutoController()))){
-                            level.statistics.snakesSpawned++;
-                            level.statistics.enemiesSpawned++;
-                        }
+                    case Direction.EAST:
+                        navigationBox.x += navigationBox.width/2;
                         break;
-                    case 2:
-                        for(let j = 0; j<VC.Math.random(1,level.number); j++){
-                            if(room.spawn(new Rat(room, new AutoController()))){
-                                level.statistics.ratsSpawned++;
-                                level.statistics.enemiesSpawned++;
+                    case Direction.SOUTH:
+                        navigationBox.y += navigationBox.height/2;
+                        break;
+                    case Direction.WEST:
+                        navigationBox.x -= navigationBox.width/2;
+                        break;
+                }
+
+                let correctedCourse = false
+
+                forObject.getObjectsInView().forEach((o)=>{
+                    if(o!=forObject && navigationBox.collidesWith(o.box)){
+                        if(o.plane === Plane.PHYSICAL && o.team!=opposingTeam){
+                            correctedCourse = true;
+                            if(this.up && o.box.center().y < navigationBox.center().y){
+                                if(this.target.x<o.box.center().x){
+                                    this.left = 1;
+                                } else {
+                                    this.right = 1;
+                                }
+                                this.up = 1;
+                            } else if (this.down && o.box.center().y > navigationBox.center().y){
+                                if(this.target.x<o.box.center().x){
+                                    this.left = 1;
+                                } else {
+                                    this.right = 1;
+                                }
+                                this.down = 1;
+                            } else if(this.left && o.box.center().x < navigationBox.center().x){
+                                if(this.target.y<o.box.center().y){
+                                    this.up = 1;
+                                } else {
+                                    this.down = 1;
+                                }
+                                this.left = 1;
+                            } else if(this.right && o.box.center().x > navigationBox.center().x){
+                                if(this.target.y<o.box.center().y){
+                                    this.up = 1;
+                                } else {
+                                    this.down = 1;
+                                }
+                                this.right = 1;
                             }
                         }
-                        break;                    
-                    case 3: 
-                        if(room.spawn(new SwordSkeleton(room, new AutoController()))){
-                            level.statistics.swordSkeletonsSpawned++;
-                            level.statistics.enemiesSpawned++;
+                    }
+                });
+               
+                if (!correctedCourse){
+                    if(!Room.contains(forObject.room, navigationBox)){
+                        if(this.up){
+                            if(this.target.x<forObject.box.center().x){
+                                this.left = 1;
+                            } else {
+                                this.right = 1;
+                            }
+                            this.up = 1;
+                        } else if (this.down){
+                            if(this.target.x<forObject.box.center().x){
+                                this.left = 1;
+                            } else {
+                                this.right = 1;
+                            }
+                            this.down = 1;
+                        } else if(this.left){
+                            if(this.target.y<forObject.box.center().y){
+                                this.up = 1;
+                            } else {
+                                this.down = 1;
+                            }
+                            this.left = 1;
+                        } else if(this.right){
+                            if(this.target.y<forObject.box.center().y){
+                                this.up = 1;
+                            } else {
+                                this.down = 1;
+                            }
+                            this.right = 1;
                         }
+                        correctedCourse = true;
+                    }
+                }
+    
+            }
+
+            if(!directed && this.nextDirection<Date.now()){
+                if(this.nextRandomization<Date.now()){
+                    this.randomize();
+                }    
+            }
+        }
+
+        return {
+            x: (this.left * -1 + this.right) * (this.reverseInput ? -1 : 1),
+            y: (this.up * -1 + this.down) * (this.reverseInput ? -1 : 1),
+            a: this.attack
+        }
+    }
+}
+
+const DEBUG = false;
+const SCREENBLACK = "#080808";
+
+const UP_ARROW = 38;
+const RIGHT_ARROW = 39;
+const DOWN_ARROW = 40;
+const LEFT_ARROW = 37;
+
+let ORIENTATION = VC.Orientation.UNSET;
+
+let constants =  {
+    brickHeight: 16,
+    brickWidth: 50,
+    lineThickness: 3,
+    doorWidth: 110,
+    doorFrameThickness: 10,
+    doorHeight: 70,
+    thresholdDepth: 20,
+    roomMinWidthInBricks: 5,
+    roomMinHeightInBricks: 5,
+    roomMaxWidthInBricks: 13,
+    roomMaxHeightInBricks: 13, 
+    spriteFamesPerSecond: 10,
+    controllerRadius: 210,
+    controllerCrossThickness: 80,
+    maxHeartContainers: 25,
+    tileWidth: (50 * 1.2)
+};
+
+constants.minArea = constants.roomMinHeightInBricks * constants.roomMinWidthInBricks * constants.brickWidth * constants.brickWidth;
+constants.maxArea = constants.roomMaxHeightInBricks * constants.roomMaxHeightInBricks * constants.brickWidth * constants.brickWidth;
+constants.thresholds = Math.round((constants.maxArea-constants.minArea) / 4);
+
+
+function changeOrientation(){
+    if(VC.Client.orientation === VC.Orientation.PORTRAIT){
+        document.getElementById("controller").style.display = "block";    
+        game.screen.setViewBox(0, -dimensions.infoHeight, dimensions.width, dimensions.height, true);    
+        game.infoScreen.setViewBox(0, 0, dimensions.width, dimensions.height, true); 
+        return;
+    }
+    document.getElementById("controller").style.display = "none";
+    game.screen.setViewBox(0, -dimensions.infoHeight, dimensions.width, dimensions.width + dimensions.infoHeight, true); 
+    game.infoScreen.setViewBox(0, 0, dimensions.width, dimensions.width + dimensions.infoHeight, true);    
+}
+
+VC.Client.OnOrientationChange(changeOrientation);
+
+function right(str,chr)
+{
+    return str.substr(str.length-chr,str.length)
+}
+
+const dimensions = {
+    width: 910, 
+    height: 1618,
+    infoHeight: 88,
+};
+
+const palette = {
+    doorFrame: "#928e85",
+    doorDefaultColor: "#4d3737",
+    doorBarColor: "#999"
+};
+
+function randomEntry(array){
+    if(array.length === 0){
+        return null;
+    }
+    let index =  Math.floor((array.length-1) * Math.random());
+    return array[index]; 
+}
+
+function filter(array, fun){
+    let array2 = [];
+    array.forEach((item)=>{
+        if(fun(item)){
+            array2.push(item);
+        }
+    })
+    return array2;
+}
+
+function remove(array, fun){
+    let itemsToDelete = filter(array,fun);
+    itemsToDelete.forEach((item)=>{
+        array.splice(array.indexOf(item),1);
+    });
+}
+
+function any(array, fun){
+    if(!array){
+        return false;
+    }
+    for(let i=0;i<array.length; i++){
+        if(fun(array[i], i)){
+            return true;
+        }
+    }
+    return false;
+}
+
+function all(array, fun){
+    if(!array){
+        return false;
+    }
+    for(let i=0;i<array.length; i++){
+        if(!fun(array[i], i)){
+            return false;
+        }
+    }
+    return true;
+}
+
+function minValue(array, fun){
+    if(!array){
+        return null
+    }
+    let m = null;
+    let val = null;
+    for(let i=0;i<array.length; i++){
+        let calc = fun(array[i]);
+        if(m == null || calc < m){
+            m = calc;
+            val = array[i];
+        }
+    }
+    return val;
+}
+
+function maxValue(array, fun){
+    if(!array){
+        return null
+    }
+    let m = null;
+    let val = null;
+    for(let i=0;i<array.length; i++){
+        let calc = fun(array[i]);
+        if(m == null || calc > m){
+            m = calc;
+            val = array[i];
+        }
+    }
+    return val;
+}
+
+function waitForAttack(callback){
+    let input = game.player.controller.read();
+    if(input.a){
+        callback();
+        return;
+    }
+    setTimeout(()=>{waitForAttack(callback)},50);
+}
+
+function regionColor(region){
+    switch (region){
+        case Treasure.SILVERKEY:
+            return "#606060";
+        case Treasure.GOLDKEY:
+            return "#997700";
+        case Treasure.REDKEY:
+            return "#600000";
+        case Treasure.GREENKEY: 
+            return "#006000";
+        case Treasure.BLUEKEY: 
+            return "#000070";
+    }
+    return "#864";
+}
+
+function drawMap(){
+    let screen = game.screen;
+    let level = game.level;
+    let roomSize=10;
+    let roomMargin=1;
+    let extents = level.extents();
+    level.rooms.forEach((r)=>{
+        let extentRoom = (extents.indexOf(r) > -1)
+        let centerX = dimensions.width/2 + r.x * (roomSize + roomMargin * 2);
+        let centerY = dimensions.width/2 + r.y * (roomSize + roomMargin * 2);
+        screen.drawRect(centerX-roomSize/2,centerY-roomSize/2, roomSize, roomSize, r.x===0 && r.y===0 ? "#00FF88" : regionColor(r.region), extentRoom ? "#fff": "#000",1);
+        r.doors.forEach((d)=>{
+            switch(d.wall){
+                case Direction.NORTH:
+                    screen.drawRect(centerX-2, centerY - roomSize/2 - roomMargin, 4, roomMargin, "#FFF","#000", 0);
+                    break;
+                
+                case Direction.EAST:
+                    screen.drawRect(centerX + roomSize/2, centerY - 2, roomMargin, 4, "#FFF","#000", 0);
+                    break;
+                case Direction.SOUTH:
+                    screen.drawRect(centerX-2, centerY + roomSize/2, 4, roomMargin, "#FFF","#000", 0);
+                    break;
+                case Direction.WEST:
+                    screen.drawRect(centerX- roomSize/2 - roomMargin, centerY - 2, roomMargin, 4, "#FFF","#000", 0);
+                    break;
+            }
+        })
+    });
+}
+
+function pause(){
+    if(game && game.level && game.state === VC.GameState.RUNNING){
+        game.pause();
+        let text = game.screen.text(dimensions.width/2, dimensions.infoHeight * 5,"- PAUSED -")
+        text.attr({ "font-size": "64px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "center"});
+        //Howler.mute(true);
+        waitForAttack(()=>{
+            game.play();
+            //Howler.mute(false);
+            text.remove();
+        });
+    }
+}
+
+class Adventurer extends Character{
+    
+    sprite = null;//HACK: Made public for exit steps
+    attackBegin = null;
+    #whip = {
+        thickness: 5,
+        length: 175, 
+        box: new VC.Box(0,0,0,0)
+    }
+
+    constructor(room,controller){
+        super(room,controller);
+        this.box.x = Math.round(dimensions.width / 2)-25;
+        this.box.y = Math.round(dimensions.width / 2)-25;
+        this.box.width = 50;
+        this.box.height = 50;
+        
+        this.direction = Direction.SOUTH; //init facing the player
+        this.team = Team.HEROIC;
+        this.speed = 150; //in px/sec
+        this.damage = 10;
+        this.health = 30;
+        this.tnt = 5;
+        this.maxHealth = 30;
+        this._attackDuration = 250;
+        this._attackCooldown = 750;
+        this.hidden = false;
+        this.hiddenUntil = Date.now();
+    }
+    
+    move(deltaT){
+        if(this.hidden && this.hiddenUntil<Date.now()){
+            this.hidden = false;
+        }
+        if(this.state !== State.DYING && this.state !== State.DEAD && game.currentScene instanceof Level ){
+            if(this.attackBegin != null &&  this.controller.read().a === 0){
+                if(this.state === State.THROWING){
+                    this.#tntAttack();  
+                } else {
+                    this.#whipAttack();
+                }
+                this.attackBegin = null
+            }
+        }
+        let state1 = this.state;
+        super.move(deltaT);
+        if(this.state!==state1){
+            if(this.state===State.WALKING){
+                this.playSound(0, SoundEffects.FOOTSTEPS, .2, true, false);
+            }else{
+                this.stopSound(0, SoundEffects.FOOTSTEPS);
+            }
+        }
+    }
+
+    render(deltaT, screen){
+        let framestart = Date.now()
+        if(!this.sprite){
+            this.sprite = new VC.Sprite(screen, Images.ADVENTURER, 800, 600, 100, 100, 0, 0);
+        }
+        if(DEBUG){
+            this.box.render(screen, "#FF0");
+        }
+        
+        //render whip
+        if(this.state === State.ATTACKING && this.attackBegin==null){
+            if(!this.#whip.element && framestart - this.sprite.animation.startTime > 100){
+                switch(this.direction){
+                    case Direction.NORTH:
+                        this.#whip.element = screen.drawRect(Math.round(this.#whip.box.x + this.#whip.box.width/2)-2, this.#whip.box.y, 3, this.#whip.box.height, "#624a2e","#000", 2 );
+                        break;
+                    case Direction.EAST:
+                        this.#whip.element = screen.drawRect(this.#whip.box.x + 10,  Math.round(this.#whip.box.y + this.#whip.box.height/2)-2 +1, Math.abs(this.#whip.box.width-10), 3, "#624a2e","#000", 2);
+                        this.#whip.shadow = screen.drawRect(this.#whip.box.x + 24.5, this.#whip.box.y+46.5, Math.abs(this.#whip.box.width-24), 4, "#000","#000",0).attr({"opacity":.5});
+                        break;
+                    case Direction.SOUTH: 
+                        this.#whip.element = screen.drawRect(Math.round(this.#whip.box.x + this.#whip.box.width/2)-2, this.#whip.box.y, 3, this.#whip.box.height, "#624a2e","#000", 2);
+                        break;
+                    case Direction.WEST:
+                        this.#whip.element = screen.drawRect(this.#whip.box.x,  Math.round(this.#whip.box.y + this.#whip.box.height/2)-2, Math.abs(this.#whip.box.width-10), 3, "#624a2e","#000", 2);
+                        this.#whip.shadow = screen.drawRect(this.#whip.box.x, this.#whip.box.y+50.75, Math.abs(this.#whip.box.width-22), 4, "#000","#000",0).attr({"opacity":.5});
+                        break;
+                    }
+            }
+            if(this.#whip.shadow) this.#whip.shadow.toFront();
+            if(this.#whip.element) this.#whip.element.toFront();
+
+        } else {
+            if(this.#whip.element) this.#whip.element.remove();
+            this.#whip.element = null;
+            if(this.#whip.shadow) this.#whip.shadow.remove();
+            this.#whip.shadow = null;
+        }
+
+        //render player sprite
+        if(this.state === State.DEAD){
+            this.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
+            
+            game.level.statistics.roomsVisited = filter(game.level.rooms,(r)=>{return r.visited}).length
+            game.level.statistics.roomsSpawned = game.level.rooms.length
+            game.statistics.add(game.level.statistics);
+            game.slot.statistics.add(game.level.statistics);   
+            game.slot.save();
+            game.statistics.levelNumber = game.level.number; 
+            game.currentScene.transitionTo = new GameOverScreen(game.statistics, game.level.world);
+
+        } else if (this.state === State.THROWING){
+            this.sprite.setFrame(this.direction, State.THROWING, 0)
+        } else {
+            this.sprite.setAnimation(this.direction, this.state);
+        }
+        this.sprite.location.x = (this.box.x - 25) ;
+        this.sprite.location.y = (this.box.y - 50) ;
+        this.sprite.render(deltaT);
+    }
+
+    clear(){
+        super.clear();
+        if(this.sprite){
+            //this.sprite.remove();
+            //this.sprite = null;
+        }
+        if(DEBUG){
+            this.box.remove();
+        }
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+
+    attack(){
+        if(this.state !== State.ATTACKING && this.state !== State.THROWING && this.attackBegin == null){
+            this.attackBegin = new Date();
+        }
+
+        if(this.tntCount>0 && this.state !== State.THROWING && new Date() - this.attackBegin >= 400){
+            this.state = State.THROWING;
+            this.tnt = new TNT(null);
+            this.tnt.box.x = this.box.center().x - this.tnt.box.width/2;
+            this.tnt.box.y = this.box.center().y - this.tnt.box.height/2;
+            this.tntCount--;   
+        }
+    }
+
+    #whipAttack(){
+
+        /*
+        let deg = Direction.toDegress(this.direction);//VC.Math.random(0,360);
+        let rads = VC.Trig.degreesToRadians(deg);
+        let distance = 75;
+        let x = this.box.center().x + distance * Math.cos(rads);
+        let y = this.box.center().y + distance * Math.sin(rads);
+        new Fireball(this.room, x,y,deg);
+        return;
+        */
+        let targets = this.getObjectsInRangeOfAttack(); 
+        if(this.state !== State.ATTACKING && this.canAttack){
+            this.state = State.ATTACKING;
+            
+            let url = "";
+            switch(Math.round((Math.random()*2) % 3)){
+                case 0:
+                    url=SoundEffects.WHIP1;
+                    break;
+                case 1:
+                    url=SoundEffects.WHIP2;
+                    break;
+                case 2:
+                    url=SoundEffects.WHIP3;
+                    break;
+            }
+            
+            this.playSound(1, url, .9, false, false);
+
+            let targets = this.getObjectsInRangeOfAttack(); 
+            if(targets.length>0){
+                let collidingWith = targets[0];
+                let sb = new Starburst(this.room);
+
+                let collisionBox = collidingWith.box;
+                if(collidingWith.weakSpot){
+                    if(this.#whip.box.collidesWith(collidingWith.weakSpot)){
+                        collidingWith.hurt(this.damage, this.direction);
+                        collisionBox = collidingWith.weakSpot;
+                    }
+                }else if(collidingWith.hurt){
+                    collidingWith.hurt(this.damage, this.direction);
+                }
+                if(game && game.level && game.level.statistics) {
+                    game.currentScene.statistics.damageDealt += this.damage;
+                }
+                switch(this.direction){
+                    case Direction.NORTH:
+                        this.#whip.box.reset (
+                            Math.round(this.box.x + this.box.width / 2 - this.#whip.thickness / 2),
+                            collisionBox.y + collisionBox.height,
+                            this.#whip.thickness,
+                            Math.abs(this.box.y - (collisionBox.y + collisionBox.height))
+                        )
+                        
+                        sb.box.x = this.#whip.box.x - sb.box.width / 2;
+                        sb.box.y = this.#whip.box.y - sb.box.height / 2;
+
+                        break;
+                    case Direction.EAST:
+                        this.#whip.box.reset (
+                            this.box.x + this.box.width,
+                            Math.round(this.box.y - 25 + this.box.height/2 - this.#whip.thickness/2),
+                            Math.abs(collisionBox.x - (this.box.x + this.box.width)),
+                            this.#whip.thickness
+                        )
+                        sb.box.x = this.#whip.box.x + this.#whip.box.width  - sb.box.width / 2;
+                        sb.box.y = this.#whip.box.y - sb.box.height / 2;
+
+                        break;
+                    case Direction.SOUTH:
+                        this.#whip.box.reset(
+                            Math.round(this.box.x + this.box.width/2 - this.#whip.thickness/2),
+                            this.box.y + this.box.height,
+                            this.#whip.thickness,
+                            Math.abs(collisionBox.y - (this.box.y + this.box.height))
+                        )
+                        
+                        sb.box.x = this.#whip.box.x - sb.box.width / 2;
+                        sb.box.y = this.#whip.box.y + this.#whip.box.height - sb.box.height / 2;
+                        break;
+                    case Direction.WEST:
+                        this.#whip.box.reset(
+                            collisionBox.x + collisionBox.width,
+                            Math.round(this.box.y - 29 + this.box.height/2 - this.#whip.thickness/2),
+                            Math.abs(this.box.x - (collisionBox.x + collisionBox.width)),
+                            this.#whip.thickness  
+                        )
+                        sb.box.x = this.#whip.box.x - sb.box.width / 2;
+                        sb.box.y = this.#whip.box.y - sb.box.height / 2;
+
                         break;
                 }
             }
-            
-        }
-
-        //add vines
-        let vines = VC.Math.random(room.spawnDensity * 3, room.spawnDensity * 5);
-        for(let v = 0; v<vines; v++){
-            new Vine(room);
         }
     }
-}
-class Palette {
-    #clipColor = "#F0F";
-    #wallColor = "#F0F";
-    #floorColor = "#F0F";
-    constructor (clipColor, wallColor, floorColor){
-        this.#clipColor = clipColor;
-        this.#wallColor = wallColor;
-        this.#floorColor = floorColor;
-    }
 
-    get clipColor(){
-        return this.#clipColor;
-    }
-    
-    get wallColor(){
-        return this.#clipColor;
-    }
-    
-    get floorColor(){
-        return this.#clipColor;
-    }
-
-}
-class SlotStatsScreen extends VC.Scene{
-    #statistics = null
-    #rendered = false;
-    sprite = null;
-    constructor(slot){
-        super();
-        this.#statistics = slot.statistics;
-    }
-    preDisplay(){
-        game.playMusic(Music.CHARGE);
-    }
-    preRender(deltaT){}
-
-    render(deltaT, screen){
-        if(!this.#rendered){
-            screen.drawRect(0, 0, dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
-            this.sprite = new VC.Sprite(screen, Images.ADVENTURER, 800, 600, 100, 100, 0, 0);
-            this.sprite.location.x = 100;
-            this.sprite.location.y = 0;
-            this.sprite.lastLocation.x = this.sprite.location.x;
-            this.sprite.lastLocation.y = this.sprite.location.y;
-            this.sprite.setAnimation(Direction.SOUTH, State.WALKING);
-            this.#statistics.render(screen, "ALL-TIME STATISTICS", new VC.Box(50,0,dimensions.width-100,dimensions.width));
-            this.#rendered = true;
+    set room(nextRoom){
+        if(nextRoom == super.room){
+            return
         }
-        this.sprite.render(deltaT);
+        this.hidden = true; 
+        this.hiddenUntil = Date.now() + 1000;
+        super.room = nextRoom;
+
     }
-    postRender(deltaT){
-        if (game && game.inputController){
-            let c = game.inputController.read();
-            if(c.a===1){
-                //TODO: Move to NewGameScene
-                this.transitionTo = new SlotSelectScreen();
+    get room(){
+        return super.room;
+    }
+
+    #tntAttack(drop){
+        if(this.state === State.THROWING){    
+            let x = this.box.x;
+            let y = this.box.y;
+            switch(this.direction){
+                case Direction.NORTH:
+                    y += 10;
+                    break;
+                case Direction.EAST:
+                    x -= 10;
+                    break;
+                case Direction.SOUTH:
+                    y -= 10;
+                    break;
+                case Direction.WEST:
+                    x += 10;
+                    break;
+            }
+
+            this.box = this.room.constrain(this, x, y);
+        
+
+            this.tnt.box.center(this.box.center());
+            x = this.box.center().x - this.tnt.box.width/2;
+            y = this.box.center().y - this.tnt.box.height/2;
+            switch(this.direction){
+                case Direction.NORTH:
+                    y = this.box.y - this.tnt.box.height;
+                    break;
+                case Direction.EAST:
+                    x = this.box.x + this.box.width;
+                    break;
+                case Direction.SOUTH:
+                    y = this.box.y + this.box.height;
+                    break;
+                case Direction.WEST:
+                    x = this.box.x - this.tnt.box.width;
+                    break;
+            }
+            this.tnt.room = this.room;
+            let pbox = this.box.clone();
+            this.tnt.box = this.room.constrain(this.tnt, x, y);
+            if(!(this.tnt.box.x == x && this.tnt.box.y==y)){
+                //drop=true;
+            }
+            this.box = pbox;    
+
+            this.tnt.direction = this.direction;
+            if (drop){
+                this.tnt.state = State.IDLE;
+                if(this.state == State.THROWING){
+                    this.state = State.IDLE;
+                }
+            }else{
+                this.tnt.state = State.WALKING; 
+                this.state = State.IDLE;       
             }
         }
     }
-    postDisplay(){}
+
+    getObjectsInRangeOfAttack(){
+        switch (this.direction){
+            case Direction.NORTH: 
+                this.#whip.box.reset(
+                    Math.round(this.box.x + this.box.width / 2 - this.#whip.thickness / 2),
+                    VC.Math.constrain((this.room.box.y - this.room.wallHeight / 2) ,this.box.y - this.#whip.length, this.box.y),
+                    this.#whip.thickness,
+                    VC.Math.constrain(0, this.#whip.length, this.box.y - this.room.box.y + this.room.wallHeight / 2)
+                );
+                break;
+            case Direction.EAST:
+                this.#whip.box.reset(
+                    VC.Math.constrain(this.box.x + this.box.width,this.box.x + this.box.width,this.room.box.x+this.room.box.width + this.room.wallHeight/2),
+                    Math.round(this.box.y - 25 + this.box.height/2 - this.#whip.thickness/2),
+                    VC.Math.constrain(0, this.#whip.length, (this.room.box.x + this.room.box.width + this.room.wallHeight/2) - (this.box.x + this.box.width)),
+                    this.#whip.thickness
+                );
+                break;
+            case Direction.SOUTH:
+                this.#whip.box.reset(
+                    Math.round(this.box.x + this.box.width/2 - this.#whip.thickness/2),
+                    VC.Math.constrain(this.box.y + this.box.height,this.box.y + this.box.height,this.room.box.y+this.room.box.height),
+                    this.#whip.thickness,
+                    VC.Math.constrain(0, this.#whip.length, (this.room.box.y + this.room.box.height + this.room.wallHeight/2) - (this.box.y + this.box.height))
+                );
+                break;
+            case Direction.WEST:
+                this.#whip.box.reset(
+                    VC.Math.constrain(this.room.box.x - this.room.wallHeight/2,this.box.x - this.#whip.length, this.box.x),
+                    Math.round(this.box.y - 29 + this.box.height/2 - this.#whip.thickness/2),
+                    VC.Math.constrain(0, this.#whip.length, this.box.x - this.room.box.x + this.room.wallHeight/2),
+                    this.#whip.thickness
+                );
+                break;
+        }
+          
+        let distance = this.#whip.length * 2;
+        let collidingWith = null;
+        this.room.objects.forEach((obj)=>{
+            if(obj!==this && (obj.plane===Plane.PHYSICAL || obj instanceof TNT)){
+                if(obj.weakSpot && this.#whip.box.collidesWith(obj.weakSpot)){
+                    let objDistance = this.box.distance(obj.weakSpot);
+                    if(objDistance < distance){
+                        collidingWith = obj;
+                        distance = objDistance;
+                    } 
+                } else {
+                    let objbox = obj.box.clone();
+                    let objDistance = this.box.distance(objbox);
+                    if(obj instanceof TreasureChest && obj.box.y<this.box.y){
+                        objbox.height = 24;
+                    }
+
+                    if(this.#whip.box.collidesWith(objbox) && objDistance < distance){
+                        
+                        collidingWith = obj;
+                        distance = objDistance;
+                    }
+                }
+            }
+        });
+        if(collidingWith!=null){
+            return [collidingWith];
+        }
+            
+        return [];
+    }
+
+    hurt(damage, knockback, distance){
+        if(game.currentScene instanceof Level){ 
+            this.#tntAttack(true);      
+            let startState = this.state;
+            super.hurt(damage, knockback, distance);
+            if(this.health<15 && this.health>0){
+                this.playSound(2, SoundEffects.HEART, 1, true, false);
+            }
+            if(this.state === State.DYING && startState !== State.DYING){
+                this.direction = Direction.SOUTH;
+                this.stopSound(2, SoundEffects.HEART);
+                this.playSound(2, SoundEffects.ADVENTURER_DEATH, 1, false, false);
+            }
+        }
+    }
+
+    get health(){
+        return super.health;
+    }
+    set health(value){
+        value = VC.Math.constrain(0, value, super.maxHealth);
+        super.health = value;
+        if(this.health>10){
+            this.stopSound(2, SoundEffects.HEART);
+        }
+    }
+
+}
+
+class InputController extends Controller {
+    
+    screen = null;
+    gamepads = [];
+
+    constructor(){
+        super();
+        this.screen = new VC.Screen("controller", 0, 0, dimensions.width, dimensions.height);
+        let controller = this;
+        window.onkeyup = function(e){
+            switch (e.key){
+                case "w":
+                case "W":
+                    controller.up = 0;
+                    break;    
+                case "s":
+                case "S":
+                    controller.down = 0;
+                    break;
+                case "a":
+                case "A":
+                    controller.left = 0;
+                    break;
+                case "d":
+                case "D":
+                    controller.right = 0;
+                    break;
+                case " ":
+                case 'Enter':
+                    controller.attack = 0;
+                    break;
+                default:
+                    switch (e.keyCode){
+                        case UP_ARROW:
+                            controller.up = 0;
+                            break;
+                        case RIGHT_ARROW:
+                            controller.right = 0;
+                            break;
+                        case DOWN_ARROW:
+                            controller.down = 0;
+                            break;
+                        case LEFT_ARROW:
+                            controller.left = 0;
+                            break;
+                        default:
+                            return true;
+                    }
+            }
+            e.handled= true;
+            e.preventDefault();
+            return false;
+        };
+        
+        window.onkeydown = function(e){
+            switch (e.key){
+                case "w":
+                case "W":
+                    controller.up = 1;
+                    break;
+                case "s":
+                case "S":
+                    controller.down = 1;
+                    break;
+                case "a":
+                case "A":
+                    controller.left = 1;
+                    break;
+                case "d":
+                case "D":
+                    controller.right = 1;
+                    break;
+                case " ":
+                case 'Enter':
+                    controller.attack = 1;
+                    break;
+                default:
+                    switch (e.keyCode){
+                        case UP_ARROW:
+                            controller.up = 1;
+                            break;
+                        case RIGHT_ARROW:
+                            controller.right = 1;
+                            break;
+                        case DOWN_ARROW:
+                            controller.down = 1;
+                            break;
+                        case LEFT_ARROW:
+                            controller.left = 1;
+                            break;
+                        default:
+                            return true;
+                    }
+            }
+        
+            e.handled= true;
+            e.preventDefault();
+            return false;
+        };
+    }
+
+    touchStartOrMove(e){
+        e.preventDefault(e);
+        //setVC.OrientationPortrait();
+        
+        let button = this.elements[this.elements.length-3];
+        let dpad = this.elements[this.elements.length-2];
+        let controller = this.elements[this.elements.length-1];
+        
+        let r = e.target.getBoundingClientRect();
+     
+        //r.y = r.y - dimensions.infoHeight - dimensions.width
+        let touches = Array.from(e.touches);
+        let dpadTouched = false;
+        let buttonTouched = false;
+        touches.forEach((t)=>{   
+            
+            //console.log(r,t,this.screen);
+            //console.log(t);
+
+
+            let x = (((t.clientX - r.x)/r.width))//*constants.controllerRadius*2) - constants.controllerRadius;
+            let y = (((t.clientY - r.y)/r.height))//*constants.controllerRadius*2) - constants.controllerRadius;// * dimensions.height;
+            x = x * controller.attr("width");
+            y = y * controller.attr("height") + (dimensions.width + dimensions.infoHeight);
+
+            let d = dpad.getBBox();
+            
+            if(x>d.x && x<d.x + d.width && y>d.y && y<d.y+d.width){
+                dpadTouched = true;
+                //this.screen.drawRect(x,y, 10, 10, "#FF0", "#000",0)
+
+                x = ((x - d.x)-d.width/2)/(d.width/2);
+                y = ((y - d.y)-d.height/2)/(d.height/2)
+                d = Math.abs(VC.Trig.radiansToDegrees(Math.atan(y/x)));
+                this.up = y < 0 && d > 23 ? 1 : 0;
+                this.right = x > 0 && d < 68 ? 1 : 0;
+                this.down = y > 0 && d > 22 ? 1 : 0;
+                this.left = x < 0 && d < 68 ? 1 : 0;
+            }
+            
+            let b = button.getBBox();
+            if(x>b.x && x<b.x + b.width && y>b.y && y<b.y+b.width){
+                dpadTouched = true;
+                buttonTouched = true;
+                this.attack = 1;
+            }
+
+        })
+        if(!dpadTouched){
+            this.up = 0;
+            this.right = 0;
+                this.down =  0;
+                this.left = 0;
+        }
+        if(!buttonTouched){
+            this.attack = 0;
+        }
+    }
+
+    render(){
+        let centerY = Math.round((dimensions.height - dimensions.width - dimensions.infoHeight)/2 + dimensions.width + dimensions.infoHeight);
+        let dPadLeft = Math.round(dimensions.width/4);  
+        if (this.elements.length ===0){
+            
+            //mask lower screen
+            this.screen.drawRect(-5, dimensions.width + dimensions.infoHeight, dimensions.width+10, dimensions.height, "#000", "#000", 0);
+
+            let color="#242424";
+            this.screen.rect(0, dimensions.width + dimensions.infoHeight + 25, dimensions.width, dimensions.height - dimensions.width - dimensions.infoHeight - 50).attr({"fill":color, "r": 100});
+            color = "#3a3a3a";
+            this.elements.push(this.screen.drawEllipse(dPadLeft, centerY, constants.controllerRadius, constants.controllerRadius,0,0,color,"#000",constants.lineThickness));
+            color = "#444444";
+            this.elements.push(this.screen.drawRect(dPadLeft - constants.controllerCrossThickness/2, centerY - constants.controllerRadius, constants.controllerCrossThickness, constants.controllerRadius*2,color, "#000",constants.lineThickness))
+            this.elements.push(this.screen.drawRect(dPadLeft - constants.controllerRadius, centerY - constants.controllerCrossThickness/2, constants.controllerRadius*2, constants.controllerCrossThickness,color, "#000",constants.lineThickness))
+            this.elements.push(this.screen.drawRect(dPadLeft - constants.controllerCrossThickness/2, centerY - constants.controllerCrossThickness/2-constants.lineThickness/2, constants.controllerCrossThickness, constants.controllerCrossThickness + constants.lineThickness,color, color,0))
+            this.elements.push(this.screen.drawLine(dPadLeft - constants.controllerCrossThickness/2, centerY - constants.controllerCrossThickness/2, dPadLeft + constants.controllerCrossThickness/2, centerY + constants.controllerCrossThickness/2,"#000",constants.lineThickness))
+            this.elements.push(this.screen.drawLine(dPadLeft + constants.controllerCrossThickness/2, centerY - constants.controllerCrossThickness/2, dPadLeft - constants.controllerCrossThickness/2, centerY + constants.controllerCrossThickness/2,"#000",constants.lineThickness))
+            let arrowMargin = 4 * constants.lineThickness;
+            let arrowHeight = 40;
+            color = "#303030";
+            this.elements.push(this.screen.drawTriangle(
+                dPadLeft, centerY - constants.controllerRadius + arrowMargin,
+                dPadLeft + constants.controllerCrossThickness/2 - arrowMargin, centerY - constants.controllerRadius + arrowHeight, 
+                dPadLeft - constants.controllerCrossThickness/2 + arrowMargin, centerY - constants.controllerRadius + arrowHeight,  
+                0,0, color, "#000",0//constants.lineThickness
+            ));
+            this.elements.push(this.screen.drawTriangle(
+                dPadLeft + constants.controllerRadius - arrowMargin, centerY,
+                dPadLeft + constants.controllerRadius - arrowHeight, centerY + constants.controllerCrossThickness/2 - arrowMargin, 
+                dPadLeft + constants.controllerRadius - arrowHeight, centerY - constants.controllerCrossThickness/2 + arrowMargin,  
+                0,0, color, "#000",0
+            ));
+            this.elements.push(this.screen.drawTriangle(
+                dPadLeft, centerY + constants.controllerRadius - arrowMargin,
+                dPadLeft + constants.controllerCrossThickness/2 - arrowMargin, centerY + constants.controllerRadius - arrowHeight, 
+                dPadLeft - constants.controllerCrossThickness/2 + arrowMargin, centerY + constants.controllerRadius - arrowHeight,  
+                0,0, color, "#000",0
+            ));
+            this.elements.push(this.screen.drawTriangle(
+                dPadLeft - constants.controllerRadius + arrowMargin, centerY,
+                dPadLeft - constants.controllerRadius + arrowHeight, centerY + constants.controllerCrossThickness/2 - arrowMargin, 
+                dPadLeft - constants.controllerRadius + arrowHeight, centerY - constants.controllerCrossThickness/2 + arrowMargin,  
+                0,0, color, "#000",0
+            ));
+            
+            
+            let txt1 = this.screen.text(Math.round(dimensions.width*.75), centerY - 180, "TAP TO WHIP").attr({ "font-size": "32px", "font-family": "monospace", "fill": "#CCC", "text-anchor": "middle", "font-weight": "bold"});  
+            this.elements.push(txt1);
+            
+            let txt2 = this.screen.text(Math.round(dimensions.width*.75), centerY + 180, "HOLD FOR TNT").attr({ "font-size": "32px", "font-family": "monospace", "fill": "#CCC", "text-anchor": "middle", "font-weight": "bold"});  
+            this.elements.push(txt2);
+
+            let el = this.screen.drawEllipse(Math.round(dimensions.width*.75), centerY, constants.controllerRadius/2, constants.controllerRadius/2,0,0,"#800","#000",constants.lineThickness);
+            this.elements.push(el);
+
+            let el2 = this.screen.drawEllipse(dPadLeft, centerY, constants.controllerRadius, constants.controllerRadius,0,0,"90-rgba(200,200,200,0.05)-rgba(0,0,0,0.2):50","#000",constants.lineThickness).attr({"opacity":.2})
+            this.elements.push(el2);
+
+            let el3 = this.screen.drawRect(0, dimensions.width + dimensions.infoHeight, dimensions.width, dimensions.height-(dimensions.width + dimensions.infoHeight),"#000","#000",constants.lineThickness).attr({"opacity":.1})
+            el3.touchstart((e)=>{this.touchStartOrMove(e)});
+            el3.touchmove((e)=>{this.touchStartOrMove(e)});
+            el3.touchend((e)=>{this.touchStartOrMove(e)});
+            this.elements.push(el3);
+        }
+
+        let butt = this.elements[this.elements.length-3];
+        butt.attr({fill:this.attack ? "#600" : "#800"})
+
+        let el = this.elements[this.elements.length-2];
+        //read controller
+        let x = this.left * -1 + this.right;
+        let y = this.up * -1  + this.down;
+
+        let degrees = 0;
+        //read state
+        if(x === 0 && y === 0){
+            el.hide();
+            return;
+        }
+        degrees = 
+            x === -1 && y === 1 ? 225 :
+            x === 1 && y === -1 ? 45 :
+            x === -1 && y === -1 ? 315 :
+            x === 1 && y === 1 ? 135 :
+            x === -1 ? 270 :
+            x === 1 ? 90 :     
+            y === -1 ? 0 :
+            y === 1 ? 180 : 
+            0 ;
+        el.show();
+        el.transform("r" + degrees + "," + dPadLeft + "," + centerY);
+    }
+
+    read(forObject){
+        //read joysticks
+        this.gamepads = navigator.getGamepads();
+        if(this.gamepads && this.gamepads.length>0){
+            let gamepad = this.gamepads[0];
+            if (gamepad != null){
+                this.attack = (gamepad.buttons && gamepad.buttons.length>0 && gamepad.buttons[0]!=null && gamepad.buttons[0].pressed) ? 1 : 0;
+                if(gamepad.axes && gamepad.axes.length>1){
+                    this.right = Math.round(gamepad.axes[0])>0;
+                    this.left = Math.round(gamepad.axes[0])<0;
+                    
+                    this.down = Math.round(gamepad.axes[1])>0;
+                    this.up = Math.round(gamepad.axes[1])<0;
+                        
+                }
+            }
+        }
+        return super.read(forObject);
+    }
+}
+class Game extends VC.Game {
+    infoScreen = new VC.Screen("info", 0, 0, dimensions.width, dimensions.height);
+    screen = new VC.Screen("main", 0, dimensions.infoHeight, dimensions.width, dimensions.height);
+    inputController = new InputController();
+    player = null;
+    statistics =  new Statistics(screen);
+    currentScene = null;
+    musicChannel = new VC.AudioChannel();
+    slot = null;
+    #boss = null;
+    #bossStart = null;
+    
+    get boss(){
+        return this.#boss
+    }
+
+    set boss(value){
+        if(value!=null && value !==this.#boss){
+            this.#bossStart = Date.now();
+        } else if (value == null) {
+            this.#bossStart = null
+        }
+        this.#boss = value;
+    }
+
+    constructor(){
+        super();
+        this.infoScreen.drawRect(0, 0, dimensions.width, dimensions.infoHeight, SCREENBLACK, SCREENBLACK, 0);
+        this.player = new Adventurer(null, this.inputController);
+        this.player.team = Team.HEROIC;
+        this.player.tntCount = 5;
+        this.enemy = null;
+        this.currentScene = new TitleScreen(this.screen, this.infoScreen);
+        //this.currentScene = new Room(0,0,null,null, 5);
+        //this.currentScene.finalize()
+        this.currentScene.preDisplay();
+    }
+    
+    get level(){
+        if (this.currentScene instanceof Level){
+            return this.currentScene;
+        }
+        return null;
+    }
+
+    onPreRender(deltaT){
+        if(this.currentScene){
+            this.currentScene.preRender(deltaT)
+        }
+    }
+
+    onRender(deltaT){
+        if(this.currentScene){
+            this.currentScene.render(deltaT, this.screen)
+        }
+        if(this.level){
+            this.renderInfo();
+        }else if(this.currentScene instanceof TitleScreen){
+            this.infoScreen.clear();
+        }
+        if (this.inputController){
+            //Render our controller
+            this.inputController.render(this.screen);//TODO: find a better way to reference this. 
+        }
+    }
+
+    onPostRender(deltaT){
+        if(this.currentScene){
+            this.currentScene.postRender();
+        
+            if(this.currentScene.transitionTo && this.currentScene.transitionTo instanceof VC.Scene){
+                let transitionTo = this.currentScene.transitionTo;
+                while (transitionTo.transitionTo){
+                    transitionTo = transitionTo.transitionTo;
+                }
+                this.currentScene.postDisplay();
+                
+                let fadeColor = SCREENBLACK; 
+                if ((this.currentScene instanceof TitleScreen) || (this.currentScene instanceof GameOverScreen)){
+                    fadeColor = "#FFF"
+                }
+                this.pause();
+                
+                if (this.player.sprite) {
+                    this.player.sprite.scale = 1;
+                }
+                this.player.speed = 150;
+                
+                this.screen.fadeTo(fadeColor, ()=>{
+                    this.currentScene = transitionTo;
+                    this.currentScene.preDisplay();
+                    this.screen.clear();
+                    //render one frame
+                    this.onPreRender(0);
+                    this.onRender(0);
+                    this.onPostRender(0);
+
+                    this.screen.fadeInFrom(fadeColor,()=>{;
+                        this.play();
+                    })
+                });
+            }
+        }
+    }
+
+    renderInfo(){
+        if(!this.infoElements){
+            this.infoElements = {};
+            
+            this.infoElements.background = this.infoScreen.drawRect(0, 0, dimensions.width, dimensions.infoHeight, SCREENBLACK, SCREENBLACK, 0);
+            this.infoElements.hearts = [];
+            this.infoElements.keys = [];
+            for(let i=0; i<constants.maxHeartContainers; i++){ 
+                let heart = new VC.Sprite(this.infoScreen,Images.HEART_CONTAINER,32,128,32,32, i * 36 + 8, 8)
+                this.infoElements.hearts.push(heart);
+            }
+            for(let i=0; i<5; i++){
+                this.infoElements.keys.push(new VC.Sprite(this.infoScreen, Images.KEY_ICONS, 32, 192, 32, 32, i * 36 + 8, 48))
+            }
+            //this.screen.circle(dimensions.width-20,64,10).attr({"fill":"#ffd700", "stroke":"#FFF", "stroke-width": 3});
+           
+            this.infoElements.coinSprite = new VC.Sprite(this.infoScreen, Images.TREASURE, 36, 504, 36, 36, dimensions.width-36, 48);
+            this.infoElements.coinSprite.setFrame(0,Treasure.COIN,0);
+    
+            this.infoElements.tntSprite = new VC.Sprite(this.infoScreen, Images.TREASURE, 36, 504, 36, 36, dimensions.width-36, 10);
+            this.infoElements.tntSprite.scale=.8
+            this.infoElements.tntSprite.setFrame(0,Treasure.TNT,0);
+    
+            let text = this.infoScreen.text(dimensions.width-40,64,"1,000,000")
+            text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "end"});
+            this.infoElements.goldElement = text
+    
+            text = this.infoScreen.text(dimensions.width/2,64,"Level 1-1")
+            text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "middle"});
+            this.infoElements.levelElement = text
+            
+            text = this.infoScreen.text(dimensions.width-40,22,"5")
+            text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "end"});
+            this.infoElements.tntElement = text
+
+            text = this.infoScreen.text(8,64,"")
+            text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "start"});
+            this.infoElements.bossName = text
+
+            this.infoElements.healthBar = this.infoScreen.drawRect(0,62,0,5,"#FFF","#AAA",1);
+    
+            this.infoScreen.onClear(()=>{this.infoElements=null});
+        }
+        let time = (Date.now() - this.player.healthSet) % 862
+        let opacity = this.player.health>10 || this.player.health<=0 ? 1 : time > 100 && time < 464 ? 1 : .5;
+        this.infoElements.hearts.forEach((h, i)=>{
+            if(((i + 1) * 10) > this.player.maxHealth){
+                h.setAnimation(0,0);
+            }else{
+                let health = Math.ceil(this.player.health * .2)*5
+                if(((i + 1) * 10) <= health){
+                    h.setAnimation(0,3);
+                } else if (((i + 1) * 10) - 5 <= health){
+                    h.setAnimation(0,2);
+                }    else {
+                    h.setAnimation(0,1);
+                }
+            }
+            h.opacity = opacity
+            h.render(0);
+        })
+        if (this.boss!=null) {
+            //hide unused components
+            this.infoElements.keys.forEach((k, i)=>{
+                k.opacity = 0;
+                k.render(0);
+            });
+            this.infoElements.coinSprite.opacity = 0;
+            this.infoElements.coinSprite.render(0);
+            this.infoElements.goldElement.attr("text","");
+            this.infoElements.levelElement.attr("text",""); 
+
+            this.infoElements.bossName.attr("text",this.boss.name);
+            let w = this.infoElements.bossName.getBBox().width;
+            let h = this.infoElements.bossName.getBBox().height;
+            let maxWidth = dimensions.width - w - 32
+            let startPos = w + 24
+            this.infoElements.healthBar.animate({x:startPos}, 0);
+
+            let healthWidth = maxWidth * (this.boss.health/this.boss.maxHealth);
+            if(this._lastHealthWidth !== healthWidth){
+                this.infoElements.healthBar.animate({width: maxWidth * (this.boss.health/this.boss.maxHealth), }, this._lastHealthWidth==null ? 2000 : 500);
+                this._lastHealthWidth = healthWidth
+            }
+            
+        } else {        
+            
+            this.infoElements.bossName.attr("text","");
+            this.infoElements.healthBar.animate({width:0}, 0);
+            this._lastHealthWidth = null;
+
+            this.infoElements.keys.forEach((k, i)=>{
+                if(this.player.keys.length>i){
+                    k.setAnimation(0,this.player.keys[i]);
+                }else{
+                    k.setAnimation(0,Treasure.NONE);
+                }
+                k.opacity = 1
+                k.render(0);
+            });
+
+            this.infoElements.coinSprite.opacity = 1;
+            this.infoElements.coinSprite.render(0);
+            this.infoElements.goldElement.attr("text",Format.numberWithCommas(this.player.gold));
+            if(this.level){
+                this.infoElements.levelElement.attr("text","Level " + this.level.world + "-" + ((this.level.number % 5) + 1));
+            }
+        }
+
+        this.infoElements.tntSprite.render(0);
+        this.infoElements.tntElement.attr("text",Format.numberWithCommas(this.player.tntCount));
+
+    }
+    
+    lastMusic = ""
+    playMusic(uri){
+        if(uri!=this.lastMusic){
+            this.musicChannel.fadeOut(()=>{this.musicChannel.play(uri, this.slot ? this.slot.musicVolume : 0.15, true)});
+            this.lastMusic = uri;
+        }
+    }
+    stopMusic(){
+        this.musicChannel.fadeOut(()=>{});
+    }
+
+}
+
+class BatShadow extends GameObject{
+    #bat = null;
+    #element = null;
+    constructor(bat){
+        super(bat.room)
+        this.#bat = bat;
+        this.box = bat.box;   
+        this.plane = Plane.ETHEREAL;
+        this.layer = Layer.DEFAULT;
+
+    }
+    move(deltaT){
+        this.box = this.#bat.box;
+    };
+    render(deltaT, screen){
+        if(!this.sprite){
+            this.sprite = new VC.Sprite(screen, Images.BAT_SHADOW, 1200, 750, 150, 150, 0, 0);
+        }
+        this.sprite.location.x = this.box.center().x-75;
+        this.sprite.location.y = this.box.center().y-100;
+
+
+        this.sprite.setAnimation(this.#bat.direction, this.#bat.state);
+        this.sprite.render(deltaT);
+    };
+    clear(){
+        if(this.sprite){
+            this.sprite.remove();
+        }
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+}
+class FireballTrap extends GameObject{
+    sprite = null;
+    #origin = null;
+    #particles=[];
+    #releaseSpark = false;
+    intensity = 1;
+    nextFlicker = new Date(0);
+    
+    constructor(room, x, y, wall){
+        super(room)
+        this.#origin = new VC.Point(x,y);
+        this.box.width = 64;
+        this.box.height = 64;
+        this.wall = wall;
+        this.plane = Plane.ETHEREAL;
+        this.layer = Layer.EFFECT;
+        this.nextFrame = Date.now();
+        this.attackReady = false;
+        this.nextAttack = Date.now();
+    }
+
+    //TODO: Move Particle Effects to their own class; part of Engine, maybe?
+    move(deltaT){
+        let playerInRange = (game.player.room==this.room)
+        if(playerInRange){
+            if(this.attackReady){
+                this.state = State.ATTACK;
+            }else{
+                this.state = State.WALKING;
+            }
+        }else {
+            this.state = State.IDLE;
+        }
+        
+    };
+    render(deltaT, screen){
+        if(this.sprite==null){
+            this.sprite = new VC.Sprite(screen, Images.FIREBALL_TRAP, 1088, 64, 64, 64,this.box.x-32, this.box.y-32);
+            this.sprite.lastLocation.r = this.sprite.location.r = Direction.toDegress(this.wall);
+            switch(this.wall){
+                case Direction.NORTHWEST:
+                    this.sprite.lastLocation.x = this.sprite.location.x = this.#origin.x - this.box.width;
+                    this.sprite.lastLocation.y = this.sprite.location.y = this.#origin.y - this.box.height;
+                    break;
+                case Direction.NORTHEAST:
+                    this.sprite.lastLocation.x = this.sprite.location.x = this.#origin.x;
+                    this.sprite.lastLocation.y = this.sprite.location.y = this.#origin.y - this.box.height;
+                    break;
+                case Direction.SOUTHWEST:
+                    this.sprite.lastLocation.x = this.sprite.location.x = this.#origin.x - this.box.width;
+                    this.sprite.lastLocation.y = this.sprite.location.y = this.#origin.y;
+                    break;
+                case Direction.SOUTHEAST:
+                    this.sprite.lastLocation.x = this.sprite.location.x = this.#origin.x;
+                    this.sprite.lastLocation.y = this.sprite.location.y = this.#origin.y;
+                    break;
+            }
+
+            this.sprite.setFrame(0,0,0);
+            screen.onClear(()=>{
+                 this.sprite = null;
+            });
+        }
+
+        if(this.nextFrame<Date.now()){       
+            this.nextFrame = Date.now()+100;
+            let currentFrame = this.sprite.animation.frame;
+            if(this.state == State.IDLE){
+                this.attackReady = false;
+                //cooldown
+                if((currentFrame >= 8 || currentFrame <6) && currentFrame !=0){
+                    this.sprite.setFrame(0,0,6);
+                } else if(currentFrame >= 6 ){   
+                    this.sprite.setFrame(0,0,currentFrame+1);
+                } else {
+                    this.sprite.setFrame(0,0,0);
+                }
+            }else if (this.state == State.WALKING){
+                //heat up
+                if(currentFrame<5){
+                    this.attackReady = false;
+                    this.sprite.setFrame(0,0,currentFrame+1);
+                } else {
+                    this.sprite.setFrame(0,0,5);
+                    this.attackReady = true;
+                }    
+            }else if (this.state == State.ATTACK){
+                //heat up further
+                if(currentFrame<9){
+                    this.sprite.setFrame(0,0,9);
+                } else if(currentFrame!=16){
+                    this.sprite.setFrame(0,0,currentFrame+1);
+                } else if(currentFrame==16){
+                    if(this.nextAttack<Date.now()){
+                        this.sprite.setFrame(0,0,9);
+                    }
+                }
+                if(this.sprite.animation.frame==12){
+                    this.attack();
+                    this.nextAttack= Date.now() + 1750
+                }
+            }
+        }
+        this.sprite.render(deltaT);
+        //this.#origin.render(screen);
+    };
+    attack(){
+        //launch fireball!
+        let fireballOrigin = new VC.Point(this.#origin.x, this.#origin.y);
+        switch(this.wall){
+            case Direction.NORTHWEST:
+                fireballOrigin.y += 13;
+                fireballOrigin.x += 13;
+                break;
+            case Direction.NORTHEAST:
+                fireballOrigin.x -= 13;
+                fireballOrigin.y += 13; 
+                break;
+            case Direction.SOUTHEAST:
+                fireballOrigin.x -= 28;
+                fireballOrigin.y -= 28;
+                break;
+            case Direction.SOUTHWEST:
+                fireballOrigin.y -= 28;
+                fireballOrigin.x += 28;
+                break;
+        }
+
+        new Fireball(this.room, fireballOrigin.x, fireballOrigin.y, (Direction.toDegress(this.wall) + 180) % 360 )
+    }
+    clear(){
+        super.clear();
+        if(this.sprite) {
+            this.sprite.remove();
+            this.sprite = null;
+        }
+        if(this.#particles){
+            this.#particles.forEach((p)=>{p.remove();});
+            this.#particles = [];
+        }
+    }
+    remove(){
+        super.remove();
+        //this.clear();
+    }
+}
+
+class MaceSkeleton extends Character{
+    constructor(room, controller){
+        super(room, controller);
+        this.box.x = Math.round(dimensions.width / 2)-100;
+        this.box.y = Math.round(dimensions.width / 2)-100;
+        this.box.height = 80;
+        this.box.width = 60;
+        this.team = Team.DUNGEON;
+        this.direction = Direction.EAST;
+        this.speed = 40;
+        this.health = 40;
+        this.maxHealth = 30;
+        this.damage = 10;
+        this._attackDuration = 500;
+        this._attackCooldown = 1500;
+    }
+    move(deltaT){
+        if(this.sprite && this.state === State.ATTACKING && !this.attacked && this.sprite.animation.frame===3){
+            this.attacked=true;
+            let opposingTeam = Team.getOpposingTeam(this.team)
+            let targets = this.getObjectsInRangeOfAttack();
+            targets.forEach((o)=>{
+                if(o.team === opposingTeam){
+                    let rect = this._attackBox.intersectRect(o.box)
+                    if(rect){
+                        o.hurt(this.damage, this.direction);
+                        let sb = new Starburst(this.room)
+                        sb.box = rect
+                    }
+                }
+            });
+             
+        }else if(this.sprite && this.sprite.animation.frame!==3){
+            this.attacked=false;
+        }
+        let direction1 = this.direction;
+        let state1 = this.state;
+        super.move(deltaT); 
+        if(this.state !== state1){
+            switch(this.state){
+                case State.WALKING: 
+                    this.playSound(0, SoundEffects.FOOTSTEPS, .4, true, false);
+                    break;
+                default:
+                    this.stopSound(0, SoundEffects.FOOTSTEPS);
+            }
+        }
+        /*
+        if(direction1 !== this.direction){
+            switch(this.direction){
+                case Direction.EAST:
+                case Direction.WEST:        
+                    this.box.height = 95;
+                    this.box.width = 47;
+                    break;
+                default:
+                    this.box.height = 95;
+                    this.box.width = 95;
+            }
+        }
+        */
+        
+    }
+
+    render(deltaT, screen){
+        if(!this.sprite){
+            this.sprite = new VC.Sprite(screen, Images.MACE_SKELETON, 1520, 950, 190, 190, this.box.x-50, this.box.y-59);
+            this.sprite.lastLocation.x = this.box.x-50;
+            this.sprite.lastLocation.y = this.box.y-59;    
+        }
+        if(DEBUG){ 
+           this.box.render(screen, "#FFF");
+           this._attackBox.render(screen, "#F00")
+        } 
+        this.sprite.setAnimation(this.direction, this.state);
+        this.sprite.render(deltaT);
+        this.sprite.location.x = this.box.x-65;
+        this.sprite.location.y = this.box.y-80;
+    }
+
+    clear(){
+        super.clear();
+        if(this.sprite){
+            this.sprite.remove();
+        }
+        if(DEBUG){
+            this.box.remove();
+        }
+    }
+    
+    remove(){
+        super.remove();
+        this.clear();
+    }
+
+    attack(){
+        if(this.state !== State.ATTACKING){
+            this.playSound(1, SoundEffects.MACESKELETON_ATTACK, .8, false, false);
+            this.state = State.ATTACKING;
+            this.attacked===false;
+        }
+    }
+
+    getObjectsInView(){
+        //initialize the view box
+        if(!this._viewBox){
+            this._viewBox = new VC.Box(0,0,50,50);
+            this._viewBox.height = this.room.box.height;
+            this._viewBox.width = this.room.box.width;
+            this._viewBox.x = this.room.box.x;
+            this._viewBox.y = this.room.box.y;
+        }
+        //reposition the view box
+   
+        
+        let inView = [];
+        this.room.objects.forEach((o)=>{
+            if(o!=this && o.box.collidesWith(this._viewBox)){
+                inView.push(o);
+            }
+        })
+
+        return inView;
+    }
+    getObjectsInRangeOfAttack(){
+        //initialize the attack box
+        if(!this._attackBox){
+            this._attackBox = new VC.Box(0,0,50,50);
+        }
+        //reposition the attack box
+        switch(this.direction){
+            case Direction.NORTH:
+                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
+                this._attackBox.y = this.box.y - this._attackBox.height
+                break;
+            case Direction.EAST:
+                this._attackBox.x = this.box.x + this.box.width;
+                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);
+                break;
+            case Direction.SOUTH:
+                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
+                this._attackBox.y = this.box.y + this.box.height;
+                break;
+            case Direction.WEST:
+                this._attackBox.x = this.box.x - this._attackBox.width;
+                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);   
+                break;
+        }
+        
+        let inRange = []
+        this.room.objects.forEach((o)=>{
+            if(o!==this && this._attackBox.collidesWith(o.box)){
+                inRange.push(o);
+            }
+        });
+        return inRange;
+    }
+    
+    hurt(damage, knockback, distance){
+        if(this.state == State.ATTACKING && !this.attacked){
+            this.stopSound(1, SoundEffects.SWORDSKELETON_ATTACK);
+        }
+        let startHealth=this.health;
+        super.hurt(damage,knockback,distance);
+        if(startHealth>0 && this.health<=0){
+            game.level.statistics.maceSkeletonsKilled++;
+            game.level.statistics.enemiesKilled++;
+            this.playSound(2, SoundEffects.SKELETON_DEATH, 1, false, false);
+        }
+    }
 }
 
 class PolygonalRoom extends VC.Scene {
@@ -8801,153 +9252,7 @@ class LavaCrack extends GameObject{
     }
 
 }
-class FireballTrap extends GameObject{
-    sprite = null;
-    #origin = null;
-    #particles=[];
-    #releaseSpark = false;
-    intensity = 1;
-    nextFlicker = new Date(0);
-    
-    constructor(room, x, y, wall){
-        super(room)
-        this.#origin = new VC.Point(x,y);
-        this.box.width = 64;
-        this.box.height = 64;
-        this.wall = wall;
-        this.plane = Plane.ETHEREAL;
-        this.layer = Layer.EFFECT;
-        this.nextFrame = Date.now();
-        this.attackReady = false;
-        this.nextAttack = Date.now();
-    }
-
-    //TODO: Move Particle Effects to their own class; part of Engine, maybe?
-    move(deltaT){
-        let playerInRange = (game.player.room==this.room)
-        if(playerInRange){
-            if(this.attackReady){
-                this.state = State.ATTACK;
-            }else{
-                this.state = State.WALKING;
-            }
-        }else {
-            this.state = State.IDLE;
-        }
-        
-    };
-    render(deltaT, screen){
-        if(this.sprite==null){
-            this.sprite = new VC.Sprite(screen, Images.FIREBALL_TRAP, 1088, 64, 64, 64,this.box.x-32, this.box.y-32);
-            this.sprite.lastLocation.r = this.sprite.location.r = Direction.toDegress(this.wall);
-            switch(this.wall){
-                case Direction.NORTHWEST:
-                    this.sprite.lastLocation.x = this.sprite.location.x = this.#origin.x - this.box.width;
-                    this.sprite.lastLocation.y = this.sprite.location.y = this.#origin.y - this.box.height;
-                    break;
-                case Direction.NORTHEAST:
-                    this.sprite.lastLocation.x = this.sprite.location.x = this.#origin.x;
-                    this.sprite.lastLocation.y = this.sprite.location.y = this.#origin.y - this.box.height;
-                    break;
-                case Direction.SOUTHWEST:
-                    this.sprite.lastLocation.x = this.sprite.location.x = this.#origin.x - this.box.width;
-                    this.sprite.lastLocation.y = this.sprite.location.y = this.#origin.y;
-                    break;
-                case Direction.SOUTHEAST:
-                    this.sprite.lastLocation.x = this.sprite.location.x = this.#origin.x;
-                    this.sprite.lastLocation.y = this.sprite.location.y = this.#origin.y;
-                    break;
-            }
-
-            this.sprite.setFrame(0,0,0);
-            screen.onClear(()=>{
-                 this.sprite = null;
-            });
-        }
-
-        if(this.nextFrame<Date.now()){       
-            this.nextFrame = Date.now()+100;
-            let currentFrame = this.sprite.animation.frame;
-            if(this.state == State.IDLE){
-                this.attackReady = false;
-                //cooldown
-                if((currentFrame >= 8 || currentFrame <6) && currentFrame !=0){
-                    this.sprite.setFrame(0,0,6);
-                } else if(currentFrame >= 6 ){   
-                    this.sprite.setFrame(0,0,currentFrame+1);
-                } else {
-                    this.sprite.setFrame(0,0,0);
-                }
-            }else if (this.state == State.WALKING){
-                //heat up
-                if(currentFrame<5){
-                    this.attackReady = false;
-                    this.sprite.setFrame(0,0,currentFrame+1);
-                } else {
-                    this.sprite.setFrame(0,0,5);
-                    this.attackReady = true;
-                }    
-            }else if (this.state == State.ATTACK){
-                //heat up further
-                if(currentFrame<9){
-                    this.sprite.setFrame(0,0,9);
-                } else if(currentFrame!=16){
-                    this.sprite.setFrame(0,0,currentFrame+1);
-                } else if(currentFrame==16){
-                    if(this.nextAttack<Date.now()){
-                        this.sprite.setFrame(0,0,9);
-                    }
-                }
-                if(this.sprite.animation.frame==12){
-                    this.attack();
-                    this.nextAttack= Date.now() + 1750
-                }
-            }
-        }
-        this.sprite.render(deltaT);
-        //this.#origin.render(screen);
-    };
-    attack(){
-        //launch fireball!
-        let fireballOrigin = new VC.Point(this.#origin.x, this.#origin.y);
-        switch(this.wall){
-            case Direction.NORTHWEST:
-                fireballOrigin.y += 13;
-                fireballOrigin.x += 13;
-                break;
-            case Direction.NORTHEAST:
-                fireballOrigin.x -= 13;
-                fireballOrigin.y += 13; 
-                break;
-            case Direction.SOUTHEAST:
-                fireballOrigin.x -= 28;
-                fireballOrigin.y -= 28;
-                break;
-            case Direction.SOUTHWEST:
-                fireballOrigin.y -= 28;
-                fireballOrigin.x += 28;
-                break;
-        }
-
-        new Fireball(this.room, fireballOrigin.x, fireballOrigin.y, (Direction.toDegress(this.wall) + 180) % 360 )
-    }
-    clear(){
-        super.clear();
-        if(this.sprite) {
-            this.sprite.remove();
-            this.sprite = null;
-        }
-        if(this.#particles){
-            this.#particles.forEach((p)=>{p.remove();});
-            this.#particles = [];
-        }
-    }
-    remove(){
-        super.remove();
-        //this.clear();
-    }
-}
-class FireTemple extends Temple{
+class ForestTemple extends Temple{
     
     #palette = new Palette(
         "#19351A",//clip color
@@ -8959,16 +9264,16 @@ class FireTemple extends Temple{
     }
 
     get name(){
-        return "Ka'Zuun" 
+        return "Vaelmorra"
     }
     
     get description(){
-        return "The Volcano Temple"
+        return "The Forest Temple"
     }
 
     //read-only properties
     get music(){
-        return Music.FIRE;
+        return Music.FOREST;
     }
     
     get palette(){
@@ -8984,48 +9289,106 @@ class FireTemple extends Temple{
         if (level.number % 5 === 0){
             level.message = this.name;
         }
-
-        //LavaPool.Factory(level.rooms[0]);
     }
     
     themeRoom(room, index, level){
         super.themeRoom(room, index);
         if (index !== 0 && !room.exit && level && level.number % 5 != 4 && !room.secret){
             
-            var enemyRange = level.number % 5 < 2 ? 2 : 3;
+            var enemyRange = level.number + 1 ;
+            if (enemyRange > 3){
+                enemyRange = 3;
+            }
 
             let enemies = VC.Math.random(room.spawnDensity-1, room.spawnDensity + 1)
-            for(let i=0; i<enemies; i++){
-
-                switch(VC.Math.random(0,2)){
+            for(let i=0; i<enemies; i++){   
+                switch(VC.Math.random(0,enemyRange)){
                     case 0:
-                        if(room.spawn(new SwordSkeleton(room, new AutoController()))){
-                            level.statistics.swordSkeletonsSpawned++;
+                        if(room.spawn(new CaveSpider(room, new AutoController()))){
+                            level.statistics.caveSpidersSpawned++;
                             level.statistics.enemiesSpawned++;
-                        };
+                        }
                         break;
                     case 1:
-                        if (i>=2) {
-                            if(room.spawn(new MaceSkeleton(room, new AutoController()))){
-                                level.statistics.maceSkeletonsSpawned++;
-                                level.statistics.enemiesSpawned++;
-                                i++;
-                            }
-                        }else {
-                            if(room.spawn(new SwordSkeleton(room, new AutoController()))){
-                                level.statistics.swordSkeletonsSpawned++;
-                                level.statistics.enemiesSpawned++;
-                            }        
+                        if(room.spawn(new Snake(room, new AutoController()))){
+                            level.statistics.snakesSpawned++;
+                            level.statistics.enemiesSpawned++;
                         }
                         break;
                     case 2:
-                        if(room.spawn(new Bat(room, new AutoController()))){
-                            level.statistics.batsSpawned++;
+                        for(let j = 0; j<VC.Math.random(1,level.number); j++){
+                            if(room.spawn(new Rat(room, new AutoController()))){
+                                level.statistics.ratsSpawned++;
+                                level.statistics.enemiesSpawned++;
+                            }
+                        }
+                        break;                    
+                    case 3: 
+                        if(room.spawn(new SwordSkeleton(room, new AutoController()))){
+                            level.statistics.swordSkeletonsSpawned++;
                             level.statistics.enemiesSpawned++;
                         }
+                        break;
                 }
-                continue;
+            }
+            
+        }
 
+        //add vines
+        let vines = VC.Math.random(room.spawnDensity * 3, room.spawnDensity * 5);
+        for(let v = 0; v<vines; v++){
+            new Vine(room);
+        }
+    }
+}
+class IceTemple extends Temple{
+    
+    #palette = new Palette(
+        "#19351A",//clip color
+        "#442A01",//floor color
+        "#505347"//wall color
+    );
+    
+    constructor(){
+        super();
+    }
+
+    get name(){
+        return "Iskavorn"
+    }
+    
+    get description(){
+        return "The Ice Temple"
+    }
+
+    //read-only properties
+    get music(){
+        return Music.EXPLORATION;
+    }
+    
+    get palette(){
+        return this.#palette;
+    }
+
+    themeLevel(level){
+        super.themeLevel(level);
+        Temple.addTorches(level);
+        
+        level.rooms.forEach((room, index) => this.themeRoom(room, index, level));
+        if (level.number % 5 === 0){
+            level.message = this.name;
+        }
+    }
+    
+    themeRoom(room, index, level){
+
+        super.themeRoom(room, index);
+        if (index !== 0 && !room.exit && level && level.number % 5 != 4){
+            
+            var enemyRange = level.number % 5 < 2 ? 2 : 3;
+
+            let enemies = VC.Math.random(room.spawnDensity-1, room.spawnDensity + 1)
+            for(let i=0; i<enemies; i++){   
                 switch(VC.Math.random(0,enemyRange)){
                     case 0:
                         room.spawn(new CaveSpider(room, new AutoController()));
@@ -9052,73 +9415,578 @@ class FireTemple extends Temple{
                 }
             }
             
-
         }
-        if(!(room.x==0 && room.y==0) && !room.exit){
-            if(room.spawnDensity>0){
-                console.log("spawnDensity", room.spawnDensity);
-                var wall = Direction.NORTH;
-                var spawnPoint = null;
-                if(room.bounds.points.length>4){
-                    //polygonal room; prefer diagonals, if available.
-                    let diags = [];
-                    for(var p=0; p<room.bounds.points.length; p++){
-                        var point1 = room.bounds.points[p];
-                        var point2 = room.bounds.points[(p+1)%room.bounds.points.length];
-                        
-                        if(point1.x!=point2.x && point1.y!=point2.y && VC.Trig.distance(point1.x, point1.y, point2.x, point2.y)>=64){
-                            diags.push({p1:point1, p2:point2});
-                        }
-                    }
-                    console.log("diags length:",diags.length)
-                    if(diags.length>0){
-                        let diag = maxValue(diags, (d)=>{return VC.Trig.distance(d.p1.x, d.p1.y, d.p2.x, d.p2.y)});
-                        spawnPoint = new VC.Point((diag.p1.x + diag.p2.x)/2,(diag.p1.y + diag.p2.y)/2)
-                        let centerPoint = room.box.center();
-                        if(diag.p1.y<centerPoint.y){
-                            if(diag.p1.x<centerPoint.x){
-                                wall = Direction.NORTHWEST;
-                            }
-                            else {
-                                wall = Direction.NORTHEAST;
-                            }
+
+        //add vines
+        let vines = VC.Math.random(room.spawnDensity * 3, room.spawnDensity * 5);
+        for(let v = 0; v<vines; v++){
+            new Vine(room);
+        }
+
+    }
+}
+class GameOverScreen extends VC.Scene{
+    #statistics = null
+    #rendered = false;
+    #lastWorld = -1
+    constructor(statistics, world){
+        super();
+        this.#statistics = statistics; 
+        this.#lastWorld = world;
+    }
+    preDisplay(){
+        game.playMusic(Music.DEATH);
+        game.player.state = State.DEAD;
+    }
+    preRender(deltaT){}
+
+    render(deltaT, screen){
+        if(!this.#rendered){
+            screen.drawRect(0, 0, dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
+            game.player.sprite.location.x = 250;
+            game.player.sprite.location.y = -16;
+            game.player.sprite.lastLocation.x = game.player.sprite.location.x;
+            game.player.sprite.lastLocation.y = game.player.sprite.location.y;
+            game.player.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
+            game.player.sprite.render(0);
+            game.statistics.render(screen, "YOU DIED!", new VC.Box(50,0,dimensions.width-100,dimensions.width));
+            this.#rendered = true;
+        }
+    }
+    postRender(deltaT){
+        if (game && game.inputController){
+            let c = game.inputController.read();
+            if(c.a===1){
+                this.transitionTo = new LevelSelectScreen(this.#lastWorld - 1);
+            }
+        }
+    }
+    postDisplay(){}
+}
+
+class Slot {
+    slot = 0;
+    name = "HUGH";
+    statistics = new Statistics();
+    sfxVolume = 1.0;
+    musicVolume = 0.15;
+    hearts = 3;
+    whip = 0;
+    tntBags = 1
+    levelState = [2,2,2,2,2];
+
+    constructor(data){
+        if (data && !isNaN(data.slot)){
+            this.slot = data.slot;
+            this.name = data.name; 
+            this.hearts = VC.Math.constrain(3, data.hearts, 8);
+            this.whip = VC.Math.constrain(0, data.whip, 2);
+            this.tntBags = VC.Math.constrain(1, data.tntBags, 4);
+            this.statistics.add(data.statistics);
+            this.sfxVolume = VC.Math.constrain(0, data.sfxVolume, 1);
+            this.musicVolume = VC.Math.constrain(0, data.musicVolume, 0.15);
+            this.levelState = Array.isArray(data.levelState) ? data.levelState : [2,2,2,2,2];
+            while (this.levelState.length < 5) {
+                this.levelState.push(2);
+            }
+            while (this.levelState.length > 5) {
+                this.levelState.pop();
+            }
+        }
+    }
+
+    save(){
+        localStorage.setItem('GR_slot_' + this.slot, JSON.stringify(this));
+    }
+
+    delete(){
+        localStorage.removeItem('GR_slot_' + this.slot);
+    }
+
+    static load(slot){
+        let data = localStorage.getItem('GR_slot_' + slot);
+        if(data){
+            return new Slot(JSON.parse(data));
+        }
+        return null;
+    }
+}
+
+class GlyphButton {
+    leftGlyph = null;
+    rightGlyph = null;
+    aboveGlyph = null;
+    belowGlyph = null;    
+    elements=[]
+
+    selected = false;
+
+    screenText = "";
+    value = null;
+    x = 0;
+    y = 0;
+    width = 0;
+    height = 0;
+
+    structureRendered = false;
+    elements = [];
+
+    constructor(screenText, value, x, y, width, height){
+        this.screenText = screenText;
+        this.value = value;
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+    }
+
+    render(screen){
+        if(!this.structureRendered){
+            let text = screen.text(this.x, this.y, this.screenText)
+            let glyphColor = "#FFF";
+            let borderColor = "#ffd700";
+            
+            text.attr({ "font-size": "48px", "font-family": "monospace", "font-weight":"bold", "fill": glyphColor});
+            this.elements.push(text);
+            let x = this.x-this.width/2;
+            let y = this.y-this.height/2;
+            
+            //border
+            this.elements.push(screen.drawLine(x, y, x + this.height/4, y, borderColor, 5));
+            this.elements.push(screen.drawLine(x, y, x, y + this.height/4, borderColor, 5));
+            this.elements.push(screen.drawLine(x, y+this.height, x + this.height/4, y+this.height, borderColor, 5));
+            this.elements.push(screen.drawLine(x, y+this.height, x, y+this.height - + this.height/4, borderColor, 5));
+
+            this.elements.push(screen.drawLine(x + this.width, y, x + this.width - this.height/4, y, borderColor, 5));
+            this.elements.push(screen.drawLine(x + this.width, y, x + this.width, y + this.height/4, borderColor, 5));
+            this.elements.push(screen.drawLine(x + this.width, y+this.height, x + this.width - this.height/4, y+this.height, borderColor, 5));
+            this.elements.push(screen.drawLine(x + this.width, y+this.height, x + this.width, y+this.height - + this.height/4, borderColor, 5));
+
+            this.structureRendered = true;
+        }
+
+        this.elements.forEach((e,i)=>{e.attr({"opacity":this.selected||i==0 ? 1 : 0})});
+    }
+}
+
+class SlotRenameScreen extends VC.Scene {
+
+    
+    text = "";
+    slot = null;
+    structureRendered = false;
+    sprite = null;
+    glyphs = [];
+    currentGlyph = null;
+
+    constructor(slot){
+        super();
+        this.slot = slot;
+
+    }
+    
+    nextAudioChannel=0;
+    audioChannels = [
+        new VC.AudioChannel(),
+        new VC.AudioChannel(),
+        new VC.AudioChannel(),
+        new VC.AudioChannel(),
+        new VC.AudioChannel()
+    ];
+    get audioChannel(){
+        let n=this.nextAudioChannel;
+        this.nextAudioChannel = this.nextAudioChannel + 1;
+        this.nextAudioChannel = this.nextAudioChannel % this.audioChannels.length;
+        return this.audioChannels[n];
+    }
+
+    #initializeGlyphs(){
+        
+        let buttonSize = dimensions.width/10;
+        let keyboardLeft = buttonSize / 2 + buttonSize;
+        let keyboardTop = dimensions.width - (buttonSize * 6) - buttonSize/2 - 5;
+        
+
+        
+        //row 1
+        let a = new GlyphButton("A", "A", keyboardLeft + buttonSize * 0, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
+        this.glyphs.push(a);
+        let b = new GlyphButton("B", "B", keyboardLeft + buttonSize * 1, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
+        this.glyphs.push(b);
+        let c = new GlyphButton("C", "C", keyboardLeft + buttonSize * 2, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
+        this.glyphs.push(c);
+        
+        let d = new GlyphButton("D", "D", keyboardLeft + buttonSize * 5, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
+        this.glyphs.push(d);
+        let e = new GlyphButton("E", "E", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
+        this.glyphs.push(e);
+        let f = new GlyphButton("F", "F", keyboardLeft + buttonSize * 7, keyboardTop + buttonSize * 0, buttonSize, buttonSize)
+        this.glyphs.push(f);
+        
+        //row 2
+        let g = new GlyphButton("G", "G", keyboardLeft + buttonSize * 0, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
+        this.glyphs.push(g);
+        let h = new GlyphButton("H", "H", keyboardLeft + buttonSize * 1, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
+        this.glyphs.push(h);
+        let i = new GlyphButton("I", "I", keyboardLeft + buttonSize * 2, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
+        this.glyphs.push(i);
+        
+        let j = new GlyphButton("J", "J", keyboardLeft + buttonSize * 5, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
+        this.glyphs.push(j);
+        let k = new GlyphButton("K", "K", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
+        this.glyphs.push(k);
+        let l = new GlyphButton("L", "L", keyboardLeft + buttonSize * 7, keyboardTop + buttonSize * 1, buttonSize, buttonSize)
+        this.glyphs.push(l);
+        
+        //row 3
+        let m = new GlyphButton("M", "M", keyboardLeft + buttonSize * 0, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
+        this.glyphs.push(m);
+        let n = new GlyphButton("N", "N", keyboardLeft + buttonSize * 1, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
+        this.glyphs.push(n);
+        let o = new GlyphButton("O", "O", keyboardLeft + buttonSize * 2, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
+        this.glyphs.push(o);
+        
+        let p = new GlyphButton("P", "P", keyboardLeft + buttonSize * 3, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
+        this.glyphs.push(p);
+        let q = new GlyphButton("Q", "Q", keyboardLeft + buttonSize * 4, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
+        this.glyphs.push(q);
+        
+        let r = new GlyphButton("R", "R", keyboardLeft + buttonSize * 5, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
+        this.glyphs.push(r);
+        let s = new GlyphButton("S", "S", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
+        this.glyphs.push(s);
+        let t = new GlyphButton("T", "T", keyboardLeft + buttonSize * 7, keyboardTop + buttonSize * 2, buttonSize, buttonSize)
+        this.glyphs.push(t);
+        
+        //row 4
+        let u = new GlyphButton("U", "U", keyboardLeft + buttonSize * 0, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
+        this.glyphs.push(u);
+        let v = new GlyphButton("V", "V", keyboardLeft + buttonSize * 1, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
+        this.glyphs.push(v);
+        let w = new GlyphButton("W", "W", keyboardLeft + buttonSize * 2, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
+        this.glyphs.push(w);
+        
+        let x = new GlyphButton("X", "X", keyboardLeft + buttonSize * 5, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
+        this.glyphs.push(x);
+        let y = new GlyphButton("Y", "Y", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
+        this.glyphs.push(y);
+        let z = new GlyphButton("Z", "Z", keyboardLeft + buttonSize * 7, keyboardTop + buttonSize * 3, buttonSize, buttonSize)
+        this.glyphs.push(z);
+        
+        //row 5
+        let del = new GlyphButton("DELETE", null, keyboardLeft + buttonSize, keyboardTop + buttonSize * 4, buttonSize * 3, buttonSize)
+        this.glyphs.push(del);
+        let per = new GlyphButton(".", ".", keyboardLeft + buttonSize * 3, keyboardTop + buttonSize * 4, buttonSize, buttonSize)
+        this.glyphs.push(per);
+        let com = new GlyphButton(",", ",", keyboardLeft + buttonSize * 4, keyboardTop + buttonSize * 4, buttonSize, buttonSize)
+        this.glyphs.push(com);
+        let spc = new GlyphButton("SPACE", " ", keyboardLeft + buttonSize * 6, keyboardTop + buttonSize * 4, buttonSize * 3, buttonSize)
+        this.glyphs.push(spc);
+        
+        //row 6
+        let done = new GlyphButton("DONE", "*", keyboardLeft + buttonSize * 3.5, keyboardTop + buttonSize * 5, buttonSize * 2, buttonSize)
+        this.glyphs.push(done);
+
+        a.leftGlyph = f;
+        a.aboveGlyph = del;
+        a.rightGlyph = b;
+        a.belowGlyph = g;
+
+        b.leftGlyph = a;
+        b.rightGlyph = c;
+        b.aboveGlyph = del;
+        b.belowGlyph = h;
+
+        c.leftGlyph = b;
+        c.rightGlyph = d;
+        c.aboveGlyph = del;
+        c.belowGlyph = i;
+        
+        d.leftGlyph = c;
+        d.rightGlyph = e;
+        d.aboveGlyph = spc;
+        d.belowGlyph = j;
+
+        e.leftGlyph = d;
+        e.rightGlyph = f;
+        e.aboveGlyph = spc;
+        e.belowGlyph = k;
+        
+        f.leftGlyph = e;
+        f.rightGlyph = a;
+        f.aboveGlyph = spc;
+        f.belowGlyph = l;
+        
+        g.leftGlyph = l;
+        g.rightGlyph = h;
+        g.aboveGlyph = a;
+        g.belowGlyph = m;
+        
+        h.leftGlyph = g;
+        h.rightGlyph = i;
+        h.aboveGlyph = b;
+        h.belowGlyph = n;
+       
+        i.leftGlyph = h;
+        i.rightGlyph = j;
+        i.aboveGlyph = c;
+        i.belowGlyph = o;
+
+        j.leftGlyph = i;
+        j.rightGlyph = k;
+        j.aboveGlyph = d;
+        j.belowGlyph = r;
+
+        k.leftGlyph = j;
+        k.rightGlyph = l;
+        k.aboveGlyph = e;
+        k.belowGlyph = s;
+
+        l.leftGlyph = k;
+        l.rightGlyph = g;
+        l.aboveGlyph = f;
+        l.belowGlyph = t;
+        
+        m.leftGlyph = t;
+        m.rightGlyph = n;
+        m.aboveGlyph = g;
+        m.belowGlyph = u;
+
+        n.leftGlyph = m;
+        n.rightGlyph = o;
+        n.aboveGlyph = h;
+        n.belowGlyph = v;
+
+        o.leftGlyph = n;
+        o.rightGlyph = p;
+        o.aboveGlyph = i;
+        o.belowGlyph = w;
+        
+        p.leftGlyph = o;
+        p.rightGlyph = q;
+        p.aboveGlyph = done;
+        p.belowGlyph = per;
+
+        q.leftGlyph = p;
+        q.rightGlyph = r;
+        q.aboveGlyph = done;
+        q.belowGlyph = com;
+        
+        r.leftGlyph = q;
+        r.rightGlyph = s;
+        r.aboveGlyph = j;
+        r.belowGlyph = x;
+
+        s.leftGlyph = r;
+        s.rightGlyph = t;
+        s.aboveGlyph = k;
+        s.belowGlyph = y;
+
+        t.leftGlyph = s;
+        t.rightGlyph = m;
+        t.aboveGlyph = l;
+        t.belowGlyph = z;
+       
+        u.leftGlyph = z;
+        u.rightGlyph = v;
+        u.aboveGlyph = m;
+        u.belowGlyph = del;
+
+        v.leftGlyph = u;
+        v.rightGlyph = w;
+        v.aboveGlyph = n;
+        v.belowGlyph = del;
+        
+        w.leftGlyph = v;
+        w.rightGlyph = x;
+        w.aboveGlyph = o;
+        w.belowGlyph = del;
+        
+        x.leftGlyph = w;
+        x.rightGlyph = y;
+        x.aboveGlyph = r;
+        x.belowGlyph = spc;
+
+        y.leftGlyph = x;
+        y.rightGlyph = z;
+        y.aboveGlyph = s;
+        y.belowGlyph = spc;
+
+        z.leftGlyph = y;
+        z.rightGlyph = u;
+        z.aboveGlyph = t;
+        z.belowGlyph = spc;
+        
+        del.leftGlyph = spc;
+        del.rightGlyph = per;
+        del.aboveGlyph = v;
+        del.belowGlyph = done;
+        
+        per.leftGlyph = del;
+        per.rightGlyph = com;
+        per.aboveGlyph = p;
+        per.belowGlyph = done;
+
+        com.leftGlyph = per;
+        com.rightGlyph = spc;
+        com.aboveGlyph = q;
+        com.belowGlyph = done;
+
+        spc.leftGlyph = com;
+        spc.rightGlyph = del;
+        spc.aboveGlyph = y;
+        spc.belowGlyph = done;
+        
+        done.leftGlyph = done;
+        done.rightGlyph = done;
+        done.aboveGlyph = per;
+        done.belowGlyph = p;
+
+        a.selected=true;
+        this.currentGlyph = a;
+
+    }
+
+
+    preDisplay(){
+        //TODO: Game selection music
+        game.playMusic(Music.CHARGE);
+        this.#initializeGlyphs();
+    }
+    lastRead = Date.now();
+    preRender(deltaT){
+        let keyBeep = false;
+        let keyBoop = false;
+        if(game && game.inputController){
+            if(Date.now()-this.lastRead>150){
+                let input = game.inputController.read();
+                if(input.x<0){
+                    keyBeep = true;
+                    this.currentGlyph.selected = false;
+                    this.currentGlyph = this.currentGlyph.leftGlyph;
+                    this.currentGlyph.selected = true;
+                    this.lastRead = Date.now();
+                } else if (input.x>0){
+                    keyBeep = true;
+                    this.currentGlyph.selected = false;
+                    this.currentGlyph = this.currentGlyph.rightGlyph;
+                    this.currentGlyph.selected = true;
+                    this.lastRead = Date.now();
+                }
+                if(input.y<0){
+                    keyBeep = true;
+                    this.currentGlyph.selected = false;
+                    this.currentGlyph = this.currentGlyph.aboveGlyph;
+                    this.currentGlyph.selected = true;
+                    this.lastRead = Date.now();
+                } else if (input.y>0){
+                    keyBeep = true;
+                    this.currentGlyph.selected = false;
+                    this.currentGlyph = this.currentGlyph.belowGlyph;
+                    this.currentGlyph.selected = true;
+                    this.lastRead = Date.now();
+                }
+                if(input.a==1){
+                    keyBoop = true;
+                    if(this.currentGlyph.value){
+                        if (this.currentGlyph.value=="*"){
+                            this.audioChannel.play(SoundEffects.KEY_BOOP, .2, false);
+                            this.slot.name = this.text=="" ? "HUGH" : this.text;
+                            this.slot.save();
+                            game.slot = this.slot;
+                            game.currentScene.transitionTo = new LevelSelectScreen(0);
+                            //start game
                         }else{
-                            if(diag.p1.x<centerPoint.x){
-                                wall = Direction.SOUTHWEST;
-                            }   
-                            else {
-                                wall = Direction.SOUTHEAST;
-                            }
+                            this.text = (this.text + this.currentGlyph.value).slice(0, 16)
                         }
+                    }else {
+                        this.text = this.text.slice(0, -1);
                     }
+                    this.lastRead = Date.now();
                 }
-                if(spawnPoint){
-                    console.log("spawning FireballTrap!")
-                    new FireballTrap(room, spawnPoint.x, spawnPoint.y, wall);
+                if(keyBoop){
+                    this.audioChannel.play(SoundEffects.KEY_BOOP, .2, false);
+                } else if (keyBeep){
+                    this.audioChannel.play(SoundEffects.KEY_BEEP, .2, false);
                 }
             }
-
-
         }
-        if(!room.exit && !room.secret){
-            room.heatTiles = Room.getHeatTiles(room);
-            LavaPool.Factory(room);
-            /*
-            if(!any(room.objects,(o)=>{return (o instanceof LavaPool);})){
-                let lava = VC.Math.random(1, 4);
-                for(let v = 0; v<lava; v++){
-                    new LavaCrack(room);
-                }  
-            }
-            */
-        }else {
-            /*
-            let lava = VC.Math.random(1, 4);
-            for(let v = 0; v<lava; v++){
-                new LavaCrack(room);
+    } 
+    
+    textElement = null;
+    render(deltaT, screen){ 
+        if (this.structureRendered == false){
+            //background
+            screen.drawRect(0,0,dimensions.width, dimensions.width,	"#06402B",SCREENBLACK,0, 15);
+        
+            let buttonSize = dimensions.width/10;
+            let keyboardLeft = buttonSize / 2 + buttonSize;
+            let keyboardTop = dimensions.width - (buttonSize * 6) - buttonSize/2 - 5;
+            
+        
+            screen.drawRect(keyboardLeft - buttonSize, keyboardTop - buttonSize, keyboardLeft + buttonSize * 7 + buttonSize * .5, buttonSize * 7, "#000","#FFF", 3, 5).attr({opacity:.5}); 
+            
+            
+            
+            let text = screen.text(dimensions.width/2,30, "NAME YOUR FILE")
+            text.attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "font-weight": "bold"});
+            
+            let left = 300;
+
+
+            text = screen.text(left+20, 92 + 64/2, "HUGH"); 
+            text.attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "font-weight": "bold","text-anchor": "start", "opacity":.5});
+            
+            this.defaultTextElement = text;
+
+
+            text = screen.text(left+20, 92 + 64/2, "0123456789ABCDEF"); 
+            text.attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "font-weight": "bold","text-anchor": "start"});
+            
+            this.textElement = text;
+
+            let charWidth = this.textElement.getBBox().width / 16;
+            let width = charWidth * 17 + charWidth/2;
+            
+            screen.drawRect(left, 92, width, 64, "#000","#fff", 3, 5).attr({opacity:.5}); 
+            this.textElement.toFront();
+            
+
+
+            
+            screen.drawRect(125, 60, 125, 125, "#864","#AAA", 3, 5) ; 
+            
+
+            this.sprite = new VC.Sprite(screen, Images.ADVENTURER, 800, 600, 100, 100, 125 + 12, 75);
+            this.sprite.setAnimation(Direction.SOUTH, State.WALKING)
+ 
+
+            
+            
+
+            if(VC.Client.orientation != VC.Orientation.PORTRAIT){
+                text = screen.text(dimensions.width/2,dimensions.width-20, "ARROW KEYS TO SELECT, SPACE BAR TO CHOOSE")
+                text.attr({ "font-size": "24px", "font-family": "monospace", "fill": "#FFF"});
             } 
-            */   
+
+            this.structureRendered = true;
+
         }
+
+        this.glyphs.forEach(g=>g.render(screen));
+        this.sprite.render(deltaT); 
+        this.textElement.attr({"text": this.text});
+        if(this.text==""){
+            this.defaultTextElement.attr({"opacity":.5});
+        }else{
+            this.defaultTextElement.attr({"opacity": 0})
+        }
+
+    }
+
+    postDisplay(){
+        this.audioChannels.forEach(ac=>ac.dispose());
+        this.audioChannels=[];
     }
 }
 class WaterTemple extends Temple{
@@ -9205,1174 +10073,192 @@ class WaterTemple extends Temple{
     }
 }
 
-
-let game
-
-VC.Client.OnReady(()=>{
-    game = new Game();
-
-    game.screen.canvas.addEventListener("touchstart",function(e){
-        VC.Client._orientation = VC.Orientation.PORTRAIT;
-        changeOrientation();
-    });
-    changeOrientation();
-    
-    
-    document.addEventListener("visibilitychange", () => {
-        if (document.hidden) {
-            pause();
-        }
-    }); 
-    
-    game.debug = DEBUG;
-    game.play();
-})
-
-window.onbeforeunload = function(){
-    if(game && game.level && game.level.statistics && game.slot){
-        game.slot.statistics.add(game.level.statistics);
-        game.slot.save();
-    }
-};
-
-window.onerror = function(message, source, lineNumber, colno, error) {
-    if(!game.debug){
-            
-        let body = encodeURI(`
-        Send this email to help debug the issue!
-        
-        Message: ${message}
-        
-        Error: ${error}
-
-        LineNumber: ${lineNumber}, ${colno}
-
-        Call Stack:
-        ${error.stack.replaceAll("https://goldruin.com/play/", "")}
-
-        `);
-
-        let uri = `mailto:Gold Ruin Developers<goldruindev@gmail.com>?subject=GoldRuin ${VERSION} Exception&body=${body}`
-
-        if(confirm("Exception Found!\n\nWould you like to send this error to the developers?")){
-            window.open(uri, "_self");
-        }
-
-    }
-};
-
-class Adventurer extends Character{
-    
-    sprite = null;//HACK: Made public for exit steps
-    attackBegin = null;
-    #whip = {
-        thickness: 5,
-        length: 175, 
-        box: new VC.Box(0,0,0,0)
-    }
-
-    constructor(room,controller){
-        super(room,controller);
-        this.box.x = Math.round(dimensions.width / 2)-25;
-        this.box.y = Math.round(dimensions.width / 2)-25;
-        this.box.width = 50;
-        this.box.height = 50;
-        
-        this.direction = Direction.SOUTH; //init facing the player
-        this.team = Team.HEROIC;
-        this.speed = 150; //in px/sec
-        this.damage = 10;
-        this.health = 30;
-        this.tnt = 5;
-        this.maxHealth = 30;
-        this._attackDuration = 250;
-        this._attackCooldown = 750;
-        this.hidden = false;
-        this.hiddenUntil = Date.now();
-    }
-    
-    move(deltaT){
-        if(this.hidden && this.hiddenUntil<Date.now()){
-            this.hidden = false;
-        }
-        if(this.state !== State.DYING && this.state !== State.DEAD && game.currentScene instanceof Level ){
-            if(this.attackBegin != null &&  this.controller.read().a === 0){
-                if(this.state === State.THROWING){
-                    this.#tntAttack();  
-                } else {
-                    this.#whipAttack();
-                }
-                this.attackBegin = null
-            }
-        }
-        let state1 = this.state;
-        super.move(deltaT);
-        if(this.state!==state1){
-            if(this.state===State.WALKING){
-                this.playSound(0, SoundEffects.FOOTSTEPS, .2, true, false);
-            }else{
-                this.stopSound(0, SoundEffects.FOOTSTEPS);
-            }
-        }
-    }
-
-    render(deltaT, screen){
-        let framestart = Date.now()
-        if(!this.sprite){
-            this.sprite = new VC.Sprite(screen, Images.ADVENTURER, 800, 600, 100, 100, 0, 0);
-        }
-        if(DEBUG){
-            this.box.render(screen, "#FF0");
-        }
-        
-        //render whip
-        if(this.state === State.ATTACKING && this.attackBegin==null){
-            if(!this.#whip.element && framestart - this.sprite.animation.startTime > 100){
-                switch(this.direction){
-                    case Direction.NORTH:
-                        this.#whip.element = screen.drawRect(Math.round(this.#whip.box.x + this.#whip.box.width/2)-2, this.#whip.box.y, 3, this.#whip.box.height, "#624a2e","#000", 2 );
-                        break;
-                    case Direction.EAST:
-                        this.#whip.element = screen.drawRect(this.#whip.box.x + 10,  Math.round(this.#whip.box.y + this.#whip.box.height/2)-2 +1, Math.abs(this.#whip.box.width-10), 3, "#624a2e","#000", 2);
-                        this.#whip.shadow = screen.drawRect(this.#whip.box.x + 24.5, this.#whip.box.y+46.5, Math.abs(this.#whip.box.width-24), 4, "#000","#000",0).attr({"opacity":.5});
-                        break;
-                    case Direction.SOUTH: 
-                        this.#whip.element = screen.drawRect(Math.round(this.#whip.box.x + this.#whip.box.width/2)-2, this.#whip.box.y, 3, this.#whip.box.height, "#624a2e","#000", 2);
-                        break;
-                    case Direction.WEST:
-                        this.#whip.element = screen.drawRect(this.#whip.box.x,  Math.round(this.#whip.box.y + this.#whip.box.height/2)-2, Math.abs(this.#whip.box.width-10), 3, "#624a2e","#000", 2);
-                        this.#whip.shadow = screen.drawRect(this.#whip.box.x, this.#whip.box.y+50.75, Math.abs(this.#whip.box.width-22), 4, "#000","#000",0).attr({"opacity":.5});
-                        break;
-                    }
-            }
-            if(this.#whip.shadow) this.#whip.shadow.toFront();
-            if(this.#whip.element) this.#whip.element.toFront();
-
-        } else {
-            if(this.#whip.element) this.#whip.element.remove();
-            this.#whip.element = null;
-            if(this.#whip.shadow) this.#whip.shadow.remove();
-            this.#whip.shadow = null;
-        }
-
-        //render player sprite
-        if(this.state === State.DEAD){
-            this.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
-            
-            game.level.statistics.roomsVisited = filter(game.level.rooms,(r)=>{return r.visited}).length
-            game.level.statistics.roomsSpawned = game.level.rooms.length
-            game.statistics.add(game.level.statistics);
-            game.slot.statistics.add(game.level.statistics);   
-            game.slot.save();
-            game.statistics.levelNumber = game.level.number; 
-            game.currentScene.transitionTo = new GameOverScreen(game.statistics, game.level.world);
-
-        } else if (this.state === State.THROWING){
-            this.sprite.setFrame(this.direction, State.THROWING, 0)
-        } else {
-            this.sprite.setAnimation(this.direction, this.state);
-        }
-        this.sprite.location.x = (this.box.x - 25) ;
-        this.sprite.location.y = (this.box.y - 50) ;
-        this.sprite.render(deltaT);
-    }
-
-    clear(){
-        super.clear();
-        if(this.sprite){
-            //this.sprite.remove();
-            //this.sprite = null;
-        }
-        if(DEBUG){
-            this.box.remove();
-        }
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-
-    attack(){
-        if(this.state !== State.ATTACKING && this.state !== State.THROWING && this.attackBegin == null){
-            this.attackBegin = new Date();
-        }
-
-        if(this.tntCount>0 && this.state !== State.THROWING && new Date() - this.attackBegin >= 400){
-            this.state = State.THROWING;
-            this.tnt = new TNT(null);
-            this.tnt.box.x = this.box.center().x - this.tnt.box.width/2;
-            this.tnt.box.y = this.box.center().y - this.tnt.box.height/2;
-            this.tntCount--;   
-        }
-    }
-
-    #whipAttack(){
-
-        /*
-        let deg = Direction.toDegress(this.direction);//VC.Math.random(0,360);
-        let rads = VC.Trig.degreesToRadians(deg);
-        let distance = 75;
-        let x = this.box.center().x + distance * Math.cos(rads);
-        let y = this.box.center().y + distance * Math.sin(rads);
-        new Fireball(this.room, x,y,deg);
-        return;
-        */
-        let targets = this.getObjectsInRangeOfAttack(); 
-        if(this.state !== State.ATTACKING && this.canAttack){
-            this.state = State.ATTACKING;
-            
-            let url = "";
-            switch(Math.round((Math.random()*2) % 3)){
-                case 0:
-                    url=SoundEffects.WHIP1;
-                    break;
-                case 1:
-                    url=SoundEffects.WHIP2;
-                    break;
-                case 2:
-                    url=SoundEffects.WHIP3;
-                    break;
-            }
-            
-            this.playSound(1, url, .9, false, false);
-
-            let targets = this.getObjectsInRangeOfAttack(); 
-            if(targets.length>0){
-                let collidingWith = targets[0];
-                let sb = new Starburst(this.room);
-
-                let collisionBox = collidingWith.box;
-                if(collidingWith.weakSpot){
-                    if(this.#whip.box.collidesWith(collidingWith.weakSpot)){
-                        collidingWith.hurt(this.damage, this.direction);
-                        collisionBox = collidingWith.weakSpot;
-                    }
-                }else if(collidingWith.hurt){
-                    collidingWith.hurt(this.damage, this.direction);
-                }
-                if(game && game.level && game.level.statistics) {
-                    game.currentScene.statistics.damageDealt += this.damage;
-                }
-                switch(this.direction){
-                    case Direction.NORTH:
-                        this.#whip.box.reset (
-                            Math.round(this.box.x + this.box.width / 2 - this.#whip.thickness / 2),
-                            collisionBox.y + collisionBox.height,
-                            this.#whip.thickness,
-                            Math.abs(this.box.y - (collisionBox.y + collisionBox.height))
-                        )
-                        
-                        sb.box.x = this.#whip.box.x - sb.box.width / 2;
-                        sb.box.y = this.#whip.box.y - sb.box.height / 2;
-
-                        break;
-                    case Direction.EAST:
-                        this.#whip.box.reset (
-                            this.box.x + this.box.width,
-                            Math.round(this.box.y - 25 + this.box.height/2 - this.#whip.thickness/2),
-                            Math.abs(collisionBox.x - (this.box.x + this.box.width)),
-                            this.#whip.thickness
-                        )
-                        sb.box.x = this.#whip.box.x + this.#whip.box.width  - sb.box.width / 2;
-                        sb.box.y = this.#whip.box.y - sb.box.height / 2;
-
-                        break;
-                    case Direction.SOUTH:
-                        this.#whip.box.reset(
-                            Math.round(this.box.x + this.box.width/2 - this.#whip.thickness/2),
-                            this.box.y + this.box.height,
-                            this.#whip.thickness,
-                            Math.abs(collisionBox.y - (this.box.y + this.box.height))
-                        )
-                        
-                        sb.box.x = this.#whip.box.x - sb.box.width / 2;
-                        sb.box.y = this.#whip.box.y + this.#whip.box.height - sb.box.height / 2;
-                        break;
-                    case Direction.WEST:
-                        this.#whip.box.reset(
-                            collisionBox.x + collisionBox.width,
-                            Math.round(this.box.y - 29 + this.box.height/2 - this.#whip.thickness/2),
-                            Math.abs(this.box.x - (collisionBox.x + collisionBox.width)),
-                            this.#whip.thickness  
-                        )
-                        sb.box.x = this.#whip.box.x - sb.box.width / 2;
-                        sb.box.y = this.#whip.box.y - sb.box.height / 2;
-
-                        break;
-                }
-            }
-        }
-    }
-
-    set room(nextRoom){
-        if(nextRoom == super.room){
-            return
-        }
-        this.hidden = true; 
-        this.hiddenUntil = Date.now() + 1000;
-        super.room = nextRoom;
-
-    }
-    get room(){
-        return super.room;
-    }
-
-    #tntAttack(drop){
-        if(this.state === State.THROWING){    
-            let x = this.box.x;
-            let y = this.box.y;
-            switch(this.direction){
-                case Direction.NORTH:
-                    y += 10;
-                    break;
-                case Direction.EAST:
-                    x -= 10;
-                    break;
-                case Direction.SOUTH:
-                    y -= 10;
-                    break;
-                case Direction.WEST:
-                    x += 10;
-                    break;
-            }
-
-            this.box = this.room.constrain(this, x, y);
-        
-
-            this.tnt.box.center(this.box.center());
-            x = this.box.center().x - this.tnt.box.width/2;
-            y = this.box.center().y - this.tnt.box.height/2;
-            switch(this.direction){
-                case Direction.NORTH:
-                    y = this.box.y - this.tnt.box.height;
-                    break;
-                case Direction.EAST:
-                    x = this.box.x + this.box.width;
-                    break;
-                case Direction.SOUTH:
-                    y = this.box.y + this.box.height;
-                    break;
-                case Direction.WEST:
-                    x = this.box.x - this.tnt.box.width;
-                    break;
-            }
-            this.tnt.room = this.room;
-            let pbox = this.box.clone();
-            this.tnt.box = this.room.constrain(this.tnt, x, y);
-            if(!(this.tnt.box.x == x && this.tnt.box.y==y)){
-                //drop=true;
-            }
-            this.box = pbox;    
-
-            this.tnt.direction = this.direction;
-            if (drop){
-                this.tnt.state = State.IDLE;
-                if(this.state == State.THROWING){
-                    this.state = State.IDLE;
-                }
-            }else{
-                this.tnt.state = State.WALKING; 
-                this.state = State.IDLE;       
-            }
-        }
-    }
-
-    getObjectsInRangeOfAttack(){
-        switch (this.direction){
-            case Direction.NORTH: 
-                this.#whip.box.reset(
-                    Math.round(this.box.x + this.box.width / 2 - this.#whip.thickness / 2),
-                    VC.Math.constrain((this.room.box.y - this.room.wallHeight / 2) ,this.box.y - this.#whip.length, this.box.y),
-                    this.#whip.thickness,
-                    VC.Math.constrain(0, this.#whip.length, this.box.y - this.room.box.y + this.room.wallHeight / 2)
-                );
-                break;
-            case Direction.EAST:
-                this.#whip.box.reset(
-                    VC.Math.constrain(this.box.x + this.box.width,this.box.x + this.box.width,this.room.box.x+this.room.box.width + this.room.wallHeight/2),
-                    Math.round(this.box.y - 25 + this.box.height/2 - this.#whip.thickness/2),
-                    VC.Math.constrain(0, this.#whip.length, (this.room.box.x + this.room.box.width + this.room.wallHeight/2) - (this.box.x + this.box.width)),
-                    this.#whip.thickness
-                );
-                break;
-            case Direction.SOUTH:
-                this.#whip.box.reset(
-                    Math.round(this.box.x + this.box.width/2 - this.#whip.thickness/2),
-                    VC.Math.constrain(this.box.y + this.box.height,this.box.y + this.box.height,this.room.box.y+this.room.box.height),
-                    this.#whip.thickness,
-                    VC.Math.constrain(0, this.#whip.length, (this.room.box.y + this.room.box.height + this.room.wallHeight/2) - (this.box.y + this.box.height))
-                );
-                break;
-            case Direction.WEST:
-                this.#whip.box.reset(
-                    VC.Math.constrain(this.room.box.x - this.room.wallHeight/2,this.box.x - this.#whip.length, this.box.x),
-                    Math.round(this.box.y - 29 + this.box.height/2 - this.#whip.thickness/2),
-                    VC.Math.constrain(0, this.#whip.length, this.box.x - this.room.box.x + this.room.wallHeight/2),
-                    this.#whip.thickness
-                );
-                break;
-        }
-          
-        let distance = this.#whip.length * 2;
-        let collidingWith = null;
-        this.room.objects.forEach((obj)=>{
-            if(obj!==this && (obj.plane===Plane.PHYSICAL || obj instanceof TNT)){
-                if(obj.weakSpot && this.#whip.box.collidesWith(obj.weakSpot)){
-                    let objDistance = this.box.distance(obj.weakSpot);
-                    if(objDistance < distance){
-                        collidingWith = obj;
-                        distance = objDistance;
-                    } 
-                } else {
-                    let objbox = obj.box.clone();
-                    let objDistance = this.box.distance(objbox);
-                    if(obj instanceof TreasureChest && obj.box.y<this.box.y){
-                        objbox.height = 24;
-                    }
-
-                    if(this.#whip.box.collidesWith(objbox) && objDistance < distance){
-                        
-                        collidingWith = obj;
-                        distance = objDistance;
-                    }
-                }
-            }
-        });
-        if(collidingWith!=null){
-            return [collidingWith];
-        }
-            
-        return [];
-    }
-
-    hurt(damage, knockback, distance){
-        if(game.currentScene instanceof Level){ 
-            this.#tntAttack(true);      
-            let startState = this.state;
-            super.hurt(damage, knockback, distance);
-            if(this.health<15 && this.health>0){
-                this.playSound(2, SoundEffects.HEART, 1, true, false);
-            }
-            if(this.state === State.DYING && startState !== State.DYING){
-                this.direction = Direction.SOUTH;
-                this.stopSound(2, SoundEffects.HEART);
-                this.playSound(2, SoundEffects.ADVENTURER_DEATH, 1, false, false);
-            }
-        }
-    }
-
-    get health(){
-        return super.health;
-    }
-    set health(value){
-        value = VC.Math.constrain(0, value, super.maxHealth);
-        super.health = value;
-        if(this.health>10){
-            this.stopSound(2, SoundEffects.HEART);
-        }
-    }
-
-}
-
-class Bat extends Character {
-    sprite = null;
-    #initialized = false;
-    constructor(room, controller){
-        super(room, controller);
-        this.box.x = Math.round(dimensions.width / 2)-100;
-        this.box.y = Math.round(dimensions.width / 2)-100;
-        this.box.height = 75;
-        this.box.width = 75;
-        this.layer = Layer.EFFECT; 
-        this.team = Team.DUNGEON;
-        this.direction = Direction.EAST;
-        this.speed = 125;
-        this.health = 10;
-        this.maxHealth = 10;
-        this.damage = 5;
-        this._attackDuration = 500; 
-        this._attackCooldown = 3000;
-        this.style = VC.Math.random(0,3);
-        this.z = 25;
-        this.immovable = true;
-    }
-
-    initialize(){
-        new BatShadow(this);
-        this.playSound(0, SoundEffects.BAT_WING, .7, true);
-        this.#initialized = true;
-    }
-    move(deltaT){
-        if(!this.#initialized){
-            this.initialize();
-        }
-        
-        this.controller.reverseInput = ((Date.now() - this._lastAttack) < this._attackCooldown);
-        this.speed = this.controller.reverseInput ? 200 : this.getObjectsInView().indexOf(game.player) === -1 ? 115 : 150;
-        super.move(deltaT);
-
-        if(this.state === State.DYING){
-            this.z = VC.Math.percentToRange((Date.now() - this._stateStart)/800, 30, 0)
-        }
-
-    }
-    
-    render(deltaT, screen){
-        if(!this.sprite){
-            this.sprite = new VC.Sprite(screen, Images.BAT, 1200, 750, 150, 150, 0, 0);
-        }
-        if(DEBUG){
-           this.box.render(screen, "#FF0");
-           /*
-            if(this._viewBox1){
-                this._viewBox1.render(screen,"#0ff");
-            }
-            if(this._viewBox2){
-                this._viewBox2.render(screen,"#0ff");
-            }
-            if(this._viewBox){
-                this._attackBox.render(screen, "#f00");
-            }
-            */
-        } 
-        
-
-        this.sprite.location.x = this.box.center().x-75;
-        this.sprite.location.y = this.box.center().y-(50+this.z);
-
-        this.sprite.setAnimation(this.direction, this.state);
-        this.sprite.render(deltaT);
-    }
-    clear() {
-        super.clear();
-        if(this.sprite){
-            this.sprite.remove();
-        }
-       
-        if(DEBUG){
-            this.box.remove();
-        }
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-    attack(){
-        if(this.state !== State.ATTACKING){
-            this.playSound(1, SoundEffects.BAT_ATTACK, .9, false);
-            this.state = State.ATTACKING;
-        }
-        let opposingTeam = Team.getOpposingTeam(this.team)
-        let targets = this.getObjectsInRangeOfAttack();
-        targets.forEach((o)=>{
-            if(o.team === opposingTeam){
-                let rect = this._attackBox.intersectRect(o.box)
-                if(rect){
-                    o.hurt(this.damage);
-                    let sb = new Starburst(this.room);
-                    sb.box = rect;
-                }
-            }
-        });
-    }
-    getObjectsInView(){
-        //initialize the view box
-        if(!this._viewBox1){
-            this._viewBox1 = new VC.Box(0,0,50,50);
-        }
-
-        this._viewBox1.height = 1000;
-        this._viewBox1.width = Date.now() - this._lastAttack > this._attackCooldown ? this.box.width : 1000;
-        this._viewBox1.center(this.box.center());
-        
-        if(!this._viewBox2){
-            this._viewBox2 = new VC.Box(0,0,50,50);
-        }
-
-        this._viewBox2.height = this.box.height;
-        this._viewBox2.width = 1000;
-        this._viewBox2.center(this.box.center());
-
-        let inView = [];
-        this.room.objects.forEach((o)=>{
-            if(o!=this && (o.box.collidesWith(this._viewBox1) || o.box.collidesWith(this._viewBox2))){
-                inView.push(o);
-            }
-        })
-
-        return inView;
-    }
-    getObjectsInRangeOfAttack(){
-        //initialize the attack box
-        if(!this._attackBox){
-            this._attackBox = new VC.Box(0,0,25,25);
-        }
-        //reposition the attack box
-        switch(this.direction){
-            case Direction.NORTH:
-                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
-                this._attackBox.y = this.box.y - this._attackBox.height
-                break;
-            case Direction.EAST:
-                this._attackBox.x = this.box.x + this.box.width;
-                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);
-                break;
-            case Direction.SOUTH:
-                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
-                this._attackBox.y = this.box.y + this.box.height;
-                break;
-            case Direction.WEST:
-                this._attackBox.x = this.box.x - this._attackBox.width;
-                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);   
-                break;
-        }
-
-        let inRange = []
-        this.room.objects.forEach((o)=>{
-            if(o!==this && this._attackBox.collidesWith(o.box)){
-                inRange.push(o);
-            }
-        });
-        return inRange;
-    }
-    hurt(damage, knockback, distance){
-        let startHealth=this.health;
-        super.hurt(damage, knockback, distance);
-        if(startHealth>0 && this.health<=0){
-            if (game && game.level && game.level.statistics){
-                game.level.statistics.batsKilled++;
-                game.level.statistics.enemiesKilled++;
-            }
-            this.stopSound(0, SoundEffects.BAT_WING);
-            this.playSound(1, SoundEffects.BAT_DEATH, .8, false);
-        }
-    }
-}
-
-class InputController extends Controller {
-    
-    screen = null;
-    gamepads = [];
-
-    constructor(){
-        super();
-        this.screen = new VC.Screen("controller", 0, 0, dimensions.width, dimensions.height);
-        let controller = this;
-        window.onkeyup = function(e){
-            switch (e.key){
-                case "w":
-                case "W":
-                    controller.up = 0;
-                    break;    
-                case "s":
-                case "S":
-                    controller.down = 0;
-                    break;
-                case "a":
-                case "A":
-                    controller.left = 0;
-                    break;
-                case "d":
-                case "D":
-                    controller.right = 0;
-                    break;
-                case " ":
-                case 'Enter':
-                    controller.attack = 0;
-                    break;
-                default:
-                    switch (e.keyCode){
-                        case UP_ARROW:
-                            controller.up = 0;
-                            break;
-                        case RIGHT_ARROW:
-                            controller.right = 0;
-                            break;
-                        case DOWN_ARROW:
-                            controller.down = 0;
-                            break;
-                        case LEFT_ARROW:
-                            controller.left = 0;
-                            break;
-                        default:
-                            return true;
-                    }
-            }
-            e.handled= true;
-            e.preventDefault();
-            return false;
-        };
-        
-        window.onkeydown = function(e){
-            switch (e.key){
-                case "w":
-                case "W":
-                    controller.up = 1;
-                    break;
-                case "s":
-                case "S":
-                    controller.down = 1;
-                    break;
-                case "a":
-                case "A":
-                    controller.left = 1;
-                    break;
-                case "d":
-                case "D":
-                    controller.right = 1;
-                    break;
-                case " ":
-                case 'Enter':
-                    controller.attack = 1;
-                    break;
-                default:
-                    switch (e.keyCode){
-                        case UP_ARROW:
-                            controller.up = 1;
-                            break;
-                        case RIGHT_ARROW:
-                            controller.right = 1;
-                            break;
-                        case DOWN_ARROW:
-                            controller.down = 1;
-                            break;
-                        case LEFT_ARROW:
-                            controller.left = 1;
-                            break;
-                        default:
-                            return true;
-                    }
-            }
-        
-            e.handled= true;
-            e.preventDefault();
-            return false;
-        };
-    }
-
-    touchStartOrMove(e){
-        e.preventDefault(e);
-        //setVC.OrientationPortrait();
-        
-        let button = this.elements[this.elements.length-3];
-        let dpad = this.elements[this.elements.length-2];
-        let controller = this.elements[this.elements.length-1];
-        
-        let r = e.target.getBoundingClientRect();
-     
-        //r.y = r.y - dimensions.infoHeight - dimensions.width
-        let touches = Array.from(e.touches);
-        let dpadTouched = false;
-        let buttonTouched = false;
-        touches.forEach((t)=>{   
-            
-            //console.log(r,t,this.screen);
-            //console.log(t);
-
-
-            let x = (((t.clientX - r.x)/r.width))//*constants.controllerRadius*2) - constants.controllerRadius;
-            let y = (((t.clientY - r.y)/r.height))//*constants.controllerRadius*2) - constants.controllerRadius;// * dimensions.height;
-            x = x * controller.attr("width");
-            y = y * controller.attr("height") + (dimensions.width + dimensions.infoHeight);
-
-            let d = dpad.getBBox();
-            
-            if(x>d.x && x<d.x + d.width && y>d.y && y<d.y+d.width){
-                dpadTouched = true;
-                //this.screen.drawRect(x,y, 10, 10, "#FF0", "#000",0)
-
-                x = ((x - d.x)-d.width/2)/(d.width/2);
-                y = ((y - d.y)-d.height/2)/(d.height/2)
-                d = Math.abs(VC.Trig.radiansToDegrees(Math.atan(y/x)));
-                this.up = y < 0 && d > 23 ? 1 : 0;
-                this.right = x > 0 && d < 68 ? 1 : 0;
-                this.down = y > 0 && d > 22 ? 1 : 0;
-                this.left = x < 0 && d < 68 ? 1 : 0;
-            }
-            
-            let b = button.getBBox();
-            if(x>b.x && x<b.x + b.width && y>b.y && y<b.y+b.width){
-                dpadTouched = true;
-                buttonTouched = true;
-                this.attack = 1;
-            }
-
-        })
-        if(!dpadTouched){
-            this.up = 0;
-            this.right = 0;
-                this.down =  0;
-                this.left = 0;
-        }
-        if(!buttonTouched){
-            this.attack = 0;
-        }
-    }
-
-    render(){
-        let centerY = Math.round((dimensions.height - dimensions.width - dimensions.infoHeight)/2 + dimensions.width + dimensions.infoHeight);
-        let dPadLeft = Math.round(dimensions.width/4);  
-        if (this.elements.length ===0){
-            
-            //mask lower screen
-            this.screen.drawRect(-5, dimensions.width + dimensions.infoHeight, dimensions.width+10, dimensions.height, "#000", "#000", 0);
-
-            let color="#242424";
-            this.screen.rect(0, dimensions.width + dimensions.infoHeight + 25, dimensions.width, dimensions.height - dimensions.width - dimensions.infoHeight - 50).attr({"fill":color, "r": 100});
-            color = "#3a3a3a";
-            this.elements.push(this.screen.drawEllipse(dPadLeft, centerY, constants.controllerRadius, constants.controllerRadius,0,0,color,"#000",constants.lineThickness));
-            color = "#444444";
-            this.elements.push(this.screen.drawRect(dPadLeft - constants.controllerCrossThickness/2, centerY - constants.controllerRadius, constants.controllerCrossThickness, constants.controllerRadius*2,color, "#000",constants.lineThickness))
-            this.elements.push(this.screen.drawRect(dPadLeft - constants.controllerRadius, centerY - constants.controllerCrossThickness/2, constants.controllerRadius*2, constants.controllerCrossThickness,color, "#000",constants.lineThickness))
-            this.elements.push(this.screen.drawRect(dPadLeft - constants.controllerCrossThickness/2, centerY - constants.controllerCrossThickness/2-constants.lineThickness/2, constants.controllerCrossThickness, constants.controllerCrossThickness + constants.lineThickness,color, color,0))
-            this.elements.push(this.screen.drawLine(dPadLeft - constants.controllerCrossThickness/2, centerY - constants.controllerCrossThickness/2, dPadLeft + constants.controllerCrossThickness/2, centerY + constants.controllerCrossThickness/2,"#000",constants.lineThickness))
-            this.elements.push(this.screen.drawLine(dPadLeft + constants.controllerCrossThickness/2, centerY - constants.controllerCrossThickness/2, dPadLeft - constants.controllerCrossThickness/2, centerY + constants.controllerCrossThickness/2,"#000",constants.lineThickness))
-            let arrowMargin = 4 * constants.lineThickness;
-            let arrowHeight = 40;
-            color = "#303030";
-            this.elements.push(this.screen.drawTriangle(
-                dPadLeft, centerY - constants.controllerRadius + arrowMargin,
-                dPadLeft + constants.controllerCrossThickness/2 - arrowMargin, centerY - constants.controllerRadius + arrowHeight, 
-                dPadLeft - constants.controllerCrossThickness/2 + arrowMargin, centerY - constants.controllerRadius + arrowHeight,  
-                0,0, color, "#000",0//constants.lineThickness
-            ));
-            this.elements.push(this.screen.drawTriangle(
-                dPadLeft + constants.controllerRadius - arrowMargin, centerY,
-                dPadLeft + constants.controllerRadius - arrowHeight, centerY + constants.controllerCrossThickness/2 - arrowMargin, 
-                dPadLeft + constants.controllerRadius - arrowHeight, centerY - constants.controllerCrossThickness/2 + arrowMargin,  
-                0,0, color, "#000",0
-            ));
-            this.elements.push(this.screen.drawTriangle(
-                dPadLeft, centerY + constants.controllerRadius - arrowMargin,
-                dPadLeft + constants.controllerCrossThickness/2 - arrowMargin, centerY + constants.controllerRadius - arrowHeight, 
-                dPadLeft - constants.controllerCrossThickness/2 + arrowMargin, centerY + constants.controllerRadius - arrowHeight,  
-                0,0, color, "#000",0
-            ));
-            this.elements.push(this.screen.drawTriangle(
-                dPadLeft - constants.controllerRadius + arrowMargin, centerY,
-                dPadLeft - constants.controllerRadius + arrowHeight, centerY + constants.controllerCrossThickness/2 - arrowMargin, 
-                dPadLeft - constants.controllerRadius + arrowHeight, centerY - constants.controllerCrossThickness/2 + arrowMargin,  
-                0,0, color, "#000",0
-            ));
-            
-            
-            let txt1 = this.screen.text(Math.round(dimensions.width*.75), centerY - 180, "TAP TO WHIP").attr({ "font-size": "32px", "font-family": "monospace", "fill": "#CCC", "text-anchor": "middle", "font-weight": "bold"});  
-            this.elements.push(txt1);
-            
-            let txt2 = this.screen.text(Math.round(dimensions.width*.75), centerY + 180, "HOLD FOR TNT").attr({ "font-size": "32px", "font-family": "monospace", "fill": "#CCC", "text-anchor": "middle", "font-weight": "bold"});  
-            this.elements.push(txt2);
-
-            let el = this.screen.drawEllipse(Math.round(dimensions.width*.75), centerY, constants.controllerRadius/2, constants.controllerRadius/2,0,0,"#800","#000",constants.lineThickness);
-            this.elements.push(el);
-
-            let el2 = this.screen.drawEllipse(dPadLeft, centerY, constants.controllerRadius, constants.controllerRadius,0,0,"90-rgba(200,200,200,0.05)-rgba(0,0,0,0.2):50","#000",constants.lineThickness).attr({"opacity":.2})
-            this.elements.push(el2);
-
-            let el3 = this.screen.drawRect(0, dimensions.width + dimensions.infoHeight, dimensions.width, dimensions.height-(dimensions.width + dimensions.infoHeight),"#000","#000",constants.lineThickness).attr({"opacity":.1})
-            el3.touchstart((e)=>{this.touchStartOrMove(e)});
-            el3.touchmove((e)=>{this.touchStartOrMove(e)});
-            el3.touchend((e)=>{this.touchStartOrMove(e)});
-            this.elements.push(el3);
-        }
-
-        let butt = this.elements[this.elements.length-3];
-        butt.attr({fill:this.attack ? "#600" : "#800"})
-
-        let el = this.elements[this.elements.length-2];
-        //read controller
-        let x = this.left * -1 + this.right;
-        let y = this.up * -1  + this.down;
-
-        let degrees = 0;
-        //read state
-        if(x === 0 && y === 0){
-            el.hide();
-            return;
-        }
-        degrees = 
-            x === -1 && y === 1 ? 225 :
-            x === 1 && y === -1 ? 45 :
-            x === -1 && y === -1 ? 315 :
-            x === 1 && y === 1 ? 135 :
-            x === -1 ? 270 :
-            x === 1 ? 90 :     
-            y === -1 ? 0 :
-            y === 1 ? 180 : 
-            0 ;
-        el.show();
-        el.transform("r" + degrees + "," + dPadLeft + "," + centerY);
-    }
-
-    read(forObject){
-        //read joysticks
-        this.gamepads = navigator.getGamepads();
-        if(this.gamepads && this.gamepads.length>0){
-            let gamepad = this.gamepads[0];
-            if (gamepad != null){
-                this.attack = (gamepad.buttons && gamepad.buttons.length>0 && gamepad.buttons[0]!=null && gamepad.buttons[0].pressed) ? 1 : 0;
-                if(gamepad.axes && gamepad.axes.length>1){
-                    this.right = Math.round(gamepad.axes[0])>0;
-                    this.left = Math.round(gamepad.axes[0])<0;
-                    
-                    this.down = Math.round(gamepad.axes[1])>0;
-                    this.up = Math.round(gamepad.axes[1])<0;
-                        
-                }
-            }
-        }
-        return super.read(forObject);
-    }
-}
-
-
-class Fireball extends GameObject{
-    #angle = 0;
-    #rads = 0;
-    #lightEffect = null;
-    constructor (room, x, y, angle){
+class Pickup extends GameObject{
+    #content = Treasure.RANDOM
+    #sprite = null;
+    #shadow = null;
+    #offset = 0;
+    #spawnTime = Date.now();
+    #permanent = false;
+
+    constructor(room, content, permanent){
         super(room);
-        this.box.width = 26;
-        this.box.height = 26;
-        this.box.x = x - 13;
-        this.box.y = y - 13;
-        this.speed = 400;
-        this.#angle = angle;
-        this.#rads = VC.Trig.degreesToRadians(angle);
-        this.nextFrame = Date.now;
         this.plane = Plane.PHYSICAL;
-        this.layer = Layer.EFFECT;
-        this.state = State.WALKING;
-        this.#lightEffect = new FireballLightEffect(this);
-        this.playSound(0, SoundEffects.FIREBALL_IGNITE,.8,false);
+        this.team = Team.UNALIGNED;
+        this.box.width=36;
+        this.box.height=36;
+        this.#content = content;
+        this.state = State.IDLE;
+        this.#permanent = permanent
     }
-    move(deltaT){
-        if(this.state == State.WALKING){
 
-            this.playSound(1, SoundEffects.FIREBALL_WOOSH,1,true); 
-            let distance = deltaT * this.speed/1000;
-            let x = this.box.x + distance * Math.cos(this.#rads);
-            let y = this.box.y + distance * Math.sin(this.#rads);
-            let r = this.room;
-            let constrained = this.room.constrain(this,x,y);
-            this.box.x = constrained.x;
-            this.box.y = constrained.y;
+    set spawnTime(t){
+        this.#spawnTime = t;
+    }
 
-            if((constrained.x != x || constrained.y!=y) && this.room === r){
-                this.stopSound(1, SoundEffects.FIREBALL_WOOSH);
-                new FireballExplosion(this.room, this.box.center().x, this.box.center().y)
+    move (deltaT){
+        this.plane = Plane.ETHEREAL;
+        if(this.#content === Treasure.RANDOM){
+            if ((game.player.health/game.player.maxHealth) < Math.random()){
+                this.#content = Treasure.HEART
+            } else {
+                this.#content = Math.round(Math.random() * 6) + Treasure.HEART;
+            }
+            
+        }
+
+        if(game.level && this.room !== game.level.currentRoom){
+            return;
+        }
+        if((this.state === State.IDLE || this.state === State.DYING) && game.player.box.collidesWith (this.box)){
+            this.state = State.HURT;
+            super.move();
+            
+            if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
+                game.player.keys.push(this.#content);
+                game.level.statistics.keysCollected++;
+                setTimeout(()=>{this.playSound(1,SoundEffects.KEY, .7, false);},400);
+                
+            } else if (this.#content === Treasure.HEART){
+                game.player.health = VC.Math.constrain(0, game.player.health + 10, game.player.maxHealth);
+                game.level.statistics.heartsCollected++;
+                setTimeout(()=>{this.playSound(1,SoundEffects.HEART, .7, false);},400);
+
+            } else if (this.#content === Treasure.TNT){
+                game.player.tntCount++;
+                game.level.statistics.tntCollected += 1;
+                setTimeout(()=>{this.playSound(1,SoundEffects.TNT, .7, false);},400);
+            } else if (this.#content === Treasure.HEARTCONTAINER){
+                game.player.maxHealth += 10;
+                game.player.health = game.player.maxHealth;//TODO: add slowly
+                setTimeout(()=>{this.playSound(1,SoundEffects.HEART_CONTAINER, .7, false);},400);
+            } else {
+                let goldValue = (this.#content - Treasure.TNT ) * 100;
+                game.player.gold += goldValue;
+                game.level.statistics.goldCollected += goldValue;
+                setTimeout(()=>{this.playSound(1,SoundEffects.GOLD, .7, false);},400);
+            } 
+        }
+
+        if(!this.#permanent && this.state === State.IDLE && this._stateStart + 2000 < Date.now()){
+            this.state = State.DYING;
+        }
+
+        if(!this.#permanent && this.state === State.DYING && this._stateStart + 2000 < Date.now()){
+            this.state = State.DEAD;
+        }
+
+    }
+
+    render(deltaT, screen){
+        if(this.#sprite == null){
+            this.#sprite = new VC.Sprite(screen, Images.TREASURE, 36, 504, 36, 36, this.box.x+14,this.box.y-18);
+            this.#sprite.location.x = this.box.x;
+            this.#sprite.location.y = this.box.y;
+            this.#sprite.setAnimation(0, this.#content);
+        }
+
+        let x = this.box.center().x;
+        let y = this.box.center().y;
+        if(!this.#shadow){
+            this.#shadow = screen.drawEllipse(x, y, 12, 8, 0, 0, "#111","#111",".5");
+            this.#shadow.transform("r0,0,45");// + x +"," + y +  ",1") 
+            this.#shadow.attr({"opacity": .5, "r":45});
+        }
+
+        if(DEBUG){
+            //this.box.render(game.screen, "#FFF");
+        }
+        
+        if(this.state === State.HURT){
+            let offset = (100/1000) * deltaT;
+            this.#offset += offset;
+            let opacity = VC.Math.constrain(0,1-(this.#offset/100), 1);
+            this.#sprite.opacity = opacity; 
+            this.#shadow.attr({"opacity":opacity * .5});
+            if(opacity>0){
+                this.#sprite.location.y -= offset;
+            }else{ 
                 this.state = State.DEAD;
-                this.#lightEffect.state = State.DEAD;
+            }
+        } else {
+            let msPassed = new Date() - this.#spawnTime;
+            let perc = 1-(msPassed/750);
+            let factor = Math.PI - ((Math.PI-1)*(perc));
+            let offset = VC.Math.constrain(-10, 10 * Math.sin(factor*1.5), 10) - 20;
+            
+            this.#sprite.location.y = this.box.y + offset;
+            this.#sprite.opacity = 1;
+            if(this.state === State.DYING){    
+                if(Date.now() % 400 < 150){
+                    this.#sprite.opacity = .5;  
+                }
             }
         }
-
-        super.move(deltaT);
-
+        this.#sprite.render(deltaT);
     }
-    render(deltaT, screen){
-        if(!this.sprite){
-            this.sprite = new VC.Sprite(screen, Images.FIREBALL, 1024, 64, 64, 64, this.box.x, this.box.y);
-            this.sprite.location.r = this.sprite.lastLocation.r = this.#angle + 45 + 90;       
-        }
 
-        let h = 20; //(this.box.width/2) * Math.cos(VC.Trig.degreesToRadians(45));
-        let centerX = this.box.center().x + (Math.cos(this.#rads+Math.PI) * h); 
-        let centerY = this.box.center().y + (Math.sin(this.#rads+Math.PI) * h); 
-
-        this.sprite.location.x = (centerX - this.sprite.size.width/2);
-        this.sprite.location.y = (centerY - this.sprite.size.height/2);
-
-        if(this.nextFrame<Date.now){
-            this.sprite.setFrame(0,0,VC.Math.random(0,15));
-            this.nextFrame = Date.now + 100;    
-
-        }
-        this.sprite.render(deltaT, screen);
-        if(DEBUG){
-            this.box.render(screen, "#FF0");
-        }
-    }
     clear(){
         super.clear();
+        if(this.#sprite){
+            this.#sprite.remove();
+            this.#sprite=null;
+        }
+        if(this.#shadow){
+            this.#shadow.remove();
+            this.#shadow=null;
+        }
+
         if(DEBUG){
             this.box.remove();
         }
-        if(this.sprite){
-            this.sprite.remove();
-        }
-        this.sprite = null;
-
     }
     remove(){
         super.remove();
         this.clear();
     }
 }
-
-class Vine extends GameObject{
-    static _initialized = false;
-    static randomAngles = []
-    static init(){
-        if(this._initialized){
-            return;
-        }
-        this._initialized = true;
+class EndWorldScreen extends VC.Scene{
+    #statistics = null
+    #lastWorld = -1;
+    #rendered = false;
+    constructor(statistics, world){
+        super();
+        this.#statistics = statistics;
+        this.#lastWorld = world;
     }
+    preDisplay(){
+        game.playMusic(Music.EXIT_LEVEL);
 
-    angleForPoint(p){
-        //case Quadrant 1
-        if(p.x>this.#centerPoint.x && p.y>this.#centerPoint.y){
-            return VC.Trig.degreesToRadians(45);
-        }else if(p.x<this.#centerPoint.x && p.y>this.#centerPoint.y){
-            return VC.Trig.degreesToRadians(315);    
-        }else if(p.x<this.#centerPoint.x && p.y<this.#centerPoint.y){
-            return VC.Trig.degreesToRadians(225);    
-        }else if(p.x>this.#centerPoint.x && p.y<this.#centerPoint.y){
-            return VC.Trig.degreesToRadians(135);    
-        }
     }
-  
-    sprite = null;
-    #centerPoint = null;
-    constructor(room){
-        super(room)
-        
-        Vine.init();
-        
-        this.box.width=0;
-        this.box.height=0;
-        this.plane = Plane.ETHEREAL;
-        this.layer = Layer.DEFAULT;        
-
-        this.#centerPoint = room.bounds.getBoundingBox().center();
-        this.startPoint = null;
-        this.endPoint = null;
-        this.growthAngle = 0;
-        this.segments = [];
-        this.lineElements = [];
-        this.leafElements = [];
-        this.leaves = [];
-
-        do {
-            //pick a wall
-            let pindex = VC.Math.random(0, room.bounds.points.length - 1);
-            let p1 = room.bounds.points[pindex];
-            let p2index = (pindex+1) % (room.bounds.points.length);
-            let p2 = room.bounds.points[p2index];
-            
-            let distance = Math.floor(VC.Trig.distance(p1.x, p1.y, p2.x, p2.y));
-            let offset = VC.Math.random(0, distance);
-
-            this.startPoint = new VC.Point(
-                p1.x - (offset * (p1.x - p2.x)) / distance, 
-                p1.y - (offset * (p1.y - p2.y)) / distance,
-            );
-
-            let angle1 = this.angleForPoint(p1);
-            let angle2 = this.angleForPoint(p2);
-            if (angle2<angle1){
-                angle2 = angle2 + 2 * Math.PI
-            }
-
-            this.growthAngle = VC.Math.percentToRange(offset/distance,angle1,angle2);
-            this.endPoint = new VC.Point(Math.sin(this.growthAngle) * room.wallHeight + this.startPoint.x, Math.cos(this.growthAngle) * room.wallHeight + this.startPoint.y)
-            
-        } while (any(room.doors, (d)=>{return d.box.containsPoint(this.startPoint)}))
-        
-        //vineSegment
-        let length = 0;
-        do {
-            let segmentAngle = this.growthAngle + Math.random(5,15) * (this.segments.length % 2 == 1 ? -1 : 1);
-            let segStartPoint = this.startPoint;
-            if(this.segments.length>0){
-                let lastSeg = this.segments[this.segments.length-1];
-                //random point on segment to grow
-                let perc = Math.random();
-                segStartPoint = new VC.Point(
-                    VC.Math.percentToRange(perc, lastSeg.startPoint.x, lastSeg.endPoint.x),
-                    VC.Math.percentToRange(perc, lastSeg.startPoint.y, lastSeg.endPoint.y)
-                )
-            }
-
-            let segEndPoint = new VC.Point(Math.sin(segmentAngle) * constants.brickHeight + segStartPoint.x, Math.cos(segmentAngle) * constants.brickHeight+ segStartPoint.y)
-            this.segments.push({startPoint:segStartPoint, endPoint: segEndPoint});
-            length = VC.Trig.distance(this.startPoint.x, this.startPoint.y, segEndPoint.x, segEndPoint.y)
-            this.leaves.push(new VC.Polygon(
-                new VC.Point(segEndPoint.x, segEndPoint.y),
-                new VC.Point(segEndPoint.x+VC.Math.random(5,10), segEndPoint.y),
-                new VC.Point(segEndPoint.x+VC.Math.random(5,10), segEndPoint.y+VC.Math.random(5,10)),
-                new VC.Point(segEndPoint.x, segEndPoint.y+VC.Math.random(5,10))
-            ));
-        } while (length<room.wallHeight)
-    }
-
-    move(deltaT){
-        
-    }
+    preRender(deltaT){}
 
     render(deltaT, screen){
-        
-
-        if(this.lineElements.length == 0){
-
-            this.segments.forEach((seg)=>{
-                this.lineElements.push(screen.drawLine(seg.startPoint.x,seg.startPoint.y, seg.endPoint.x, seg.endPoint.y,"#164010",3));
-                
-            });
-            
-            this.segments.forEach((seg)=>{
-                this.lineElements.push(screen.drawLine(seg.startPoint.x,seg.startPoint.y, seg.endPoint.x, seg.endPoint.y,"#216119",1));
-            });
-            
-            this.leaves.forEach((leaf)=>{
-                this.leafElements.push(screen.drawPoly(leaf.points, "#216119", "#164010", 1.5));
-            });
-            
-
-            screen.onClear(()=>{this.lineElements=[]; this.leafElements=[];});
+        if(!this.#rendered){
+            screen.drawRect(0, 0, dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
+            game.player.sprite.location.x = 175;
+            game.player.sprite.location.y = 0;
+            game.player.sprite.lastLocation.x = game.player.sprite.location.x;
+            game.player.sprite.lastLocation.y = game.player.sprite.location.y;
+            game.player.sprite.setAnimation(Direction.SOUTH, State.WALKING);
+           
+            this.#statistics.render(screen, "YOU SURVIVED!", new VC.Box(50,0,dimensions.width-100,dimensions.width));
+            this.#rendered = true;
         }
-        
-        this.lineElements.forEach(element => {
-            element.toFront();
-        });
-
-        this.leafElements.forEach(element => {
-            element.toFront();
-        });
-
-        if(VC.Client.orientation === VC.Orientation.LANDSCAPE && (this.nextAnim == null || this.nextAnim<Date.now())){
-            let animLength = VC.Math.random(1000,2000);
-            this.nextAnim = Date.now() + animLength;
-            this.leafElements.forEach((leaf)=>{
-                let t = "t" + VC.Math.random(0,2) * (VC.Math.random(0,1)==0 ? -1 : 1) + "," + VC.Math.random(0,2) * (VC.Math.random(0,1)==0 ? -1 : 1)+'r'+ VC.Math.random(0,45) * (VC.Math.random(0,1)==0 ? -1 : 1);
-                leaf.animate({transform: t}, animLength);
-            });   
-        }
-        
+        game.player.sprite.render(deltaT);
     }
-
-    clear(){
-        super.clear();
-        this.lineElements.forEach(l=>{l.remove();});
-        this.leafElements.forEach(l=>{l.remove();});
-        this.lineElements=[]; 
-        this.leafElements=[];
-
-        if(this.sprite) {
-            this.sprite.remove();
-            this.sprite = null;
+    postRender(deltaT){
+        if (game && game.inputController){
+            let c = game.inputController.read();
+            if(c.a===1){
+                if(this.#lastWorld == 5){
+                    //this.transitionTo = new EndCredits();
+                }
+                this.transitionTo = new LevelSelectScreen(this.#lastWorld);
+            }
         }
-    }Í
-
-    remove(){
-        super.remove();
-        //this.clear();
     }
-
-}
-class Stat {
-    _v = 0;
-    _m = 0;
-    _t = 0;
+    postDisplay(){}
 }
 
 class TempleIcon{
@@ -10660,29 +10546,46 @@ class LevelSelectScreen extends VC.Scene {
         this.audioChannels=[];
     }
 }
-class IceTemple extends Temple{
+
+class NewGameScene extends VC.Scene{
+    #statistics = null
+    #rendered = false;
+    
+    constructor(levelNumber){
+        super();
+        game.player.maxHealth = 10 * game.slot.hearts;
+        game.player.health = game.player.maxHealth;
+        game.player.state = State.IDLE;
+        game.player.gold = 0;
+        game.player.tntCount = 5 * game.slot.tntBags;
+        game.player.keys = [];
+        game.statistics = new Statistics();
+        this.transitionTo = LevelFactory.Construct(levelNumber);
+    }
+   
+}
+class FireTemple extends Temple{
     
     #palette = new Palette(
         "#19351A",//clip color
         "#442A01",//floor color
         "#505347"//wall color
     );
-    
     constructor(){
         super();
     }
 
     get name(){
-        return "Iskavorn"
+        return "Ka'Zuun" 
     }
     
     get description(){
-        return "The Ice Temple"
+        return "The Volcano Temple"
     }
 
     //read-only properties
     get music(){
-        return Music.EXPLORATION;
+        return Music.FIRE;
     }
     
     get palette(){
@@ -10694,20 +10597,52 @@ class IceTemple extends Temple{
         Temple.addTorches(level);
         
         level.rooms.forEach((room, index) => this.themeRoom(room, index, level));
+
         if (level.number % 5 === 0){
             level.message = this.name;
         }
+
+        //LavaPool.Factory(level.rooms[0]);
     }
     
     themeRoom(room, index, level){
-
         super.themeRoom(room, index);
-        if (index !== 0 && !room.exit && level && level.number % 5 != 4){
+        if (index !== 0 && !room.exit && level && level.number % 5 != 4 && !room.secret){
             
             var enemyRange = level.number % 5 < 2 ? 2 : 3;
 
             let enemies = VC.Math.random(room.spawnDensity-1, room.spawnDensity + 1)
-            for(let i=0; i<enemies; i++){   
+            for(let i=0; i<enemies; i++){
+
+                switch(VC.Math.random(0,2)){
+                    case 0:
+                        if(room.spawn(new SwordSkeleton(room, new AutoController()))){
+                            level.statistics.swordSkeletonsSpawned++;
+                            level.statistics.enemiesSpawned++;
+                        };
+                        break;
+                    case 1:
+                        if (i>=2) {
+                            if(room.spawn(new MaceSkeleton(room, new AutoController()))){
+                                level.statistics.maceSkeletonsSpawned++;
+                                level.statistics.enemiesSpawned++;
+                                i++;
+                            }
+                        }else {
+                            if(room.spawn(new SwordSkeleton(room, new AutoController()))){
+                                level.statistics.swordSkeletonsSpawned++;
+                                level.statistics.enemiesSpawned++;
+                            }        
+                        }
+                        break;
+                    case 2:
+                        if(room.spawn(new Bat(room, new AutoController()))){
+                            level.statistics.batsSpawned++;
+                            level.statistics.enemiesSpawned++;
+                        }
+                }
+                continue;
+
                 switch(VC.Math.random(0,enemyRange)){
                     case 0:
                         room.spawn(new CaveSpider(room, new AutoController()));
@@ -10734,784 +10669,74 @@ class IceTemple extends Temple{
                 }
             }
             
+
         }
-
-        //add vines
-        let vines = VC.Math.random(room.spawnDensity * 3, room.spawnDensity * 5);
-        for(let v = 0; v<vines; v++){
-            new Vine(room);
-        }
-
-    }
-}
-
-class MaceSkeleton extends Character{
-    constructor(room, controller){
-        super(room, controller);
-        this.box.x = Math.round(dimensions.width / 2)-100;
-        this.box.y = Math.round(dimensions.width / 2)-100;
-        this.box.height = 80;
-        this.box.width = 60;
-        this.team = Team.DUNGEON;
-        this.direction = Direction.EAST;
-        this.speed = 40;
-        this.health = 40;
-        this.maxHealth = 30;
-        this.damage = 10;
-        this._attackDuration = 500;
-        this._attackCooldown = 1500;
-    }
-    move(deltaT){
-        if(this.sprite && this.state === State.ATTACKING && !this.attacked && this.sprite.animation.frame===3){
-            this.attacked=true;
-            let opposingTeam = Team.getOpposingTeam(this.team)
-            let targets = this.getObjectsInRangeOfAttack();
-            targets.forEach((o)=>{
-                if(o.team === opposingTeam){
-                    let rect = this._attackBox.intersectRect(o.box)
-                    if(rect){
-                        o.hurt(this.damage, this.direction);
-                        let sb = new Starburst(this.room)
-                        sb.box = rect
+        if(!(room.x==0 && room.y==0) && !room.exit){
+            if(room.spawnDensity>0){
+                console.log("spawnDensity", room.spawnDensity);
+                var wall = Direction.NORTH;
+                var spawnPoint = null;
+                if(room.bounds.points.length>4){
+                    //polygonal room; prefer diagonals, if available.
+                    let diags = [];
+                    for(var p=0; p<room.bounds.points.length; p++){
+                        var point1 = room.bounds.points[p];
+                        var point2 = room.bounds.points[(p+1)%room.bounds.points.length];
+                        
+                        if(point1.x!=point2.x && point1.y!=point2.y && VC.Trig.distance(point1.x, point1.y, point2.x, point2.y)>=64){
+                            diags.push({p1:point1, p2:point2});
+                        }
+                    }
+                    console.log("diags length:",diags.length)
+                    if(diags.length>0){
+                        let diag = maxValue(diags, (d)=>{return VC.Trig.distance(d.p1.x, d.p1.y, d.p2.x, d.p2.y)});
+                        spawnPoint = new VC.Point((diag.p1.x + diag.p2.x)/2,(diag.p1.y + diag.p2.y)/2)
+                        let centerPoint = room.box.center();
+                        if(diag.p1.y<centerPoint.y){
+                            if(diag.p1.x<centerPoint.x){
+                                wall = Direction.NORTHWEST;
+                            }
+                            else {
+                                wall = Direction.NORTHEAST;
+                            }
+                        }else{
+                            if(diag.p1.x<centerPoint.x){
+                                wall = Direction.SOUTHWEST;
+                            }   
+                            else {
+                                wall = Direction.SOUTHEAST;
+                            }
+                        }
                     }
                 }
-            });
-             
-        }else if(this.sprite && this.sprite.animation.frame!==3){
-            this.attacked=false;
-        }
-        let direction1 = this.direction;
-        let state1 = this.state;
-        super.move(deltaT); 
-        if(this.state !== state1){
-            switch(this.state){
-                case State.WALKING: 
-                    this.playSound(0, SoundEffects.FOOTSTEPS, .4, true, false);
-                    break;
-                default:
-                    this.stopSound(0, SoundEffects.FOOTSTEPS);
+                if(spawnPoint){
+                    console.log("spawning FireballTrap!")
+                    new FireballTrap(room, spawnPoint.x, spawnPoint.y, wall);
+                }
             }
+
+
         }
-        /*
-        if(direction1 !== this.direction){
-            switch(this.direction){
-                case Direction.EAST:
-                case Direction.WEST:        
-                    this.box.height = 95;
-                    this.box.width = 47;
-                    break;
-                default:
-                    this.box.height = 95;
-                    this.box.width = 95;
+        if(!room.exit && !room.secret){
+            room.heatTiles = Room.getHeatTiles(room);
+            LavaPool.Factory(room);
+            /*
+            if(!any(room.objects,(o)=>{return (o instanceof LavaPool);})){
+                let lava = VC.Math.random(1, 4);
+                for(let v = 0; v<lava; v++){
+                    new LavaCrack(room);
+                }  
             }
-        }
-        */
-        
-    }
-
-    render(deltaT, screen){
-        if(!this.sprite){
-            this.sprite = new VC.Sprite(screen, Images.MACE_SKELETON, 1520, 950, 190, 190, this.box.x-50, this.box.y-59);
-            this.sprite.lastLocation.x = this.box.x-50;
-            this.sprite.lastLocation.y = this.box.y-59;    
-        }
-        if(DEBUG){ 
-           this.box.render(screen, "#FFF");
-           this._attackBox.render(screen, "#F00")
-        } 
-        this.sprite.setAnimation(this.direction, this.state);
-        this.sprite.render(deltaT);
-        this.sprite.location.x = this.box.x-65;
-        this.sprite.location.y = this.box.y-80;
-    }
-
-    clear(){
-        super.clear();
-        if(this.sprite){
-            this.sprite.remove();
-        }
-        if(DEBUG){
-            this.box.remove();
-        }
-    }
-    
-    remove(){
-        super.remove();
-        this.clear();
-    }
-
-    attack(){
-        if(this.state !== State.ATTACKING){
-            this.playSound(1, SoundEffects.MACESKELETON_ATTACK, .8, false, false);
-            this.state = State.ATTACKING;
-            this.attacked===false;
-        }
-    }
-
-    getObjectsInView(){
-        //initialize the view box
-        if(!this._viewBox){
-            this._viewBox = new VC.Box(0,0,50,50);
-            this._viewBox.height = this.room.box.height;
-            this._viewBox.width = this.room.box.width;
-            this._viewBox.x = this.room.box.x;
-            this._viewBox.y = this.room.box.y;
-        }
-        //reposition the view box
-   
-        
-        let inView = [];
-        this.room.objects.forEach((o)=>{
-            if(o!=this && o.box.collidesWith(this._viewBox)){
-                inView.push(o);
-            }
-        })
-
-        return inView;
-    }
-    getObjectsInRangeOfAttack(){
-        //initialize the attack box
-        if(!this._attackBox){
-            this._attackBox = new VC.Box(0,0,50,50);
-        }
-        //reposition the attack box
-        switch(this.direction){
-            case Direction.NORTH:
-                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
-                this._attackBox.y = this.box.y - this._attackBox.height
-                break;
-            case Direction.EAST:
-                this._attackBox.x = this.box.x + this.box.width;
-                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);
-                break;
-            case Direction.SOUTH:
-                this._attackBox.x = this.box.center().x - Math.round(this._attackBox.width / 2);
-                this._attackBox.y = this.box.y + this.box.height;
-                break;
-            case Direction.WEST:
-                this._attackBox.x = this.box.x - this._attackBox.width;
-                this._attackBox.y = this.box.center().y - Math.round(this._attackBox.height/2);   
-                break;
-        }
-        
-        let inRange = []
-        this.room.objects.forEach((o)=>{
-            if(o!==this && this._attackBox.collidesWith(o.box)){
-                inRange.push(o);
-            }
-        });
-        return inRange;
-    }
-    
-    hurt(damage, knockback, distance){
-        if(this.state == State.ATTACKING && !this.attacked){
-            this.stopSound(1, SoundEffects.SWORDSKELETON_ATTACK);
-        }
-        let startHealth=this.health;
-        super.hurt(damage,knockback,distance);
-        if(startHealth>0 && this.health<=0){
-            game.level.statistics.maceSkeletonsKilled++;
-            game.level.statistics.enemiesKilled++;
-            this.playSound(2, SoundEffects.SKELETON_DEATH, 1, false, false);
-        }
-    }
-}
-
-class BatShadow extends GameObject{
-    #bat = null;
-    #element = null;
-    constructor(bat){
-        super(bat.room)
-        this.#bat = bat;
-        this.box = bat.box;   
-        this.plane = Plane.ETHEREAL;
-        this.layer = Layer.DEFAULT;
-
-    }
-    move(deltaT){
-        this.box = this.#bat.box;
-    };
-    render(deltaT, screen){
-        if(!this.sprite){
-            this.sprite = new VC.Sprite(screen, Images.BAT_SHADOW, 1200, 750, 150, 150, 0, 0);
-        }
-        this.sprite.location.x = this.box.center().x-75;
-        this.sprite.location.y = this.box.center().y-100;
-
-
-        this.sprite.setAnimation(this.#bat.direction, this.#bat.state);
-        this.sprite.render(deltaT);
-    };
-    clear(){
-        if(this.sprite){
-            this.sprite.remove();
-        }
-    }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-}
-
-class Pickup extends GameObject{
-    #content = Treasure.RANDOM
-    #sprite = null;
-    #shadow = null;
-    #offset = 0;
-    #spawnTime = Date.now();
-    #permanent = false;
-
-    constructor(room, content, permanent){
-        super(room);
-        this.plane = Plane.PHYSICAL;
-        this.team = Team.UNALIGNED;
-        this.box.width=36;
-        this.box.height=36;
-        this.#content = content;
-        this.state = State.IDLE;
-        this.#permanent = permanent
-    }
-
-    set spawnTime(t){
-        this.#spawnTime = t;
-    }
-
-    move (deltaT){
-        this.plane = Plane.ETHEREAL;
-        if(this.#content === Treasure.RANDOM){
-            if ((game.player.health/game.player.maxHealth) < Math.random()){
-                this.#content = Treasure.HEART
-            } else {
-                this.#content = Math.round(Math.random() * 6) + Treasure.HEART;
-            }
-            
-        }
-
-        if(game.level && this.room !== game.level.currentRoom){
-            return;
-        }
-        if((this.state === State.IDLE || this.state === State.DYING) && game.player.box.collidesWith (this.box)){
-            this.state = State.HURT;
-            super.move();
-            
-            if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
-                game.player.keys.push(this.#content);
-                game.level.statistics.keysCollected++;
-                setTimeout(()=>{this.playSound(1,SoundEffects.KEY, .7, false);},400);
-                
-            } else if (this.#content === Treasure.HEART){
-                game.player.health = VC.Math.constrain(0, game.player.health + 10, game.player.maxHealth);
-                game.level.statistics.heartsCollected++;
-                setTimeout(()=>{this.playSound(1,SoundEffects.HEART, .7, false);},400);
-
-            } else if (this.#content === Treasure.TNT){
-                game.player.tntCount++;
-                game.level.statistics.tntCollected += 1;
-                setTimeout(()=>{this.playSound(1,SoundEffects.TNT, .7, false);},400);
-            } else if (this.#content === Treasure.HEARTCONTAINER){
-                game.player.maxHealth += 10;
-                game.player.health = game.player.maxHealth;//TODO: add slowly
-                setTimeout(()=>{this.playSound(1,SoundEffects.HEART_CONTAINER, .7, false);},400);
-            } else {
-                let goldValue = (this.#content - Treasure.TNT ) * 100;
-                game.player.gold += goldValue;
-                game.level.statistics.goldCollected += goldValue;
-                setTimeout(()=>{this.playSound(1,SoundEffects.GOLD, .7, false);},400);
+            */
+        }else {
+            /*
+            let lava = VC.Math.random(1, 4);
+            for(let v = 0; v<lava; v++){
+                new LavaCrack(room);
             } 
-        }
-
-        if(!this.#permanent && this.state === State.IDLE && this._stateStart + 2000 < Date.now()){
-            this.state = State.DYING;
-        }
-
-        if(!this.#permanent && this.state === State.DYING && this._stateStart + 2000 < Date.now()){
-            this.state = State.DEAD;
-        }
-
-    }
-
-    render(deltaT, screen){
-        if(this.#sprite == null){
-            this.#sprite = new VC.Sprite(screen, Images.TREASURE, 36, 504, 36, 36, this.box.x+14,this.box.y-18);
-            this.#sprite.location.x = this.box.x;
-            this.#sprite.location.y = this.box.y;
-            this.#sprite.setAnimation(0, this.#content);
-        }
-
-        let x = this.box.center().x;
-        let y = this.box.center().y;
-        if(!this.#shadow){
-            this.#shadow = screen.drawEllipse(x, y, 12, 8, 0, 0, "#111","#111",".5");
-            this.#shadow.transform("r0,0,45");// + x +"," + y +  ",1") 
-            this.#shadow.attr({"opacity": .5, "r":45});
-        }
-
-        if(DEBUG){
-            //this.box.render(game.screen, "#FFF");
-        }
-        
-        if(this.state === State.HURT){
-            let offset = (100/1000) * deltaT;
-            this.#offset += offset;
-            let opacity = VC.Math.constrain(0,1-(this.#offset/100), 1);
-            this.#sprite.opacity = opacity; 
-            this.#shadow.attr({"opacity":opacity * .5});
-            if(opacity>0){
-                this.#sprite.location.y -= offset;
-            }else{ 
-                this.state = State.DEAD;
-            }
-        } else {
-            let msPassed = new Date() - this.#spawnTime;
-            let perc = 1-(msPassed/750);
-            let factor = Math.PI - ((Math.PI-1)*(perc));
-            let offset = VC.Math.constrain(-10, 10 * Math.sin(factor*1.5), 10) - 20;
-            
-            this.#sprite.location.y = this.box.y + offset;
-            this.#sprite.opacity = 1;
-            if(this.state === State.DYING){    
-                if(Date.now() % 400 < 150){
-                    this.#sprite.opacity = .5;  
-                }
-            }
-        }
-        this.#sprite.render(deltaT);
-    }
-
-    clear(){
-        super.clear();
-        if(this.#sprite){
-            this.#sprite.remove();
-            this.#sprite=null;
-        }
-        if(this.#shadow){
-            this.#shadow.remove();
-            this.#shadow=null;
-        }
-
-        if(DEBUG){
-            this.box.remove();
+            */   
         }
     }
-    remove(){
-        super.remove();
-        this.clear();
-    }
-}
-class EndWorldScreen extends VC.Scene{
-    #statistics = null
-    #lastWorld = -1;
-    #rendered = false;
-    constructor(statistics, world){
-        super();
-        this.#statistics = statistics;
-        this.#lastWorld = world;
-    }
-    preDisplay(){
-        game.playMusic(Music.EXIT_LEVEL);
-
-    }
-    preRender(deltaT){}
-
-    render(deltaT, screen){
-        if(!this.#rendered){
-            screen.drawRect(0, 0, dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
-            game.player.sprite.location.x = 175;
-            game.player.sprite.location.y = 0;
-            game.player.sprite.lastLocation.x = game.player.sprite.location.x;
-            game.player.sprite.lastLocation.y = game.player.sprite.location.y;
-            game.player.sprite.setAnimation(Direction.SOUTH, State.WALKING);
-           
-            this.#statistics.render(screen, "YOU SURVIVED!", new VC.Box(50,0,dimensions.width-100,dimensions.width));
-            this.#rendered = true;
-        }
-        game.player.sprite.render(deltaT);
-    }
-    postRender(deltaT){
-        if (game && game.inputController){
-            let c = game.inputController.read();
-            if(c.a===1){
-                if(this.#lastWorld == 5){
-                    //this.transitionTo = new EndCredits();
-                }
-                this.transitionTo = new LevelSelectScreen(this.#lastWorld);
-            }
-        }
-    }
-    postDisplay(){}
-}
-
-class TitleScreen extends VC.Scene {
-    #prompt = null;
-    #message = null;
-    #torch1 = null;
-    #torch2 = null;
-    #volume1 = null;
-    #volume2 = null;
-    
-    #kcode = "UUDDLRLR";
-    #seq = "";
-    #r = 1;
-    #l = {x:null, y:null};
-    #k = 0;
-    #exiting = false;
-    #rendered = false;
-    audioChannel = new VC.AudioChannel();
-    message = "LAVA POOLS!"
-    
-    constructor(){
-        super();
-        
-        this.#torch1 = new Torch();
-        this.#torch1.box.y = 375;
-        this.#torch1.box.x = 100;
-        this.#torch1.wall = Direction.NORTH;
-        
-        this.#torch2 = new Torch();
-        this.#torch2.box.y = 375;
-        this.#torch2.box.x = 800;
-        this.#torch1.wall = Direction.NORTH;
-        
-    }
-
-    preDisplay(){
-        
-    }
-    preRender(deltaT){
-        this.#torch1.move(deltaT);
-        this.#torch2.move(deltaT);
-        if (game && game.inputController){
-            let c = game.inputController.read();
-            if(this.#l.x !== c.x || this.#l.y !== c.y){
-                if(this.#r===1){
-                    if(c.y===-1 && c.x===0){
-                        this.#seq += "U";
-                    }
-                    if(c.y===1 && c.x===0){
-                        this.#seq += "D"
-                    }
-                    if(c.y===0 && c.x===-1){
-                        this.#seq += "L"
-                    }
-                    if(c.y===0 && c.x===1){
-                        this.#seq += "R"
-                    }
-                    this.#r = 0;
-                }
-                if(c.x === 0 && c.y === 0){
-                    this.#r=1;
-                }
-                
-                this.#l = c;
-            }
-            
-            if(this.#seq.indexOf(this.#kcode)>-1){//HACK, check suffix only
-                this.#k=1;
-            }
-            if(c.a===1 && !this.#exiting){
-                this.#exiting = true;
-                this.#prompt.animate({opacity:0},100, "elastic",()=>{
-                    game.playMusic(Music.START);
-                    this.#prompt.animate({opacity:1},100, "elastic",()=>{            
-                        this.#prompt.animate({opacity:0},100, "elastic",()=>{
-                            this.#prompt.animate({opacity:1},100, "elastic",()=>{
-                                this.#prompt.animate({opacity:0},100, "elastic",()=>{
-                                    this.#prompt.animate({opacity:1},100, "elastic",()=>{
-                                    });
-                                });
-                                //game.slot = Slot.load(0);
-                                //this.transitionTo = new NewGameScene(4);
-                                this.transitionTo = new SlotSelectScreen();
-                            });
-                        });
-                    });
-                });
-            }
-        }
-    }
-    render(deltaT, screen){
-        if(this.#rendered === false){
-            screen.drawRect(0,0,dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
-            screen.image(Images.LOGO, 150, 150, 600, 320);
-            this.#prompt = screen.text(dimensions.width/2, dimensions.width-300, "PRESS " + (VC.Client.orientation === VC.Orientation.PORTRAIT ? "FIRE" : "SPACE BAR") + " TO BEGIN").attr({ "font-size": "48px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "middle", "font-weight": "bold"});  
-            this.#message = screen.text(dimensions.width/2, dimensions.width-380, this.message).attr({ "font-size": "36px", "font-family": "monospace", "fill": "#ffe355", "text-anchor": "middle", "font-weight": "bold", "font-style": 'italic'});  
-            
-            screen.text(dimensions.width/2, dimensions.width-220, "In Stereo").attr({ "font-size": "22px", "font-family": "monospace", "fill": "#DDD", "text-anchor": "middle", "font-weight": "bold"}); 
-            screen.text(dimensions.width/2, dimensions.width-190, "Where Available").attr({ "font-size": "22px", "font-family": "monospace", "fill": "#DDD", "text-anchor": "middle", "font-weight": "bold"});   
-            screen.text(dimensions.width/2, dimensions.width-133, VERSION).attr({ "font-size": "28px", "font-family": "monospace", "fill": "#888", "text-anchor": "middle", "font-weight": "bold"});  
-            this.#rendered = true
-            this.#volume1 = new VC.Sprite(screen, Images.VOLUME, 500, 25, 50, 25, dimensions.width/2 + 65, dimensions.width-232);
-            this.#volume1.setAnimation(0, 0);
-            this.#volume2 = new VC.Sprite(screen, Images.VOLUME, 500, 25, 50, 25, dimensions.width/2 - 115, dimensions.width-233);
-            this.#volume2.setAnimation(0, 0);
-            this.#volume2.location.r = this.#volume2.lastLocation.r = 180;
-        }
-
-        if (this.#volume1.animation.frame!==9){
-            this.#volume1.render(deltaT);
-        }
-        if (this.#volume2.animation.frame!==9){
-            this.#volume2.render(deltaT);
-        }
-
-        var time = Date.now() % 1000;
-        console.log(time)
-        if(time<100 || time>900){
-            this.#message.attr({"font-size": "36px", "y": dimensions.width-380});
-        } else if(time<200 || time>800){
-            this.#message.attr({"font-size": "38px", "y": dimensions.width-381});
-        } else if(time<300 || time>700){
-            this.#message.attr({"font-size": "40px", "y": dimensions.width-382});
-        } else if(time<400 || time>600){
-            this.#message.attr({"font-size": "42px", "y": dimensions.width-383});
-        } else if(time<500 || time>500){
-            this.#message.attr({"font-size": "44px", "y": dimensions.width-384});
-        }
-
-
-
-        if(this.#torch1){
-            this.#torch1.render(deltaT, screen);
-        }
-        if(this.#torch2){
-            this.#torch2.render(deltaT, screen);
-        }
-        this.#prompt.attr({"text": "PRESS " + (VC.Client.orientation === VC.Orientation.PORTRAIT ? "FIRE" : "SPACE BAR") + " TO BEGIN"});
-    }
-    postDisplay(){
-        this.audioChannel.dispose();
-    }
-}
-class Game extends VC.Game {
-    infoScreen = new VC.Screen("info", 0, 0, dimensions.width, dimensions.height);
-    screen = new VC.Screen("main", 0, dimensions.infoHeight, dimensions.width, dimensions.height);
-    inputController = new InputController();
-    player = null;
-    statistics =  new Statistics(screen);
-    currentScene = null;
-    musicChannel = new VC.AudioChannel();
-    slot = null;
-    #boss = null;
-    #bossStart = null;
-    
-    get boss(){
-        return this.#boss
-    }
-
-    set boss(value){
-        if(value!=null && value !==this.#boss){
-            this.#bossStart = Date.now();
-        } else if (value == null) {
-            this.#bossStart = null
-        }
-        this.#boss = value;
-    }
-
-    constructor(){
-        super();
-        this.infoScreen.drawRect(0, 0, dimensions.width, dimensions.infoHeight, SCREENBLACK, SCREENBLACK, 0);
-        this.player = new Adventurer(null, this.inputController);
-        this.player.team = Team.HEROIC;
-        this.player.tntCount = 5;
-        this.enemy = null;
-        this.currentScene = new TitleScreen(this.screen, this.infoScreen);
-        //this.currentScene = new Room(0,0,null,null, 5);
-        //this.currentScene.finalize()
-        this.currentScene.preDisplay();
-    }
-    
-    get level(){
-        if (this.currentScene instanceof Level){
-            return this.currentScene;
-        }
-        return null;
-    }
-
-    onPreRender(deltaT){
-        if(this.currentScene){
-            this.currentScene.preRender(deltaT)
-        }
-    }
-
-    onRender(deltaT){
-        if(this.currentScene){
-            this.currentScene.render(deltaT, this.screen)
-        }
-        if(this.level){
-            this.renderInfo();
-        }else if(this.currentScene instanceof TitleScreen){
-            this.infoScreen.clear();
-        }
-        if (this.inputController){
-            //Render our controller
-            this.inputController.render(this.screen);//TODO: find a better way to reference this. 
-        }
-    }
-
-    onPostRender(deltaT){
-        if(this.currentScene){
-            this.currentScene.postRender();
-        
-            if(this.currentScene.transitionTo && this.currentScene.transitionTo instanceof VC.Scene){
-                let transitionTo = this.currentScene.transitionTo;
-                while (transitionTo.transitionTo){
-                    transitionTo = transitionTo.transitionTo;
-                }
-                this.currentScene.postDisplay();
-                
-                let fadeColor = SCREENBLACK; 
-                if ((this.currentScene instanceof TitleScreen) || (this.currentScene instanceof GameOverScreen)){
-                    fadeColor = "#FFF"
-                }
-                this.pause();
-                
-                if (this.player.sprite) {
-                    this.player.sprite.scale = 1;
-                }
-                this.player.speed = 150;
-                
-                this.screen.fadeTo(fadeColor, ()=>{
-                    this.currentScene = transitionTo;
-                    this.currentScene.preDisplay();
-                    this.screen.clear();
-                    //render one frame
-                    this.onPreRender(0);
-                    this.onRender(0);
-                    this.onPostRender(0);
-
-                    this.screen.fadeInFrom(fadeColor,()=>{;
-                        this.play();
-                    })
-                });
-            }
-        }
-    }
-
-    renderInfo(){
-        if(!this.infoElements){
-            this.infoElements = {};
-            
-            this.infoElements.background = this.infoScreen.drawRect(0, 0, dimensions.width, dimensions.infoHeight, SCREENBLACK, SCREENBLACK, 0);
-            this.infoElements.hearts = [];
-            this.infoElements.keys = [];
-            for(let i=0; i<constants.maxHeartContainers; i++){ 
-                let heart = new VC.Sprite(this.infoScreen,Images.HEART_CONTAINER,32,128,32,32, i * 36 + 8, 8)
-                this.infoElements.hearts.push(heart);
-            }
-            for(let i=0; i<5; i++){
-                this.infoElements.keys.push(new VC.Sprite(this.infoScreen, Images.KEY_ICONS, 32, 192, 32, 32, i * 36 + 8, 48))
-            }
-            //this.screen.circle(dimensions.width-20,64,10).attr({"fill":"#ffd700", "stroke":"#FFF", "stroke-width": 3});
-           
-            this.infoElements.coinSprite = new VC.Sprite(this.infoScreen, Images.TREASURE, 36, 504, 36, 36, dimensions.width-36, 48);
-            this.infoElements.coinSprite.setFrame(0,Treasure.COIN,0);
-    
-            this.infoElements.tntSprite = new VC.Sprite(this.infoScreen, Images.TREASURE, 36, 504, 36, 36, dimensions.width-36, 10);
-            this.infoElements.tntSprite.scale=.8
-            this.infoElements.tntSprite.setFrame(0,Treasure.TNT,0);
-    
-            let text = this.infoScreen.text(dimensions.width-40,64,"1,000,000")
-            text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "end"});
-            this.infoElements.goldElement = text
-    
-            text = this.infoScreen.text(dimensions.width/2,64,"Level 1-1")
-            text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "middle"});
-            this.infoElements.levelElement = text
-            
-            text = this.infoScreen.text(dimensions.width-40,22,"5")
-            text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "end"});
-            this.infoElements.tntElement = text
-
-            text = this.infoScreen.text(8,64,"")
-            text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF", "text-anchor": "start"});
-            this.infoElements.bossName = text
-
-            this.infoElements.healthBar = this.infoScreen.drawRect(0,62,0,5,"#FFF","#AAA",1);
-    
-            this.infoScreen.onClear(()=>{this.infoElements=null});
-        }
-        let time = (Date.now() - this.player.healthSet) % 862
-        let opacity = this.player.health>10 || this.player.health<=0 ? 1 : time > 100 && time < 464 ? 1 : .5;
-        this.infoElements.hearts.forEach((h, i)=>{
-            if(((i + 1) * 10) > this.player.maxHealth){
-                h.setAnimation(0,0);
-            }else{
-                let health = Math.ceil(this.player.health * .2)*5
-                if(((i + 1) * 10) <= health){
-                    h.setAnimation(0,3);
-                } else if (((i + 1) * 10) - 5 <= health){
-                    h.setAnimation(0,2);
-                }    else {
-                    h.setAnimation(0,1);
-                }
-            }
-            h.opacity = opacity
-            h.render(0);
-        })
-        if (this.boss!=null) {
-            //hide unused components
-            this.infoElements.keys.forEach((k, i)=>{
-                k.opacity = 0;
-                k.render(0);
-            });
-            this.infoElements.coinSprite.opacity = 0;
-            this.infoElements.coinSprite.render(0);
-            this.infoElements.goldElement.attr("text","");
-            this.infoElements.levelElement.attr("text",""); 
-
-            this.infoElements.bossName.attr("text",this.boss.name);
-            let w = this.infoElements.bossName.getBBox().width;
-            let h = this.infoElements.bossName.getBBox().height;
-            let maxWidth = dimensions.width - w - 32
-            let startPos = w + 24
-            this.infoElements.healthBar.animate({x:startPos}, 0);
-
-            let healthWidth = maxWidth * (this.boss.health/this.boss.maxHealth);
-            if(this._lastHealthWidth !== healthWidth){
-                this.infoElements.healthBar.animate({width: maxWidth * (this.boss.health/this.boss.maxHealth), }, this._lastHealthWidth==null ? 2000 : 500);
-                this._lastHealthWidth = healthWidth
-            }
-            
-        } else {        
-            
-            this.infoElements.bossName.attr("text","");
-            this.infoElements.healthBar.animate({width:0}, 0);
-            this._lastHealthWidth = null;
-
-            this.infoElements.keys.forEach((k, i)=>{
-                if(this.player.keys.length>i){
-                    k.setAnimation(0,this.player.keys[i]);
-                }else{
-                    k.setAnimation(0,Treasure.NONE);
-                }
-                k.opacity = 1
-                k.render(0);
-            });
-
-            this.infoElements.coinSprite.opacity = 1;
-            this.infoElements.coinSprite.render(0);
-            this.infoElements.goldElement.attr("text",Format.numberWithCommas(this.player.gold));
-            if(this.level){
-                this.infoElements.levelElement.attr("text","Level " + this.level.world + "-" + ((this.level.number % 5) + 1));
-            }
-        }
-
-        this.infoElements.tntSprite.render(0);
-        this.infoElements.tntElement.attr("text",Format.numberWithCommas(this.player.tntCount));
-
-    }
-    
-    lastMusic = ""
-    playMusic(uri){
-        if(uri!=this.lastMusic){
-            this.musicChannel.fadeOut(()=>{this.musicChannel.play(uri, this.slot ? this.slot.musicVolume : 0.15, true)});
-            this.lastMusic = uri;
-        }
-    }
-    stopMusic(){
-        this.musicChannel.fadeOut(()=>{});
-    }
-
 }
 'use strict';
 
@@ -11863,6 +11088,7 @@ class LavaPool extends GameObject{
         this.bubbles = [];
         this.nextBubbleGen = Date.now();
         this.firstMove = true;
+        this.edges = [];
     }
 
     move(deltaT){
@@ -11934,7 +11160,6 @@ class LavaPool extends GameObject{
             //find top edges
             let edges = [];
 
-            let bottomedges = [];
             for (let p = 0; p < this.#polygon.points.length; p++) {
                 let currentPoint = this.#polygon.points[p];
                 let nextPoint = this.#polygon.points[(p + 1) % this.#polygon.points.length];
@@ -11995,17 +11220,22 @@ class LavaPool extends GameObject{
 
                 }
             }
-            
-            console.log("edges", edges)
             edges.forEach(edge=>{
-                screen.drawPoly(edge, "#505347", "#000000",1);
+                this.edges.push(screen.drawPoly(edge, "#505347", "#000000",1));
             });
             this.glow = screen.drawPoly(this.#polygon.points, null, "#ffeeaa", 6);
             this.glow.attr({"opacity": .33});
             screen.onClear(()=>{
                 this.pool = null;
                 this.glow = null;
+                this.edges = [];
+                this.bubbles.forEach(b=>b.circle=null);
+                this.particles.forEach(p=>p.rect=null);
             })
+        }else {
+            this.pool.toFront();
+            this.edges.forEach((e)=>e.toFront());
+            this.glow.toFront();
         }
 
         if(this.nextFlicker == null || this.nextFlicker<Date.now()){
@@ -12024,6 +11254,8 @@ class LavaPool extends GameObject{
                 b.circle.attr({"opacity":.75});
             }
             let age = Date.now() - b.start;
+
+            b.circle.toFront();
 
             if (age <0){
               b.circle.attr({"opacity":0});   
@@ -12070,6 +11302,8 @@ class LavaPool extends GameObject{
             if(p.rect==null){
                 p.rect = screen.drawRect(p.center.x-p.size/2,p.center.y-p.size/2,p.size, p.size, "#ffeeaa", null, 0);
             }
+
+            p.rect.toFront();
             if(p.kill > Date.now()){
                 p.rect.attr({y: p.rect.attr("y")-deltaT/1000 * 33})
             }else {
@@ -12098,6 +11332,462 @@ class LavaPool extends GameObject{
         //this.clear();
     }
 
+}
+class SlotStatsScreen extends VC.Scene{
+    #statistics = null
+    #rendered = false;
+    sprite = null;
+    constructor(slot){
+        super();
+        this.#statistics = slot.statistics;
+    }
+    preDisplay(){
+        game.playMusic(Music.CHARGE);
+    }
+    preRender(deltaT){}
+
+    render(deltaT, screen){
+        if(!this.#rendered){
+            screen.drawRect(0, 0, dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
+            this.sprite = new VC.Sprite(screen, Images.ADVENTURER, 800, 600, 100, 100, 0, 0);
+            this.sprite.location.x = 100;
+            this.sprite.location.y = 0;
+            this.sprite.lastLocation.x = this.sprite.location.x;
+            this.sprite.lastLocation.y = this.sprite.location.y;
+            this.sprite.setAnimation(Direction.SOUTH, State.WALKING);
+            this.#statistics.render(screen, "ALL-TIME STATISTICS", new VC.Box(50,0,dimensions.width-100,dimensions.width));
+            this.#rendered = true;
+        }
+        this.sprite.render(deltaT);
+    }
+    postRender(deltaT){
+        if (game && game.inputController){
+            let c = game.inputController.read();
+            if(c.a===1){
+                //TODO: Move to NewGameScene
+                this.transitionTo = new SlotSelectScreen();
+            }
+        }
+    }
+    postDisplay(){}
+}
+class Palette {
+    #clipColor = "#F0F";
+    #wallColor = "#F0F";
+    #floorColor = "#F0F";
+    constructor (clipColor, wallColor, floorColor){
+        this.#clipColor = clipColor;
+        this.#wallColor = wallColor;
+        this.#floorColor = floorColor;
+    }
+
+    get clipColor(){
+        return this.#clipColor;
+    }
+    
+    get wallColor(){
+        return this.#clipColor;
+    }
+    
+    get floorColor(){
+        return this.#clipColor;
+    }
+
+}
+
+class Vine extends GameObject{
+    static _initialized = false;
+    static randomAngles = []
+    static init(){
+        if(this._initialized){
+            return;
+        }
+        this._initialized = true;
+    }
+
+    angleForPoint(p){
+        //case Quadrant 1
+        if(p.x>this.#centerPoint.x && p.y>this.#centerPoint.y){
+            return VC.Trig.degreesToRadians(45);
+        }else if(p.x<this.#centerPoint.x && p.y>this.#centerPoint.y){
+            return VC.Trig.degreesToRadians(315);    
+        }else if(p.x<this.#centerPoint.x && p.y<this.#centerPoint.y){
+            return VC.Trig.degreesToRadians(225);    
+        }else if(p.x>this.#centerPoint.x && p.y<this.#centerPoint.y){
+            return VC.Trig.degreesToRadians(135);    
+        }
+    }
+  
+    sprite = null;
+    #centerPoint = null;
+    constructor(room){
+        super(room)
+        
+        Vine.init();
+        
+        this.box.width=0;
+        this.box.height=0;
+        this.plane = Plane.ETHEREAL;
+        this.layer = Layer.DEFAULT;        
+
+        this.#centerPoint = room.bounds.getBoundingBox().center();
+        this.startPoint = null;
+        this.endPoint = null;
+        this.growthAngle = 0;
+        this.segments = [];
+        this.lineElements = [];
+        this.leafElements = [];
+        this.leaves = [];
+
+        do {
+            //pick a wall
+            let pindex = VC.Math.random(0, room.bounds.points.length - 1);
+            let p1 = room.bounds.points[pindex];
+            let p2index = (pindex+1) % (room.bounds.points.length);
+            let p2 = room.bounds.points[p2index];
+            
+            let distance = Math.floor(VC.Trig.distance(p1.x, p1.y, p2.x, p2.y));
+            let offset = VC.Math.random(0, distance);
+
+            this.startPoint = new VC.Point(
+                p1.x - (offset * (p1.x - p2.x)) / distance, 
+                p1.y - (offset * (p1.y - p2.y)) / distance,
+            );
+
+            let angle1 = this.angleForPoint(p1);
+            let angle2 = this.angleForPoint(p2);
+            if (angle2<angle1){
+                angle2 = angle2 + 2 * Math.PI
+            }
+
+            this.growthAngle = VC.Math.percentToRange(offset/distance,angle1,angle2);
+            this.endPoint = new VC.Point(Math.sin(this.growthAngle) * room.wallHeight + this.startPoint.x, Math.cos(this.growthAngle) * room.wallHeight + this.startPoint.y)
+            
+        } while (any(room.doors, (d)=>{return d.box.containsPoint(this.startPoint)}))
+        
+        //vineSegment
+        let length = 0;
+        do {
+            let segmentAngle = this.growthAngle + Math.random(5,15) * (this.segments.length % 2 == 1 ? -1 : 1);
+            let segStartPoint = this.startPoint;
+            if(this.segments.length>0){
+                let lastSeg = this.segments[this.segments.length-1];
+                //random point on segment to grow
+                let perc = Math.random();
+                segStartPoint = new VC.Point(
+                    VC.Math.percentToRange(perc, lastSeg.startPoint.x, lastSeg.endPoint.x),
+                    VC.Math.percentToRange(perc, lastSeg.startPoint.y, lastSeg.endPoint.y)
+                )
+            }
+
+            let segEndPoint = new VC.Point(Math.sin(segmentAngle) * constants.brickHeight + segStartPoint.x, Math.cos(segmentAngle) * constants.brickHeight+ segStartPoint.y)
+            this.segments.push({startPoint:segStartPoint, endPoint: segEndPoint});
+            length = VC.Trig.distance(this.startPoint.x, this.startPoint.y, segEndPoint.x, segEndPoint.y)
+            this.leaves.push(new VC.Polygon(
+                new VC.Point(segEndPoint.x, segEndPoint.y),
+                new VC.Point(segEndPoint.x+VC.Math.random(5,10), segEndPoint.y),
+                new VC.Point(segEndPoint.x+VC.Math.random(5,10), segEndPoint.y+VC.Math.random(5,10)),
+                new VC.Point(segEndPoint.x, segEndPoint.y+VC.Math.random(5,10))
+            ));
+        } while (length<room.wallHeight)
+    }
+
+    move(deltaT){
+        
+    }
+
+    render(deltaT, screen){
+        
+
+        if(this.lineElements.length == 0){
+
+            this.segments.forEach((seg)=>{
+                this.lineElements.push(screen.drawLine(seg.startPoint.x,seg.startPoint.y, seg.endPoint.x, seg.endPoint.y,"#164010",3));
+                
+            });
+            
+            this.segments.forEach((seg)=>{
+                this.lineElements.push(screen.drawLine(seg.startPoint.x,seg.startPoint.y, seg.endPoint.x, seg.endPoint.y,"#216119",1));
+            });
+            
+            this.leaves.forEach((leaf)=>{
+                this.leafElements.push(screen.drawPoly(leaf.points, "#216119", "#164010", 1.5));
+            });
+            
+
+            screen.onClear(()=>{this.lineElements=[]; this.leafElements=[];});
+        }
+        
+        this.lineElements.forEach(element => {
+            element.toFront();
+        });
+
+        this.leafElements.forEach(element => {
+            element.toFront();
+        });
+
+        if(VC.Client.orientation === VC.Orientation.LANDSCAPE && (this.nextAnim == null || this.nextAnim<Date.now())){
+            let animLength = VC.Math.random(1000,2000);
+            this.nextAnim = Date.now() + animLength;
+            this.leafElements.forEach((leaf)=>{
+                let t = "t" + VC.Math.random(0,2) * (VC.Math.random(0,1)==0 ? -1 : 1) + "," + VC.Math.random(0,2) * (VC.Math.random(0,1)==0 ? -1 : 1)+'r'+ VC.Math.random(0,45) * (VC.Math.random(0,1)==0 ? -1 : 1);
+                leaf.animate({transform: t}, animLength);
+            });   
+        }
+        
+    }
+
+    clear(){
+        super.clear();
+        this.lineElements.forEach(l=>{l.remove();});
+        this.leafElements.forEach(l=>{l.remove();});
+        this.lineElements=[]; 
+        this.leafElements=[];
+
+        if(this.sprite) {
+            this.sprite.remove();
+            this.sprite = null;
+        }
+    }Í
+
+    remove(){
+        super.remove();
+        //this.clear();
+    }
+
+}
+class DesertTemple extends Temple{
+    
+    #palette = new Palette(
+        "#642",//clip color
+        "#864",//floor color
+        "#753"//wall color
+    );
+    
+    constructor(){
+        super();
+    }
+
+    get name(){
+        return "Kufuu"
+    }
+    
+    get description(){
+        return "The Desert Temple"
+    }
+
+    //read-only properties
+    get music(){
+        return Music.EXPLORATION;
+    }
+    
+    get palette(){
+        return this.#palette;
+    }
+
+    themeLevel(level){
+        super.themeLevel(level);
+        Temple.addTorches(level);
+        
+        level.rooms.forEach((room, index) => this.themeRoom(room, index, level));
+
+        if (level.number % 5 === 0){
+            level.message = this.name;
+        }
+    }
+
+    themeRoom(room, index, level){
+        if (index !== 0 && !room.exit && level && level.number % 5 != 4){
+                
+            var enemyRange = level.number % 5 < 2 ? 2 : 3;
+
+            let enemies = VC.Math.random(room.spawnDensity-1, room.spawnDensity + 1)
+            for(let i=0; i<enemies; i++){   
+                switch(VC.Math.random(0,enemyRange)){
+                    case 0:
+                        room.spawn(new CaveSpider(room, new AutoController()));
+                        level.statistics.caveSpidersSpawned++;
+                        level.statistics.enemiesSpawned++;
+                        break;
+                    case 1:
+                        room.spawn(new Snake(room, new AutoController()));
+                        level.statistics.snakesSpawned++;
+                        level.statistics.enemiesSpawned++;
+                        break;
+                    case 2:
+                        for(let j = 0; j<VC.Math.random(1,level.number+1); j++){
+                            room.spawn(new Rat(room, new AutoController()));
+                            level.statistics.ratsSpawned++;
+                            level.statistics.enemiesSpawned++;
+                        }
+                        break;                    
+                    case 3: 
+                        room.spawn(new SwordSkeleton(room, new AutoController()));
+                        level.statistics.swordSkeletonsSpawned++;
+                        level.statistics.enemiesSpawned++;
+                        break;
+                }
+            }
+            
+        }
+
+        //add vines
+        let vines = VC.Math.random(room.spawnDensity * 3, room.spawnDensity * 5);
+        for(let v = 0; v<vines; v++){
+            new Vine(room);
+        }
+    }
+}
+
+
+class Fireball extends GameObject{
+    #angle = 0;
+    #rads = 0;
+    #lightEffect = null;
+    constructor (room, x, y, angle){
+        super(room);
+        this.box.width = 26;
+        this.box.height = 26;
+        this.box.x = x - 13;
+        this.box.y = y - 13;
+        this.speed = 400;
+        this.#angle = angle;
+        this.#rads = VC.Trig.degreesToRadians(angle);
+        this.nextFrame = Date.now;
+        this.plane = Plane.PHYSICAL;
+        this.layer = Layer.EFFECT;
+        this.state = State.WALKING;
+        this.#lightEffect = new FireballLightEffect(this);
+        this.playSound(0, SoundEffects.FIREBALL_IGNITE,.8,false);
+    }
+    move(deltaT){
+        if(this.state == State.WALKING){
+
+            this.playSound(1, SoundEffects.FIREBALL_WOOSH,1,true); 
+            let distance = deltaT * this.speed/1000;
+            let x = this.box.x + distance * Math.cos(this.#rads);
+            let y = this.box.y + distance * Math.sin(this.#rads);
+            let r = this.room;
+            let constrained = this.room.constrain(this,x,y);
+            this.box.x = constrained.x;
+            this.box.y = constrained.y;
+
+            if((constrained.x != x || constrained.y!=y) && this.room === r){
+                this.stopSound(1, SoundEffects.FIREBALL_WOOSH);
+                new FireballExplosion(this.room, this.box.center().x, this.box.center().y)
+                this.state = State.DEAD;
+                this.#lightEffect.state = State.DEAD;
+            }
+        }
+
+        super.move(deltaT);
+
+    }
+    render(deltaT, screen){
+        if(!this.sprite){
+            this.sprite = new VC.Sprite(screen, Images.FIREBALL, 1024, 64, 64, 64, this.box.x, this.box.y);
+            this.sprite.location.r = this.sprite.lastLocation.r = this.#angle + 45 + 90;       
+        }
+
+        let h = 20; //(this.box.width/2) * Math.cos(VC.Trig.degreesToRadians(45));
+        let centerX = this.box.center().x + (Math.cos(this.#rads+Math.PI) * h); 
+        let centerY = this.box.center().y + (Math.sin(this.#rads+Math.PI) * h); 
+
+        this.sprite.location.x = (centerX - this.sprite.size.width/2);
+        this.sprite.location.y = (centerY - this.sprite.size.height/2);
+
+        if(this.nextFrame<Date.now){
+            this.sprite.setFrame(0,0,VC.Math.random(0,15));
+            this.nextFrame = Date.now + 100;    
+
+        }
+        this.sprite.render(deltaT, screen);
+        if(DEBUG){
+            this.box.render(screen, "#FF0");
+        }
+    }
+    clear(){
+        super.clear();
+        if(DEBUG){
+            this.box.remove();
+        }
+        if(this.sprite){
+            this.sprite.remove();
+        }
+        this.sprite = null;
+
+    }
+    remove(){
+        super.remove();
+        this.clear();
+    }
+}
+
+class FireballLightEffect extends GameObject{
+    #fireball = null;
+    #element = null;
+    #offsetX = 0;
+    #offsetY = 0;
+    
+    constructor(fireball){
+        super(fireball.room)
+        this.#fireball = fireball;
+        this.plane = Plane.ETHEREAL;
+        this.layer = Layer.EFFECT;
+        this.intensity = Math.random();
+        this.nextFrame = Date.now;
+    }
+
+    move(deltaT){
+        if (this.room != this.#fireball.room){
+            this.clear();
+            this.room = this.#fireball.room;
+        }
+        this.box = this.#fireball.box;   
+        this.#offsetX = Math.random() * 7 - 3.5;
+        this.#offsetY = Math.random() * 7 - 3.5;
+        if(this.nextFrame<Date.now){
+            this.intensity = Math.random();
+            this.nextFrame = Date.now + 100;    
+        }
+    }
+
+    render(deltaT, screen){
+
+        if(this.#element==null){
+            this.#element = screen.drawEllipse(this.box.center().x, this.box.center().y, this.intensity * 10 + 140, this.intensity * 10 + 140, 0, 0, "#fea","#000",0)
+            this.#element.attr({"fill":"#fea","opacity": .15});
+            screen.onClear(()=>{this.#element = null});
+        }
+        this.#element.attr({
+            "cx": this.#fireball.box.center().x,
+            "cy": this.#fireball.box.center().y,
+            "rx": this.intensity * 10 + 100,
+            "ry": this.intensity * 10 + 100,
+            "opacity": this.intensity * .0125 + .025 ,
+            //"clip-rect": "" + this.box.center().x + "," + this.box.center().y + "," + 140 + "," + 140 
+        });
+    
+
+        this.#element.transform("t" + this.#offsetX + "," + this.#offsetY); 
+        this.#element.toFront();    
+
+    }
+    
+    clear(){
+        super.clear()
+
+        if(this.#element){
+            this.#element.remove();
+        }
+        this.#element = null;
+        this.box.remove();
+    }
+    
+    remove(){
+        super.remove();
+        this.clear();
+    }
 }
 
 class ManosBlock extends GameObject{
@@ -12254,234 +11944,555 @@ class ManosBlock extends GameObject{
    
 }
 
-class EndLevelSummary extends Room {
-    statistics = null;
-    constructor(nextLevel, statistics){
-        
-        let floor = null;
-        if (nextLevel<6){
-            floor = new HexagonalTileFloor(constants.tileWidth/2);
-        } else {
-            floor = new RectangularTileFloor(constants.tileWidth, constants.tileWidth);
-        }
-        
-
-        super(0, 0, 3 * constants.brickWidth, constants.roomMaxHeightInBricks * constants.brickWidth, 5,  floor);
-        this.volume = 1;
-        this.statistics = statistics;
-        statistics.levelsCleared = game.statistics.levelsCleared
-        this.box.x = this.wallHeight;
-        this.box.y = Math.round((dimensions.width - this.box.height - this.wallHeight*2) / 2) + this.wallHeight;
-        this.palette = game.level.palette;
-        this.palette.clipColor = SCREENBLACK;
-        
-
-        let exit = new Exit(this)
-        exit.box.x = this.box.center().x - exit.box.width / 2 ;
-        exit.box.y = this.box.y + constants.doorFrameThickness;
-        let els = this;
-        exit.onTrip = function(){
-            game.player.keys = [];
-            els.transitionTo = LevelFactory.Construct(nextLevel);
-        }; 
-
-        let entrance = new Door(null, this, Direction.SOUTH, 0);
-        entrance.forceBars = true;
-        this.doors.push(entrance);
-
-        game.player.box.x = this.box.center().x - game.player.box.width/2;
-        game.player.box.y = this.box.height;
-        game.player.sprite.lastLocation.x =  game.player.box.x;
-        game.player.sprite.lastLocation.y = game.player.box.y;
-        game.player.sprite.scale = 1;
-        game.player.speed = 150;
-        game.player.direction = Direction.NORTH;
-        game.player.room = this;
-        
-        let wTorch = new Torch(this);
-        wTorch.wall = Direction.WEST;
-        wTorch.box.x = this.box.x - this.wallHeight / 2;
-        wTorch.box.y = dimensions.width * 2 / 3;
-        new TorchLightEffect(wTorch);
-
-        let eTorch = new Torch(this);
-        eTorch.wall = Direction.EAST;
-        eTorch.box.x = this.box.x + this.box.width + this.wallHeight / 2;
-        eTorch.box.y = dimensions.width  / 3;
-        new TorchLightEffect(eTorch);
-
-        this.finalize();
-        this.doors.forEach((d)=>{d.stabilize()});
-        this.secret = true;
-        LevelFactory.getTemple(game.level.world).themeRoom(this);
-
+class Dossier {
+    selected = 0;
+    opened = false;
+    x = 0;
+    currentX = 200;
+    y = 0;
+    elements = [];
+    rotElements = [];
+    reportSprites = [];
+    speed = 250;
+    slot = null;
+    slotNum = 0;
+    constructor(slot, slotNum){
+        this.slot = slot
+        this.slotNum = slotNum;
     }
-    preDisplay(){
-        game.playMusic(Music.EXIT_LEVEL);
+    sprite = null;
+    structureRendered = false;
     
-    }
-    statsRendered = false
     render(deltaT, screen){
-        
-        if(!this.statsRendered){
-            screen.drawRect(0,0,dimensions.width, dimensions.width, SCREENBLACK, SCREENBLACK, 0);
-        }
-        super.render(deltaT, screen)
-        if(!this.statsRendered){
-            let statsBox = new VC.Box(this.box.x + this.box.width + this.wallHeight, 0, dimensions.width - (this.box.x + this.box.width + this.wallHeight), dimensions.width);
-            this.statistics.render(screen, "LEVEL COMPLETE!", statsBox);
-            this.statsRendered = true
-            
-        }
-    }
+        if(!this.structureRendered){
+            let slotHeight = (dimensions.width-150)/3
+            let slotWidth = dimensions.width - 300;
+            let slotX = 0;
+            let slotY = 0;
 
-}
+            this.elements.push(screen.drawRect(slotX,slotY, slotWidth, slotHeight, "#f1d592",SCREENBLACK,2, 15));
+            this.elements.push(screen.drawRect(slotX,slotY-35, 250, 100, "#f1d592",SCREENBLACK,2, 15));
 
-class FireballLightEffect extends GameObject{
-    #fireball = null;
-    #element = null;
-    #offsetX = 0;
-    #offsetY = 0;
-    
-    constructor(fireball){
-        super(fireball.room)
-        this.#fireball = fireball;
-        this.plane = Plane.ETHEREAL;
-        this.layer = Layer.EFFECT;
-        this.intensity = Math.random();
-        this.nextFrame = Date.now;
-    }
+            //render pages
+            if(this.slot!=null){
+                this.elements.push(screen.drawRect(slotX+10,slotY-2, slotWidth-20, slotHeight-100, "#F8F8F8", SCREENBLACK, .5, 0));
+                this.elements.push(screen.drawRect(slotX+12,slotY+3, slotWidth-20, slotHeight-100, "#F8F8F8", SCREENBLACK, .5, 0));
+                this.elements.push(screen.drawRect(slotX+8,slotY+8, slotWidth-20, slotHeight-100, "#F8F8F8", SCREENBLACK, .5, 0));
+                this.elements.push(screen.drawRect(slotX,slotY+13, slotWidth, slotHeight-13, "#f1d592",SCREENBLACK,2, 15));
+            } else{
+                this.elements.push(screen.drawRect(slotX,slotY, slotWidth, slotHeight, "#f1d592",SCREENBLACK,2, 15));
+            }
 
-    move(deltaT){
-        if (this.room != this.#fireball.room){
-            this.clear();
-            this.room = this.#fireball.room;
-        }
-        this.box = this.#fireball.box;   
-        this.#offsetX = Math.random() * 7 - 3.5;
-        this.#offsetY = Math.random() * 7 - 3.5;
-        if(this.nextFrame<Date.now){
-            this.intensity = Math.random();
-            this.nextFrame = Date.now + 100;    
-        }
-    }
+            let text = screen.text(slotX + 125, slotY-17, "File " + String.fromCharCode(65 + this.slotNum))
+            text.attr({ "font-size": "24px", "font-family": "monospace", "fill": "#000"});
+            this.elements.push(text);
 
-    render(deltaT, screen){
+            if(this.slot==null){
+                //render post-it note
+                let postit=screen.drawRect(slotX+80, slotY+45, 100, 100, "#FFEBA1", SCREENBLACK, 1, 0);
+                postit.transform("r-10");
+                this.rotElements.push(postit);
+                this.elements.push(postit);
+                text = screen.text(slotX+125, slotY+90, "New\nGame")
+                text.attr({ "font-size": "25px", "font-family": "Comic Sans MS, Textile, cursive", "fill": "#880000"});    
+                text.transform("r-10");
+                this.rotElements.push(text);
+                this.elements.push(text);
+            } else {
+                //render polaroid 
+                let p1 = screen.drawRect(slotX+40, slotY+25, 35*4, 42*4, "#F8F8F8",SCREENBLACK, 2).transform({"r":-5})
+                this.rotElements.push(p1);
+                this.elements.push(p1); 
+                let p2 = screen.drawRect(slotX+46, slotY+33, 31*4, 31*4, "#864",SCREENBLACK, 2).transform({"r":-5})
+                this.rotElements.push(p2);
+                this.elements.push(p2);
+                this.sprite = new VC.Sprite(screen, Images.ADVENTURER, 800, 600, 100, 100, slotX+55, slotY+50);
+                this.sprite.location.r = -5; 
+                //render paperclip
+                this.elements.push(screen.rect(slotX+50, slotY+10, 10, 40,5).attr({"stroke-width": 3, "stroke":"#BBB "}));
+                this.elements.push(screen.drawLine(slotX+55,slotY+13, slotX+100, slotY+13,SCREENBLACK,2)); 
+                this.elements.push(screen.drawRect(slotX+55, slotY+14, 10, 7, "#f1d592",SCREENBLACK,0, 0));
+                //render report
+                let reportX = slotWidth/2-25;
+                let reportY = slotY + 60;
+                this.elements.push(screen.drawRect(reportX, slotY+30, slotWidth/2, slotHeight-45, "#F8F8F8", SCREENBLACK, 2, 7))
+                this.elements.push(screen.drawRect(reportX, slotY+42, slotWidth/2, 20, "#AA0000", SCREENBLACK, 1, 0))
+                this.elements.push(screen.drawRect(reportX, slotY+30, slotWidth/2, 30, "#AA0000", SCREENBLACK, 0, 7))
+                text = screen.text(slotWidth*.75 - 25, slotY + 45, "STATUS REPORT")
+                text.attr({ "font-size": "25px", "font-family": "monospace", "fill": "#EEE", "font-weight": "bold"});
+                this.elements.push(text);
 
-        if(this.#element==null){
-            this.#element = screen.drawEllipse(this.box.center().x, this.box.center().y, this.intensity * 10 + 140, this.intensity * 10 + 140, 0, 0, "#fea","#000",0)
-            this.#element.attr({"fill":"#fea","opacity": .15});
-            screen.onClear(()=>{this.#element = null});
-        }
-        this.#element.attr({
-            "cx": this.#fireball.box.center().x,
-            "cy": this.#fireball.box.center().y,
-            "rx": this.intensity * 10 + 100,
-            "ry": this.intensity * 10 + 100,
-            "opacity": this.intensity * .0125 + .025 ,
-            //"clip-rect": "" + this.box.center().x + "," + this.box.center().y + "," + 140 + "," + 140 
-        });
-    
+                //name
+                text = screen.text(reportX + 8, reportY + 18, this.slot.name)
+                text.attr({ "font-size": "32px", "font-family": "monospace", "fill": "#000", "font-weight": "bold", "text-anchor": "start"});    
+                this.elements.push(text);
 
-        this.#element.transform("t" + this.#offsetX + "," + this.#offsetY); 
-        this.#element.toFront();    
-
-    }
-    
-    clear(){
-        super.clear()
-
-        if(this.#element){
-            this.#element.remove();
-        }
-        this.#element = null;
-        this.box.remove();
-    }
-    
-    remove(){
-        super.remove();
-        this.clear();
-    }
-}
-class DesertTemple extends Temple{
-    
-    #palette = new Palette(
-        "#642",//clip color
-        "#864",//floor color
-        "#753"//wall color
-    );
-    
-    constructor(){
-        super();
-    }
-
-    get name(){
-        return "Kufuu"
-    }
-    
-    get description(){
-        return "The Desert Temple"
-    }
-
-    //read-only properties
-    get music(){
-        return Music.EXPLORATION;
-    }
-    
-    get palette(){
-        return this.#palette;
-    }
-
-    themeLevel(level){
-        super.themeLevel(level);
-        Temple.addTorches(level);
-        
-        level.rooms.forEach((room, index) => this.themeRoom(room, index, level));
-
-        if (level.number % 5 === 0){
-            level.message = this.name;
-        }
-    }
-
-    themeRoom(room, index, level){
-        if (index !== 0 && !room.exit && level && level.number % 5 != 4){
-                
-            var enemyRange = level.number % 5 < 2 ? 2 : 3;
-
-            let enemies = VC.Math.random(room.spawnDensity-1, room.spawnDensity + 1)
-            for(let i=0; i<enemies; i++){   
-                switch(VC.Math.random(0,enemyRange)){
-                    case 0:
-                        room.spawn(new CaveSpider(room, new AutoController()));
-                        level.statistics.caveSpidersSpawned++;
-                        level.statistics.enemiesSpawned++;
-                        break;
-                    case 1:
-                        room.spawn(new Snake(room, new AutoController()));
-                        level.statistics.snakesSpawned++;
-                        level.statistics.enemiesSpawned++;
-                        break;
-                    case 2:
-                        for(let j = 0; j<VC.Math.random(1,level.number+1); j++){
-                            room.spawn(new Rat(room, new AutoController()));
-                            level.statistics.ratsSpawned++;
-                            level.statistics.enemiesSpawned++;
-                        }
-                        break;                    
-                    case 3: 
-                        room.spawn(new SwordSkeleton(room, new AutoController()));
-                        level.statistics.swordSkeletonsSpawned++;
-                        level.statistics.enemiesSpawned++;
-                        break;
+                //hearts
+                for(let i=0; i<this.slot.hearts; i++){ 
+                    
+                    let offsetX = i * 36 + reportX + 8
+                    let offsetY =  reportY + 40
+                    let bottom = 30;
+                    let top = 0;
+                    let curve = 5;
+                    let curve2 = 15;
+                    this.elements.push(
+                        screen.drawPoly(
+                            [
+                                new VC.Point(16 + offsetX,bottom+offsetY),    
+                                new VC.Point(0 + offsetX,curve2+offsetY),
+                                new VC.Point(0 + offsetX,curve+offsetY),
+                                new VC.Point(5 + offsetX,top+offsetY),
+                                new VC.Point(10 + offsetX,top+offsetY),
+                                new VC.Point(16 + offsetX,curve+offsetY),
+                                new VC.Point(21 + offsetX,top+offsetY),
+                                new VC.Point(26 + offsetX,top+offsetY),
+                                new VC.Point(32 + offsetX,curve+offsetY),
+                                new VC.Point(32 + offsetX,curve2+offsetY)
+                            ],
+                            "#CC0000",
+                            "#000",
+                            2
+                        )
+                    )       
                 }
+
+                text = screen.text(reportX+slotWidth/2 - 40, reportY + 86, "ALL-TIME STATS")
+                text.attr({ "font-size": "12px", "font-family": "sans-serif", "fill": "#000", "text-anchor": "end"});
+                this.elements.push(text);
+
+
+                //money
+                this.elements.push(screen.drawEllipse(reportX+slotWidth/2 - 20, reportY+111,12,13,0,0,"#ffd700",SCREENBLACK, 2));
+                this.elements.push(screen.drawRect(reportX+slotWidth/2 - 22, reportY+105, 4, 12, SCREENBLACK, SCREENBLACK,0,2))
+                text = screen.text(reportX+slotWidth/2 - 40, reportY + 111, Format.numberWithCommas(this.slot.statistics.goldCollected))
+                text.attr({ "font-size": "24px", "font-family": "sans-serif", "fill": "#000", "text-anchor": "end"});    
+                this.elements.push(text);
+
+                //time
+                this.elements.push(screen.drawEllipse(reportX+slotWidth/2 - 21, reportY+146,14,14,0,0,"#0CD",SCREENBLACK, 1.5));
+                this.elements.push(screen.drawEllipse(reportX+slotWidth/2 - 21, reportY+146,10,10,0,0,"#FFF",SCREENBLACK, .5));
+                this.elements.push(screen.drawLine(reportX+slotWidth/2 - 21, reportY+149, reportX+slotWidth/2 - 15, reportY+139, "#000", 2))
+                this.elements.push(screen.drawLine(reportX+slotWidth/2 - 21, reportY+149, reportX+slotWidth/2 - 26, reportY+142, "#000", 2))
+                this.elements.push(screen.drawLine(reportX+slotWidth/2 - 21, reportY+149, reportX+slotWidth/2 - 24, reportY+156, "#F00", 1.5))
+
+                text = screen.text(reportX+slotWidth/2 - 40, reportY + 146, Format.msToTime(this.slot.statistics.timeSpent))
+                text.attr({ "font-size": "24px", "font-family": "sans-serif", "fill": "#000", "text-anchor": "end"});    
+                this.elements.push(text);
+
+                //menu
+                
             }
             
-        }
+            this.structureRendered = true;
+        } 
 
-        //add vines
-        let vines = VC.Math.random(room.spawnDensity * 3, room.spawnDensity * 5);
-        for(let v = 0; v<vines; v++){
-            new Vine(room);
+
+        let offset = ((this.speed / 1000) * deltaT) * (this.currentX>this.x ? -1 : 1)
+        if (offset > Math.abs(this.currentX - this.x)){
+            this.currentX =this.x; 
+        } else {
+            this.currentX += offset
+        }
+        this.elements.forEach(e=>{ 
+            let transformStr = "T" + this.currentX + "," + this.y 
+            if (this.rotElements.indexOf(e)>-1){
+                transformStr += 'R' + (this.slot==null ? '-10' : '-5');
+                
+            } 
+            e.animate({transform:transformStr},0,'linear')
+
+        })
+        if(this.sprite){
+            this.sprite.location.x = this.currentX + 55;
+            this.sprite.location.y = this.y + 50;
+            
+            this.sprite.setAnimation(Direction.SOUTH, this.selected  ? State.WALKING : State.IDLE)
+            this.sprite.render(deltaT)
+        }
+        for(let s = 0 ; s< this.reportSprites.length; s++){
+            let sprite = this.reportSprites[s]; 
+            sprite.location.x = this.currentX + sprite.offsetX;
+            sprite.location.y = this.y + sprite.offsetY;
+            
+            sprite.render(deltaT);
+        }
+        
+    }
+}
+
+class SlotSelectScreen extends VC.Scene {
+
+    slots = []
+    selectedSlot = 0;
+    selectedOption = 0;
+    selectedModalOption = 1;
+    structureRendered = false;
+    dossiers = []; 
+    readReady = true;
+    showMenu = false;
+    showDeleteModal = false;
+    menuStartTime = Date.now();
+    pressed = false;
+    menuElements = [];
+    modalElements = [];
+    
+    selectedOption = 0
+    options = ["PLAY", "STATS", "COPY", "DELETE", "BACK"]
+    canCopy = false;
+    constructor(){
+        super();
+        this.slots.push(Slot.load(0))
+        this.slots.push(Slot.load(1))
+        this.slots.push(Slot.load(2))
+        for(let s=0; s<this.slots.length;s++){
+            if(this.slots[s]==null){
+                this.canCopy = true;
+            }
         }
     }
+
+    nextAudioChannel=0;
+    audioChannels = [
+        new VC.AudioChannel(),
+        new VC.AudioChannel(),
+        new VC.AudioChannel(),
+        new VC.AudioChannel(),
+        new VC.AudioChannel()
+    ];
+    get audioChannel(){
+        let n=this.nextAudioChannel;
+        this.nextAudioChannel = this.nextAudioChannel + 1;
+        this.nextAudioChannel = this.nextAudioChannel % this.audioChannels.length;
+        return this.audioChannels[n];
+    }
+
+    preDisplay(){
+        //TODO: Game selection music
+        game.playMusic(Music.CHARGE); 
+        this.audioChannel.play(SoundEffects.TNT, .4, false);
+    }
+    preRender(deltaT){
+        let beep = false;
+        let boop = false;
+        let shuffle = false;
+        if(game && game.inputController){
+            let input = game.inputController.read();
+            
+            if(this.showDeleteModal){
+                if(input.y < 0 && this.readReady){
+                    beep = true;
+                    this.selectedModalOption = 0
+                    this.readReady = false;
+                } else if(input.y > 0 && this.readReady){
+                    beep = true;
+                    this.selectedModalOption = 1;
+                    this.readReady = false;
+                } else if(input.y == 0){
+                    this.readReady = true;
+                } 
+            } else if(this.showMenu){
+                if(input.y < 0 && this.readReady){
+                    beep = true;
+                    this.selectedOption = this.selectedOption - 1;
+                    this.selectedOption = this.selectedOption < 0 ? 4 : this.selectedOption ;
+                    this.readReady = false;
+                } else if(input.y > 0 && this.readReady){
+                    beep = true;
+                    this.selectedOption = (this.selectedOption + 1) % 5;
+                    this.readReady  = false;
+                } else if(input.y == 0){
+                    this.readReady = true;
+                } 
+            } else {
+                if(input.y < 0 && this.readReady){
+                    shuffle = true;
+                    this.selectedSlot = this.selectedSlot - 1;
+                    this.selectedSlot = this.selectedSlot < 0 ? 2 : this.selectedSlot ;
+                    this.readReady = false;
+                } else if(input.y > 0 && this.readReady){
+                    shuffle = true;
+                    this.selectedSlot = (this.selectedSlot + 1) % 3;
+                    this.readReady  = false;
+                } else if(input.y == 0){
+                    this.readReady = true;
+                } 
+            }
+            
+            if(input.a){
+                if(!this.pressed){
+                    this.startTime = Date.now();
+                    this.pressed = true;
+                }
+                
+                if (this.showMenu == false) {    
+                    let duration = Date.now() - this.startTime;
+                    if (duration>400){
+                        this.showMenu = true;
+                        boop = true;
+                        this.menuStartTime = Date.now();
+                    }
+                }
+                
+            } else if (!input.a && this.pressed){ //released
+                
+                if(!this.showMenu){
+                    //start game
+                    this.#startGame();
+                    
+                } else if (this.pressed && this.startTime>this.menuStartTime){
+                    if(this.showDeleteModal){
+                        if(this.selectedModalOption==0){
+                            boop = true;
+                            this.#delete();
+                        }else{
+                            this.showDeleteModal = false;;
+                            boop = true;
+                        }
+                    }else {
+                        switch(this.selectedOption){
+                            case 0:
+                                boop = true;
+                                this.#startGame();
+                                break;
+                            case 1: 
+                                boop = true;
+                                this.#showStats();
+                                break;
+                            case 2:
+                                boop = true;
+                                this.#copy();
+                                break;
+                            case 3:
+                                if(this.slots[this.selectedSlot]!=null) {   
+                                    boop = true;  
+                                    this.showDeleteModal = true;
+                                }
+                                break;
+                            case 4:
+                                this.selectedOption=0;
+                                boop = true;
+                                this.showMenu = false;
+                                break;
+                        }
+                    }
+                }
+                this.pressed = false;
+
+            }
+        }
+        if(shuffle){
+            this.audioChannel.play(SoundEffects.TNT, .4, false);
+        }else if (boop){
+            this.audioChannel.play(SoundEffects.KEY_BOOP, .2, false);
+        }else if (beep){
+            this.audioChannel.play(SoundEffects.KEY_BEEP, .2, false);
+        }
+    } 
+    
+    #startGame(){                   
+        let slot = this.slots[this.selectedSlot];
+        if(slot == null){
+            slot = new Slot()
+            slot.slot = this.selectedSlot;
+            game.currentScene.transitionTo = new SlotRenameScreen(slot);
+            return;    
+        }
+        game.slot = slot;
+        slot.save();
+        game.currentScene.transitionTo = new LevelSelectScreen();//new NewGameScene(4);
+    }
+
+    #showStats(){
+        let slot = this.slots[this.selectedSlot];
+        if(slot != null){
+            game.currentScene.transitionTo = new SlotStatsScreen(slot);
+        }
+    }
+
+    #copy(){
+        if(this.canCopy){
+            //find the empty slot
+            if(this.slots[this.selectedSlot]!=null) {       
+                for(let s=0; s<this.slots.length;s++){
+                    if(this.slots[s]==null){
+                        this.slots[this.selectedSlot].slot = s;
+                        this.slots[this.selectedSlot].save();
+                        break;
+                    }
+                }
+                game.currentScene.transitionTo = new SlotSelectScreen();
+            }
+        }
+    }
+    
+    #delete(){
+        if(this.slots[this.selectedSlot]!=null) {     
+            this.slots[this.selectedSlot].delete();
+            game.currentScene.transitionTo = new SlotSelectScreen();
+        }
+    }
+    
+    render(deltaT, screen){
+        if (this.structureRendered == false){
+            //background
+            screen.drawRect(0,0,dimensions.width, dimensions.width,	"#06402B",SCREENBLACK,0, 15);
+            let text = screen.text(dimensions.width/2,30, "SELECT A FILE")
+            text.attr({ "font-size": "40px", "font-family": "monospace", "fill": "#FFF", "font-weight": "bold"});
+            if(VC.Client.orientation != VC.Orientation.PORTRAIT){
+                text = screen.text(dimensions.width/2,dimensions.width-20, "ARROW KEYS TO CHOOSE, SPACE BAR TO SELECT, HOLD SPACE FOR OPTIONS")
+                text.attr({ "font-size": "22px", "font-family": "monospace", "fill": "#FFF"});
+            } else {
+                text = screen.text(dimensions.width/2,dimensions.width-20, "HOLD FIRE FOR OPTIONS")
+                text.attr({ "font-size": "24px", "font-family": "monospace", "fill": "#FFF"});
+            }
+            for(let i=0; i<3; i++){    
+                let d = new Dossier(this.slots[i], i) 
+                d.x = 150;
+                
+                let slotHeight = (dimensions.width-150)/3;
+
+                d.y =  (i * (slotHeight+10) ) + 90;
+                this.dossiers.push(d)   
+                this.dossiers[i].render(deltaT, screen);
+            }
+
+            this.menuElements.push(screen.drawRect(0,0,dimensions.width/5 - 32, 184, "#F8F8F8", SCREENBLACK, 3, 10))
+            for(let o=0; o<this.options.length; o++){
+                text = screen.text(32, o * 32 + 24, this.options[o])    
+                text.attr({ "font-size": "24px", "font-family": "sans-serif", "fill": o==2 && !this.canCopy ? "#888" : "#000", "text-anchor": "start"});  
+                this.menuElements.push(text);   
+            }
+            this.menuElements.push(screen.drawTriangle(10,14,28,24,10,34,null,null,SCREENBLACK, SCREENBLACK, 0));  
+
+            let modalX = dimensions.width/4;
+            let modalY = dimensions.width/2-184/2; 
+
+            this.modalElements.push(screen.drawRect(modalX,modalY,dimensions.width/2, 184, "#F8F8F8", "#AA0000", 6, 10))
+
+            text = screen.text(dimensions.width/2, modalY + 32, "DELETE FILE?");
+            text.attr({ "font-size": "32px", "font-family": "sans-serif", "fill": "#000", "font-weight": "bold"});  
+            this.modalElements.push(text)
+
+            text = screen.text(dimensions.width/2, modalY + 36*2, "DATA WILL BE LOST FOREVER.");
+            text.attr({ "font-size": "24px", "font-family": "sans-serif", "fill": "#000", });  
+            this.modalElements.push(text)
+        
+            text = screen.text(modalX + 32, modalY + 36*3 , "YES, DELETE THIS FILE");
+            text.attr({ "font-size": "28px", "font-family": "sans-serif", "fill": "#000","text-anchor": "start", "font-weight": "bold"});  
+            this.modalElements.push(text)
+            
+            text = screen.text(modalX + 32, modalY + 36*4, "NO, GO BACK");
+            text.attr({ "font-size": "28px", "font-family": "sans-serif", "fill": "#000","text-anchor": "start", "font-weight": "bold"});  
+            this.modalElements.push(text)
+
+            this.modalElements.push(screen.drawTriangle(modalX + 10, modalY + 36*3 - 10, modalX + 28,  modalY + 36*3,modalX + 10, modalY + 36*3 + 10,null,null,SCREENBLACK, SCREENBLACK, 0));  
+
+            this.structureRendered = true;
+        }
+        
+        for(let i=0; i<3; i++){   
+            this.dossiers[i].selected = this.selectedSlot == i;
+            if(this.selectedSlot == i){
+                this.dossiers[i].x = 100;
+            }else {
+                this.dossiers[i].x = 200;
+            }
+            this.dossiers[i].render(deltaT, screen);
+        }
+        
+        let slotHeight = (dimensions.width-150)/3;
+        let menuY = (this.selectedSlot * (slotHeight+10) ) + 120;
+
+        var transForm = "T" + (dimensions.width-184) + "," + menuY
+        this.menuElements.forEach((e,i)=>{
+            switch(i-1){
+                case 1://stats
+                case 3://delete
+                    e.attr({"fill": this.slots[this.selectedSlot]==null ? "#C0C0C0" : "#000"})
+                    break;
+                case 2://copy
+                    e.attr({"fill": this.slots[this.selectedSlot]==null || !this.canCopy ? "#C0C0C0" : "#000"})
+                    break;
+            }
+            e.attr({"transform":transForm, "opacity": (this.showMenu ? 1 : 0)})}
+        );
+
+        transForm = "T" + (dimensions.width-184) + "," + (menuY + (this.selectedOption * 32))
+        this.menuElements[this.menuElements.length-1].attr({"transform":transForm, "opacity": (this.showMenu ? 1 : 0)});
+
+        this.modalElements.forEach(e=>{
+            e.attr({"opacity": (this.showDeleteModal ? 1 : 0)})
+            e.toFront();
+        });
+        
+        transForm = "T0," + (this.selectedModalOption * 36);
+        this.modalElements[this.modalElements.length-1].attr({"transform":transForm});
+    }
+
+    postDisplay(){
+        this.audioChannels.forEach(ac=>ac.dispose());
+        this.audioChannels=[];
+    }
+}
+
+
+let game
+
+VC.Client.OnReady(()=>{
+    game = new Game();
+
+    game.screen.canvas.addEventListener("touchstart",function(e){
+        VC.Client._orientation = VC.Orientation.PORTRAIT;
+        changeOrientation();
+    });
+    changeOrientation();
+    
+    
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            pause();
+        }
+    }); 
+    
+    game.debug = DEBUG;
+    game.play();
+})
+
+window.onbeforeunload = function(){
+    if(game && game.level && game.level.statistics && game.slot){
+        game.slot.statistics.add(game.level.statistics);
+        game.slot.save();
+    }
+};
+
+window.onerror = function(message, source, lineNumber, colno, error) {
+    if(!game.debug){
+            
+        let body = encodeURI(`
+        Send this email to help debug the issue!
+        
+        Message: ${message}
+        
+        Error: ${error}
+
+        LineNumber: ${lineNumber}, ${colno}
+
+        Call Stack:
+        ${error.stack.replaceAll("https://goldruin.com/play/", "")}
+
+        `);
+
+        let uri = `mailto:Gold Ruin Developers<goldruindev@gmail.com>?subject=GoldRuin ${VERSION} Exception&body=${body}`
+
+        if(confirm("Exception Found!\n\nWould you like to send this error to the developers?")){
+            window.open(uri, "_self");
+        }
+
+    }
+};
+class Stat {
+    _v = 0;
+    _m = 0;
+    _t = 0;
 }
