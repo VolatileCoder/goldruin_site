@@ -1,4 +1,5 @@
 class System {
+    static newClient = false;
     console = null;
     constructor(){
         
@@ -92,7 +93,8 @@ class System {
         var s = new System();
         let lastModified = await s.fetchLastModified();
         let lastLoaded = s.getCookie("lm");
-        if(lastLoaded != lastModified.getTime().toString()){
+        System.newClient = (lastLoaded != lastModified.getTime().toString())
+        if(System.newClient){
             var os = document.createElement('div');
             os.id = "os";
             document.body.appendChild(os);
