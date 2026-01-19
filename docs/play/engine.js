@@ -1,159 +1,5 @@
 'use strict';
 const VC={};
-VC.AudioChannel = class{
-    #player = null;    
-    #volume = 1;
-    #relativeVolume = 1;
-    #relativePan = 0;
-    #uri = "";
-    #fadeOutCancellationToken = null;
-    #index = 0;
-
-    #setVolume(){
-        if(this.#player && this.#player instanceof Howl){
-            this.#player.volume(this.#volume * this.#relativeVolume);
-            this.#player.stereo(this.#relativePan);
-            //this.#player.mute(false);
-        }
-    }
-    get player(){
-        return this.#player;
-    }
-
-    get volume(){
-        return this.#volume;
-    }
-
-    set volume(value){
-        value = value < 0 ? 0 : (value > 1 ? 1 : value);
-        if(this.#volume !== value){
-            this.#volume = value;
-            this.#setVolume();
-        }
-    }
-
-    get relativeVolume(){
-        return this.#relativeVolume;
-    }
-
-    set relativeVolume(value){
-        value = value < 0 ? 0 : (value > 1 ? 1 : value);
-        if(this.#relativeVolume !== value){
-            this.#relativeVolume = value;
-            this.#setVolume();
-        }
-    }
-
-    get relativePan(){
-        return this.#relativePan;
-    }
-
-    set relativePan(value){
-        value = value < -1 ? -1 : (value > 1 ? 1 : value);
-        if(this.#relativePan !== value){
-            this.#relativePan = value;
-            this.#setVolume()
-        }
-    }
-
-    playNext(){
-        console.log("playnext")
-        this.play(this.#uri, this.volume, true, this.#index+1);
-    }
-    
-    play(uri, volume, loop, index){
-
-        if(index == null){
-            index = 0;
-        }
-        if(this.#fadeOutCancellationToken){
-            window.clearTimeout(this.#fadeOutCancellationToken);
-            
-            if(this.#player && this.#player instanceof Howl && this.#player.playing()){
-                this.#player.stop();
-            } 
-            this.#fadeOutCancellationToken = null;
-        }
-
-        this.volume = volume;
-        
-        if(this.#player && this.#player instanceof Howl && this.#uri === uri && !this.#player.playing() && index == this.#index){
-            this.#player.play();
-            return;
-        }
-
-        if(this.#player && this.#player instanceof Howl && (this.#uri !== uri || index !== this.#index)){
-            this.dispose();
-        }
-
-        if(!this.#player){
-            if(Array.isArray(uri)){
-                this.#player = new Howl({
-                    src: [uri[index]],
-                    format: "mp3",
-                    autoplay: true, 
-                    loop: index==uri.length-1,
-                    stereo: this.#relativePan,
-                    volume: this.#volume * this.relativeVolume,
-                    onend: index==uri.length-1 ? null : this.playNext.bind(this)
-                });    
-            } else {
-                this.#player = new Howl({
-                    src: [uri],
-                    format: "mp3",
-                    autoplay: true,
-                    loop: false,
-                    stereo: this.#relativePan,
-                    volume: this.#volume * this.relativeVolume,
-                    onend: loop ? ()=>{
-                        if(this.player){
-                            this.player.stop().play();         
-                        }
-                    } : null
-                });    
-            }
-            
-        }
-        this.#uri = uri;
-        this.#index = index;
-    }
-  
-    stop(uri){
-        if(uri && this.#uri !== uri){
-            //already playing something else. 
-            return;
-        } 
-        if(this.#player!=null && this.#player.playing()){
-            this.#player.stop(); 
-        }
-    }
-  
-    fadeOut(callback){
-        if(this.#player){
-            if( this.volume > 0){
-                this.volume-=.1;
-                this.#fadeOutCancellationToken = setTimeout(()=>{this.fadeOut(callback)}, 75);
-            }else {
-                this.#player.stop();
-                if(callback){
-                    callback();
-                }
-            }
-        } else if (callback){
-            callback();
-        }
-    };
-    
-    dispose(){
-        if(this.#player && this.#player instanceof Howl){
-            if (this.#player.playing()) {
-                this.#player.stop();
-            }
-            this.#player.unload();  
-            this.#player = null;
-        }
-    }
-}
 
 VC.Trig = class {
     static degreesToRadians(angle){
@@ -736,71 +582,6 @@ VC.Point = class {
     }
 }
 
-VC.Orientation = class {
-    static get UNSET(){
-        return -1;
-    }
-    static get LANDSCAPE(){
-        return 0;
-    }
-    static get PORTRAIT(){
-        return 1;
-    }
-}
-
-VC.Client = class {
-    static get screenHeight(){
-        return window.screen.height;
-    }
-    static get screenWidth(){
-        return window.screen.width;
-    }
-    static _orientation = VC.Orientation.UNSET;
-    static get orientation(){
-        return VC.Client._orientation;
-    }
-    static _orientationChangeListeners=[];
-    static OnOrientationChange(func){
-        VC.Client._orientationChangeListeners.push(func);
-    }
-    static _lastOrientation = VC.Orientation.UNSET;
-    static _onOrientationChange(e){
-        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
-            VC.Client._orientation = VC.Orientation.LANDSCAPE;
-        } else {
-            VC.Client._orientation = VC.Orientation.PORTRAIT;
-        }
-    
-        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
-            VC.Client._lastOrientation = VC.Client.orientation;
-            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
-        }
-    }
-
-    static _readyListeners=[];
-    static _ready = false;
-    static OnReady(func){
-        if (VC.Client._ready){
-            func();
-            return;
-        }
-        VC.Client._readyListeners.push(func);
-    }
-    static Start(func){
-        if (VC.Client._ready){
-            return
-        }
-        VC.Client._ready = true;
-        VC.Client._readyListeners.forEach((func)=>{func();})
-    }
-}
-
-//Call once to set
-VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
-
-//Bind for changes
-window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
-
 VC.Color = class {
     static hexToRGB(hexColor){
         if(hexColor.length===6 || hexColor.length == 3){
@@ -850,13 +631,40 @@ VC.Color = class {
     }
 }
 
-VC.Scene = class {
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
+VC.Math = class {
+    static constrain (min, val, max){
+        if (isNaN(val)) val = 0;
+        if (val===undefined) val = 0;
+        if (val===null) val = 0;
+        if (val<min) return min;
+        if (val>max) return max;
+        return val;
+    }
+
+    static percentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMin + (percentage * (rangeMax-rangeMin));
+    }
+
+    static inversePercentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMax - (percentage * (rangeMax-rangeMin));
+    }
+
+    static random(min, max){
+        return Math.floor(Math.random() * (max - min +1)) + min;
+    }
+
+    static greatestCommonDivisor(a, b) {
+        while (b !== 0) {
+            let t = b;
+            b = a % b;
+            a = t;
+        }
+        return a;
+    }
+
+
 }
 
 VC.Sprite = class {
@@ -1098,212 +906,6 @@ function drawSprite(ctx, spriteSheet, frameX, frameY, frameW, frameH, x, y, heat
   ctx.shadowBlur = 0;
 }
 */
-VC.Triangle = class {
-    #registered = false;
-    #p1 = new VC.Point(0,0);
-    #p2 = new VC.Point(0,0);
-    #p3 = new VC.Point(0,0);
-    #elements = []
-    constructor(p1, p2, p3){
-        this.p1 = p1;
-        this.p2 = p2;
-        this.p3 = p3;
-    }
-
-    get p1() {
-        return this.#p1;
-    }
-    set p1(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p1 = value;
-    }
-    
-    get p2() {
-        return this.#p2;
-    }
-    set p2(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p2 = value;
-    }
-    
-    get p3() {
-        return this.#p3;
-    }
-    set p3(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p3 = value;
-    }
-
-    get points() {
-        return[this.p1, this.p2, this.p3];
-    }
-
-    render(screen){
-        if(!this.#registered){
-            screen.onClear(this.remove);
-            this.#registered = true;
-        }
-        if(this.#elements.length>0){
-            this.remove();
-        }
-        this.p1.render(screen);
-        this.p2.render(screen);
-        this.p3.render(screen);
-        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
-        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
-        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
-    }
-
-    remove(){
-        if(this.#elements.length>0){
-            this.p1.remove();
-            this.p2.remove();
-            this.p3.remove();
-            this.#elements.forEach((element)=>element.remove());
-            this.#elements = [];
-        }
-    }
-
-    contains(obj){
-        if(obj instanceof VC.Point) {
-            let d1 = this.#sign(obj, this.p1, this.p2);
-            let d2 = this.#sign(obj, this.p2, this.p3);
-            let d3 = this.#sign(obj, this.p3, this.p1);
-        
-            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-        
-            return !(has_neg && has_pos);
-        }
-        if (obj instanceof VC.Box){
-            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
-        }
-        
-        if (obj instanceof VC.Triangle){
-            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
-        }
-        return false;
-    }
-
-    #sign (p1,p2,p3)
-    {
-        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
-    }
-}
-
-VC.Math = class {
-    static constrain (min, val, max){
-        if (isNaN(val)) val = 0;
-        if (val===undefined) val = 0;
-        if (val===null) val = 0;
-        if (val<min) return min;
-        if (val>max) return max;
-        return val;
-    }
-
-    static percentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMin + (percentage * (rangeMax-rangeMin));
-    }
-
-    static inversePercentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMax - (percentage * (rangeMax-rangeMin));
-    }
-
-    static random(min, max){
-        return Math.floor(Math.random() * (max - min +1)) + min;
-    }
-
-    static greatestCommonDivisor(a, b) {
-        while (b !== 0) {
-            let t = b;
-            b = a % b;
-            a = t;
-        }
-        return a;
-    }
-
-
-}
-
-VC.VisualEffects = class {
-    //Todo: refactor
-    static shaking = false
-    static shake(screen, intensity, ms){
-        var rate = 50;
-        var div =  document.getElementById(screen.domElementId);
-        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
-        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
-
-        if(ms>0){
-            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
-            VC.VisualEffects.shaking=true;
-        }else{
-            div.style.top = 0;
-            div.style.left = 0;
-            VC.VisualEffects.shaking=false;
-        }
-    }
-}
-
-VC.Paragraph =  class {
-    #text = "";
-    #fontFamily = "monospace";
-    #fontSize = "12px";
-    #fontWeight = "normal";
-    #wrapWidth = 400;
-    #element = null;
-    #fill = "#FFF";
-
-    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
-        this.#text = text;
-        this.#fontFamily = fontFamily;
-        this.#fontSize = fontSize;
-        this.#fontWeight = fontWeight
-        this.#wrapWidth = wrapWidth;
-        this.#fill = fill;
-    }
-
-    render(screen){
-        if(!this.#element){
-                
-            let words = this.#text.split(" ");
-            let composite = "";
-            this.#element = screen.text(-10000, -10000, composite);
-            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
-
-            for(let w = 0; w < words.length; w++){
-                this.#element.attr("text", composite + " " + words[w]);
-                let width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += " " + words[w];
-                    continue;
-                }
-                this.#element.attr("text", composite + "\n" + words[w]);
-                width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += "\n" + words[w];
-                    continue;
-                }
-                composite += "%" + w + "%\n" //handle words too long for line (poorly)
-            }
-            for(let w = 0; w < words.length; w++){
-                composite = composite.replace("%" + w + "%",words[w]);
-            }
-            
-            this.#element.attr("text", composite);
-        }
-        return this.#element
-    }
-
-}
 VC.GameState = class {
     static get PAUSED(){
         return 0;
@@ -1357,6 +959,80 @@ VC.Game = class{
     }
 }
 
+VC.Scene = class {
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
+}
+
+VC.Orientation = class {
+    static get UNSET(){
+        return -1;
+    }
+    static get LANDSCAPE(){
+        return 0;
+    }
+    static get PORTRAIT(){
+        return 1;
+    }
+}
+
+VC.Client = class {
+    static get screenHeight(){
+        return window.screen.height;
+    }
+    static get screenWidth(){
+        return window.screen.width;
+    }
+    static _orientation = VC.Orientation.UNSET;
+    static get orientation(){
+        return VC.Client._orientation;
+    }
+    static _orientationChangeListeners=[];
+    static OnOrientationChange(func){
+        VC.Client._orientationChangeListeners.push(func);
+    }
+    static _lastOrientation = VC.Orientation.UNSET;
+    static _onOrientationChange(e){
+        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
+            VC.Client._orientation = VC.Orientation.LANDSCAPE;
+        } else {
+            VC.Client._orientation = VC.Orientation.PORTRAIT;
+        }
+    
+        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
+            VC.Client._lastOrientation = VC.Client.orientation;
+            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
+        }
+    }
+
+    static _readyListeners=[];
+    static _ready = false;
+    static OnReady(func){
+        if (VC.Client._ready){
+            func();
+            return;
+        }
+        VC.Client._readyListeners.push(func);
+    }
+    static Start(func){
+        if (VC.Client._ready){
+            return
+        }
+        VC.Client._ready = true;
+        VC.Client._readyListeners.forEach((func)=>{func();})
+    }
+}
+
+//Call once to set
+VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
+
+//Bind for changes
+window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
+
 VC.LineSegment = class {
     #element = null;
     point1 = null;
@@ -1398,6 +1074,58 @@ VC.LineSegment = class {
         //line segments do not intersect
         return null;
     }
+}
+
+VC.Paragraph =  class {
+    #text = "";
+    #fontFamily = "monospace";
+    #fontSize = "12px";
+    #fontWeight = "normal";
+    #wrapWidth = 400;
+    #element = null;
+    #fill = "#FFF";
+
+    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
+        this.#text = text;
+        this.#fontFamily = fontFamily;
+        this.#fontSize = fontSize;
+        this.#fontWeight = fontWeight
+        this.#wrapWidth = wrapWidth;
+        this.#fill = fill;
+    }
+
+    render(screen){
+        if(!this.#element){
+                
+            let words = this.#text.split(" ");
+            let composite = "";
+            this.#element = screen.text(-10000, -10000, composite);
+            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
+
+            for(let w = 0; w < words.length; w++){
+                this.#element.attr("text", composite + " " + words[w]);
+                let width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += " " + words[w];
+                    continue;
+                }
+                this.#element.attr("text", composite + "\n" + words[w]);
+                width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += "\n" + words[w];
+                    continue;
+                }
+                composite += "%" + w + "%\n" //handle words too long for line (poorly)
+            }
+            for(let w = 0; w < words.length; w++){
+                composite = composite.replace("%" + w + "%",words[w]);
+            }
+            
+            this.#element.attr("text", composite);
+        }
+        return this.#element
+    }
+
 }
 VC.Polygon = class {
     #element = null;
@@ -1677,5 +1405,277 @@ VC.Polygon = class {
             this.#element.remove();
             this.#element = null;
         }   
+    }
+}
+
+VC.VisualEffects = class {
+    //Todo: refactor
+    static shaking = false
+    static shake(screen, intensity, ms){
+        var rate = 50;
+        var div =  document.getElementById(screen.domElementId);
+        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
+        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+
+        if(ms>0){
+            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
+            VC.VisualEffects.shaking=true;
+        }else{
+            div.style.top = 0;
+            div.style.left = 0;
+            VC.VisualEffects.shaking=false;
+        }
+    }
+}
+VC.AudioChannel = class{
+    #player = null;    
+    #volume = 1;
+    #relativeVolume = 1;
+    #relativePan = 0;
+    #uri = "";
+    #fadeOutCancellationToken = null;
+    #index = 0;
+
+    #setVolume(){
+        if(this.#player && this.#player instanceof Howl){
+            this.#player.volume(this.#volume * this.#relativeVolume);
+            this.#player.stereo(this.#relativePan);
+            //this.#player.mute(false);
+        }
+    }
+    get player(){
+        return this.#player;
+    }
+
+    get volume(){
+        return this.#volume;
+    }
+
+    set volume(value){
+        value = value < 0 ? 0 : (value > 1 ? 1 : value);
+        if(this.#volume !== value){
+            this.#volume = value;
+            this.#setVolume();
+        }
+    }
+
+    get relativeVolume(){
+        return this.#relativeVolume;
+    }
+
+    set relativeVolume(value){
+        value = value < 0 ? 0 : (value > 1 ? 1 : value);
+        if(this.#relativeVolume !== value){
+            this.#relativeVolume = value;
+            this.#setVolume();
+        }
+    }
+
+    get relativePan(){
+        return this.#relativePan;
+    }
+
+    set relativePan(value){
+        value = value < -1 ? -1 : (value > 1 ? 1 : value);
+        if(this.#relativePan !== value){
+            this.#relativePan = value;
+            this.#setVolume()
+        }
+    }
+
+    playNext(){
+        console.log("playnext")
+        this.play(this.#uri, this.volume, true, this.#index+1);
+    }
+    
+    play(uri, volume, loop, index){
+
+        if(index == null){
+            index = 0;
+        }
+        if(this.#fadeOutCancellationToken){
+            window.clearTimeout(this.#fadeOutCancellationToken);
+            
+            if(this.#player && this.#player instanceof Howl && this.#player.playing()){
+                this.#player.stop();
+            } 
+            this.#fadeOutCancellationToken = null;
+        }
+
+        this.volume = volume;
+        
+        if(this.#player && this.#player instanceof Howl && this.#uri === uri && !this.#player.playing() && index == this.#index){
+            this.#player.play();
+            return;
+        }
+
+        if(this.#player && this.#player instanceof Howl && (this.#uri !== uri || index !== this.#index)){
+            this.dispose();
+        }
+
+        if(!this.#player){
+            if(Array.isArray(uri)){
+                this.#player = new Howl({
+                    src: [uri[index]],
+                    format: "mp3",
+                    autoplay: true, 
+                    loop: index==uri.length-1,
+                    stereo: this.#relativePan,
+                    volume: this.#volume * this.relativeVolume,
+                    onend: index==uri.length-1 ? null : this.playNext.bind(this)
+                });    
+            } else {
+                this.#player = new Howl({
+                    src: [uri],
+                    format: "mp3",
+                    autoplay: true,
+                    loop: false,
+                    stereo: this.#relativePan,
+                    volume: this.#volume * this.relativeVolume,
+                    onend: loop ? ()=>{
+                        if(this.player){
+                            this.player.stop().play();         
+                        }
+                    } : null
+                });    
+            }
+            
+        }
+        this.#uri = uri;
+        this.#index = index;
+    }
+  
+    stop(uri){
+        if(uri && this.#uri !== uri){
+            //already playing something else. 
+            return;
+        } 
+        if(this.#player!=null && this.#player.playing()){
+            this.#player.stop(); 
+        }
+    }
+  
+    fadeOut(callback){
+        if(this.#player){
+            if( this.volume > 0){
+                this.volume-=.1;
+                this.#fadeOutCancellationToken = setTimeout(()=>{this.fadeOut(callback)}, 75);
+            }else {
+                this.#player.stop();
+                if(callback){
+                    callback();
+                }
+            }
+        } else if (callback){
+            callback();
+        }
+    };
+    
+    dispose(){
+        if(this.#player && this.#player instanceof Howl){
+            if (this.#player.playing()) {
+                this.#player.stop();
+            }
+            this.#player.unload();  
+            this.#player = null;
+        }
+    }
+}
+VC.Triangle = class {
+    #registered = false;
+    #p1 = new VC.Point(0,0);
+    #p2 = new VC.Point(0,0);
+    #p3 = new VC.Point(0,0);
+    #elements = []
+    constructor(p1, p2, p3){
+        this.p1 = p1;
+        this.p2 = p2;
+        this.p3 = p3;
+    }
+
+    get p1() {
+        return this.#p1;
+    }
+    set p1(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p1 = value;
+    }
+    
+    get p2() {
+        return this.#p2;
+    }
+    set p2(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p2 = value;
+    }
+    
+    get p3() {
+        return this.#p3;
+    }
+    set p3(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p3 = value;
+    }
+
+    get points() {
+        return[this.p1, this.p2, this.p3];
+    }
+
+    render(screen){
+        if(!this.#registered){
+            screen.onClear(this.remove);
+            this.#registered = true;
+        }
+        if(this.#elements.length>0){
+            this.remove();
+        }
+        this.p1.render(screen);
+        this.p2.render(screen);
+        this.p3.render(screen);
+        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
+        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
+        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
+    }
+
+    remove(){
+        if(this.#elements.length>0){
+            this.p1.remove();
+            this.p2.remove();
+            this.p3.remove();
+            this.#elements.forEach((element)=>element.remove());
+            this.#elements = [];
+        }
+    }
+
+    contains(obj){
+        if(obj instanceof VC.Point) {
+            let d1 = this.#sign(obj, this.p1, this.p2);
+            let d2 = this.#sign(obj, this.p2, this.p3);
+            let d3 = this.#sign(obj, this.p3, this.p1);
+        
+            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+        
+            return !(has_neg && has_pos);
+        }
+        if (obj instanceof VC.Box){
+            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
+        }
+        
+        if (obj instanceof VC.Triangle){
+            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
+        }
+        return false;
+    }
+
+    #sign (p1,p2,p3)
+    {
+        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
     }
 }
