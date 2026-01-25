@@ -1,5 +1,57 @@
 'use strict';
 const VC={};
+VC.GameState = class {
+    static get PAUSED(){
+        return 0;
+    }
+    static get RUNNING(){
+        return 1;
+    }
+}
+
+VC.Game = class{
+    #state = VC.GameState.PAUSED;
+
+    onPreRender(deltaT){}
+    onRender(deltaT){}
+    onPostRender(deltaT){}
+    onPlay(){}
+    onPause(){}
+
+    #looping = false;
+    _loop(lastTime){
+        if(!this.#looping) {
+            this.#looping = true;
+        }
+        let startTime = Date.now();
+        let deltaT = Math.round(startTime-lastTime);
+        //if(deltaT>1000) deltaT === 1000;
+        if(this.#state === VC.GameState.RUNNING){
+            //this.#preRender(deltaT)
+            this.onPreRender(deltaT);
+            this.onRender(deltaT);
+            this.onPostRender(deltaT);
+        }
+        //window.setTimeout(()=>{this._loop(startTime);},0);
+        requestAnimationFrame(()=>{this._loop(startTime)})
+            
+    }
+    get state(){
+        return this.#state;
+    }
+    play(){
+        this.#state = VC.GameState.RUNNING;
+        this.onPlay();
+        if(!this.#looping){
+            this._loop(Date.now());
+        }
+    }
+
+    pause(){
+        this.#state = VC.GameState.PAUSED;
+        this.onPause();
+    }
+}
 
 VC.Trig = class {
     static degreesToRadians(angle){
@@ -44,146 +96,73 @@ VC.Trig = class {
 
 }
 
-VC.Math = class {
-    static constrain (min, val, max){
-        if (isNaN(val)) val = 0;
-        if (val===undefined) val = 0;
-        if (val===null) val = 0;
-        if (val<min) return min;
-        if (val>max) return max;
-        return val;
-    }
+VC.VisualEffects = class {
+    //Todo: refactor
+    static shaking = false
+    static shake(screen, intensity, ms){
+        var rate = 50;
+        var div =  document.getElementById(screen.domElementId);
+        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
+        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
 
-    static percentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMin + (percentage * (rangeMax-rangeMin));
-    }
-
-    static inversePercentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMax - (percentage * (rangeMax-rangeMin));
-    }
-
-    static random(min, max){
-        return Math.floor(Math.random() * (max - min +1)) + min;
-    }
-
-    static greatestCommonDivisor(a, b) {
-        while (b !== 0) {
-            let t = b;
-            b = a % b;
-            a = t;
+        if(ms>0){
+            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
+            VC.VisualEffects.shaking=true;
+        }else{
+            div.style.top = 0;
+            div.style.left = 0;
+            VC.VisualEffects.shaking=false;
         }
-        return a;
-    }
-
-
-}
-
-VC.Paragraph =  class {
-    #text = "";
-    #fontFamily = "monospace";
-    #fontSize = "12px";
-    #fontWeight = "normal";
-    #wrapWidth = 400;
-    #element = null;
-    #fill = "#FFF";
-
-    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
-        this.#text = text;
-        this.#fontFamily = fontFamily;
-        this.#fontSize = fontSize;
-        this.#fontWeight = fontWeight
-        this.#wrapWidth = wrapWidth;
-        this.#fill = fill;
-    }
-
-    render(screen){
-        if(!this.#element){
-                
-            let words = this.#text.split(" ");
-            let composite = "";
-            this.#element = screen.text(-10000, -10000, composite);
-            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
-
-            for(let w = 0; w < words.length; w++){
-                this.#element.attr("text", composite + " " + words[w]);
-                let width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += " " + words[w];
-                    continue;
-                }
-                this.#element.attr("text", composite + "\n" + words[w]);
-                width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += "\n" + words[w];
-                    continue;
-                }
-                composite += "%" + w + "%\n" //handle words too long for line (poorly)
-            }
-            for(let w = 0; w < words.length; w++){
-                composite = composite.replace("%" + w + "%",words[w]);
-            }
-            
-            this.#element.attr("text", composite);
-        }
-        return this.#element
-    }
-
-}
-
-VC.Point = class {
-    #element = null;
-    x = 0;
-    y = 0;
-    constructor (x,y){
-        this.x = x;
-        this.y = y;
-    }
-    render(screen){
-        if (this.#element){
-            this.remove();
-        }
-        this.#element = screen.drawRect(this.x-1,this.y-1, 3, 3, "#fff","#000",0);
-        screen.onClear(this.remove)
-    }
-    remove(){
-        if(this.#element){
-            this.#element.remove();
-            this.#element = null;
-        }
-    }
-    
-    toString(){
-        return `(${this.x}, ${this.y})`
-    }
-    
-    distanceTo(point){
-        return VC.Trig.distance(this.x, this.y, point.x, point.y);
-    }
-
-    static vector(point1, point2){
-        return new VC.Point(point2.x - point1.x, point2.y - point1.y);
-    }
-
-    static normalizeDirection(point){
-        let gcd = VC.Math.greatestCommonDivisor(Math.abs(point.x), Math.abs(point.y));
-        return new VC.Point(point.x / gcd, point.y / gcd);
-    }
-    static normalizeToUnit(point){
-        let mag = Math.hypot(point.x, point.y);
-        if (mag === 0) return new VC.Point(0, 0);
-        return new VC.Point(point.x / mag, point.y / mag);
     }
 }
 
-VC.Scene = class {
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
+VC.Color = class {
+    static hexToRGB(hexColor){
+        if(hexColor.length===6 || hexColor.length == 3){
+            hexColor = "#" + hexColor
+        }
+        let red = "00";
+        let green = "00";
+        let blue = "00"
+        if(hexColor.length === 4){
+            red = hexColor.substring(1,2);
+            red += red;
+            green = hexColor.substring(2,3);
+            green += green;
+            blue = hexColor.substring(3,4);
+            blue += blue;
+        }
+        if(hexColor.length === 7){
+            red = hexColor.substring(1,3);
+            green = hexColor.substring(3,5);
+            blue = hexColor.substring(5,7);
+        }
+
+        return {
+            r: parseInt(red,16),
+            g: parseInt(green,16),
+            b: parseInt(blue,16)
+        }
+    }
+
+    static rgbToHex(rgb){
+        let hex="#"
+        hex += right("0" + rgb.r.toString(16),2);
+        hex += right("0" + rgb.g.toString(16),2);
+        hex += right("0" + rgb.b.toString(16),2);
+        return hex;
+    }
+
+    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
+        //alpha * new + (1 - alpha) * old
+        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
+        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
+        return VC.Color.rgbToHex({
+            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
+            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
+            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
+        });
+    }
 }
 
 VC.Screen = class {
@@ -654,26 +633,6 @@ function drawSprite(ctx, spriteSheet, frameX, frameY, frameW, frameH, x, y, heat
   ctx.shadowBlur = 0;
 }
 */
-
-VC.VisualEffects = class {
-    //Todo: refactor
-    static shaking = false
-    static shake(screen, intensity, ms){
-        var rate = 50;
-        var div =  document.getElementById(screen.domElementId);
-        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
-        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
-
-        if(ms>0){
-            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
-            VC.VisualEffects.shaking=true;
-        }else{
-            div.style.top = 0;
-            div.style.left = 0;
-            VC.VisualEffects.shaking=false;
-        }
-    }
-}
 VC.AudioChannel = class{
     #player = null;    
     #volume = 1;
@@ -829,107 +788,6 @@ VC.AudioChannel = class{
     }
 }
 
-VC.Color = class {
-    static hexToRGB(hexColor){
-        if(hexColor.length===6 || hexColor.length == 3){
-            hexColor = "#" + hexColor
-        }
-        let red = "00";
-        let green = "00";
-        let blue = "00"
-        if(hexColor.length === 4){
-            red = hexColor.substring(1,2);
-            red += red;
-            green = hexColor.substring(2,3);
-            green += green;
-            blue = hexColor.substring(3,4);
-            blue += blue;
-        }
-        if(hexColor.length === 7){
-            red = hexColor.substring(1,3);
-            green = hexColor.substring(3,5);
-            blue = hexColor.substring(5,7);
-        }
-
-        return {
-            r: parseInt(red,16),
-            g: parseInt(green,16),
-            b: parseInt(blue,16)
-        }
-    }
-
-    static rgbToHex(rgb){
-        let hex="#"
-        hex += right("0" + rgb.r.toString(16),2);
-        hex += right("0" + rgb.g.toString(16),2);
-        hex += right("0" + rgb.b.toString(16),2);
-        return hex;
-    }
-
-    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
-        //alpha * new + (1 - alpha) * old
-        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
-        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
-        return VC.Color.rgbToHex({
-            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
-            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
-            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
-        });
-    }
-}
-VC.GameState = class {
-    static get PAUSED(){
-        return 0;
-    }
-    static get RUNNING(){
-        return 1;
-    }
-}
-
-VC.Game = class{
-    #state = VC.GameState.PAUSED;
-
-    onPreRender(deltaT){}
-    onRender(deltaT){}
-    onPostRender(deltaT){}
-    onPlay(){}
-    onPause(){}
-
-    #looping = false;
-    _loop(lastTime){
-        if(!this.#looping) {
-            this.#looping = true;
-        }
-        let startTime = Date.now();
-        let deltaT = Math.round(startTime-lastTime);
-        //if(deltaT>1000) deltaT === 1000;
-        if(this.#state === VC.GameState.RUNNING){
-            //this.#preRender(deltaT)
-            this.onPreRender(deltaT);
-            this.onRender(deltaT);
-            this.onPostRender(deltaT);
-        }
-        //window.setTimeout(()=>{this._loop(startTime);},0);
-        requestAnimationFrame(()=>{this._loop(startTime)})
-            
-    }
-    get state(){
-        return this.#state;
-    }
-    play(){
-        this.#state = VC.GameState.RUNNING;
-        this.onPlay();
-        if(!this.#looping){
-            this._loop(Date.now());
-        }
-    }
-
-    pause(){
-        this.#state = VC.GameState.PAUSED;
-        this.onPause();
-    }
-}
-
 VC.LineSegment = class {
     #element = null;
     point1 = null;
@@ -971,6 +829,151 @@ VC.LineSegment = class {
         //line segments do not intersect
         return null;
     }
+}
+
+VC.Orientation = class {
+    static get UNSET(){
+        return -1;
+    }
+    static get LANDSCAPE(){
+        return 0;
+    }
+    static get PORTRAIT(){
+        return 1;
+    }
+}
+
+VC.Paragraph =  class {
+    #text = "";
+    #fontFamily = "monospace";
+    #fontSize = "12px";
+    #fontWeight = "normal";
+    #wrapWidth = 400;
+    #element = null;
+    #fill = "#FFF";
+
+    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
+        this.#text = text;
+        this.#fontFamily = fontFamily;
+        this.#fontSize = fontSize;
+        this.#fontWeight = fontWeight
+        this.#wrapWidth = wrapWidth;
+        this.#fill = fill;
+    }
+
+    render(screen){
+        if(!this.#element){
+                
+            let words = this.#text.split(" ");
+            let composite = "";
+            this.#element = screen.text(-10000, -10000, composite);
+            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
+
+            for(let w = 0; w < words.length; w++){
+                this.#element.attr("text", composite + " " + words[w]);
+                let width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += " " + words[w];
+                    continue;
+                }
+                this.#element.attr("text", composite + "\n" + words[w]);
+                width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += "\n" + words[w];
+                    continue;
+                }
+                composite += "%" + w + "%\n" //handle words too long for line (poorly)
+            }
+            for(let w = 0; w < words.length; w++){
+                composite = composite.replace("%" + w + "%",words[w]);
+            }
+            
+            this.#element.attr("text", composite);
+        }
+        return this.#element
+    }
+
+}
+
+VC.Point = class {
+    #element = null;
+    x = 0;
+    y = 0;
+    constructor (x,y){
+        this.x = x;
+        this.y = y;
+    }
+    render(screen){
+        if (this.#element){
+            this.remove();
+        }
+        this.#element = screen.drawRect(this.x-1,this.y-1, 3, 3, "#fff","#000",0);
+        screen.onClear(this.remove)
+    }
+    remove(){
+        if(this.#element){
+            this.#element.remove();
+            this.#element = null;
+        }
+    }
+    
+    toString(){
+        return `(${this.x}, ${this.y})`
+    }
+    
+    distanceTo(point){
+        return VC.Trig.distance(this.x, this.y, point.x, point.y);
+    }
+
+    static vector(point1, point2){
+        return new VC.Point(point2.x - point1.x, point2.y - point1.y);
+    }
+
+    static normalizeDirection(point){
+        let gcd = VC.Math.greatestCommonDivisor(Math.abs(point.x), Math.abs(point.y));
+        return new VC.Point(point.x / gcd, point.y / gcd);
+    }
+    static normalizeToUnit(point){
+        let mag = Math.hypot(point.x, point.y);
+        if (mag === 0) return new VC.Point(0, 0);
+        return new VC.Point(point.x / mag, point.y / mag);
+    }
+}
+
+VC.Math = class {
+    static constrain (min, val, max){
+        if (isNaN(val)) val = 0;
+        if (val===undefined) val = 0;
+        if (val===null) val = 0;
+        if (val<min) return min;
+        if (val>max) return max;
+        return val;
+    }
+
+    static percentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMin + (percentage * (rangeMax-rangeMin));
+    }
+
+    static inversePercentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMax - (percentage * (rangeMax-rangeMin));
+    }
+
+    static random(min, max){
+        return Math.floor(Math.random() * (max - min +1)) + min;
+    }
+
+    static greatestCommonDivisor(a, b) {
+        while (b !== 0) {
+            let t = b;
+            b = a % b;
+            a = t;
+        }
+        return a;
+    }
+
+
 }
 VC.Polygon = class {
     #element = null;
@@ -1351,6 +1354,15 @@ VC.Triangle = class {
     }
 }
 
+VC.Scene = class {
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
+}
+
  VC.Box = class{
     #x=0;
     #y=0;
@@ -1612,18 +1624,6 @@ VC.Triangle = class {
             this.element.remove();
             this.element = null;
         }   
-    }
-}
-
-VC.Orientation = class {
-    static get UNSET(){
-        return -1;
-    }
-    static get LANDSCAPE(){
-        return 0;
-    }
-    static get PORTRAIT(){
-        return 1;
     }
 }
 
