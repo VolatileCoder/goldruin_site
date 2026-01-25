@@ -1,85 +1,6 @@
 'use strict';
 const VC={};
 
-VC.LineSegment = class {
-    #element = null;
-    point1 = null;
-    point2 = null;
-    constructor (point1, point2){
-        if(point1 && point1 instanceof VC.Point){
-            this.point1 = point1;
-        }
-        if(point2 && point2 instanceof VC.Point){
-            this.point2 = point2;
-        }
-    }
-
-    pointOfIntersection(lineSegment) {
-        if (!(lineSegment && lineSegment instanceof VC.LineSegment)){
-            console.warn("lineSegment argument is not an instance of VC.LineSegment")
-            return null;
-        }
-        let x1 = this.point1.x;
-        let y1 = this.point1.y;
-        let x2 = this.point2.x;
-        let y2 = this.point2.y;
-        let x3 = lineSegment.point1.x;
-        let y3 = lineSegment.point1.y;
-        let x4 = lineSegment.point2.x;
-        let y4 = lineSegment.point2.y;
-
-
-        let denom = ((x1-x2) * (y3-y4)) - ((y1-y2) * (x3-x4));
-        if(denom == 0){ // Parallel, return null
-            return null;
-        }
-        let t = (((x1-x3) * (y3-y4)) - ((y1-y3) * (x3-x4)))/ denom;
-        let u = -((((x1-x2) * (y1-y3)) - ((y1-y2) * (x1-x3)))/ denom);
-        if (0<=t && t<=1 && 0<=u && u<=1){
-            //return point of intersection
-            return new VC.Point(x1 + (t *(x2 - x1)), y1 + (t * (y2 - y1)));
-        }
-        //line segments do not intersect
-        return null;
-    }
-}
-
-VC.Math = class {
-    static constrain (min, val, max){
-        if (isNaN(val)) val = 0;
-        if (val===undefined) val = 0;
-        if (val===null) val = 0;
-        if (val<min) return min;
-        if (val>max) return max;
-        return val;
-    }
-
-    static percentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMin + (percentage * (rangeMax-rangeMin));
-    }
-
-    static inversePercentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMax - (percentage * (rangeMax-rangeMin));
-    }
-
-    static random(min, max){
-        return Math.floor(Math.random() * (max - min +1)) + min;
-    }
-
-    static greatestCommonDivisor(a, b) {
-        while (b !== 0) {
-            let t = b;
-            b = a % b;
-            a = t;
-        }
-        return a;
-    }
-
-
-}
-
 VC.Trig = class {
     static degreesToRadians(angle){
         return (angle % 360) / 360 * 2 * Math.PI;
@@ -121,6 +42,148 @@ VC.Trig = class {
         return Math.round(Math.acos(cosTheta) * 180 / Math.PI);
     }
 
+}
+
+VC.Math = class {
+    static constrain (min, val, max){
+        if (isNaN(val)) val = 0;
+        if (val===undefined) val = 0;
+        if (val===null) val = 0;
+        if (val<min) return min;
+        if (val>max) return max;
+        return val;
+    }
+
+    static percentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMin + (percentage * (rangeMax-rangeMin));
+    }
+
+    static inversePercentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMax - (percentage * (rangeMax-rangeMin));
+    }
+
+    static random(min, max){
+        return Math.floor(Math.random() * (max - min +1)) + min;
+    }
+
+    static greatestCommonDivisor(a, b) {
+        while (b !== 0) {
+            let t = b;
+            b = a % b;
+            a = t;
+        }
+        return a;
+    }
+
+
+}
+
+VC.Paragraph =  class {
+    #text = "";
+    #fontFamily = "monospace";
+    #fontSize = "12px";
+    #fontWeight = "normal";
+    #wrapWidth = 400;
+    #element = null;
+    #fill = "#FFF";
+
+    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
+        this.#text = text;
+        this.#fontFamily = fontFamily;
+        this.#fontSize = fontSize;
+        this.#fontWeight = fontWeight
+        this.#wrapWidth = wrapWidth;
+        this.#fill = fill;
+    }
+
+    render(screen){
+        if(!this.#element){
+                
+            let words = this.#text.split(" ");
+            let composite = "";
+            this.#element = screen.text(-10000, -10000, composite);
+            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
+
+            for(let w = 0; w < words.length; w++){
+                this.#element.attr("text", composite + " " + words[w]);
+                let width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += " " + words[w];
+                    continue;
+                }
+                this.#element.attr("text", composite + "\n" + words[w]);
+                width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += "\n" + words[w];
+                    continue;
+                }
+                composite += "%" + w + "%\n" //handle words too long for line (poorly)
+            }
+            for(let w = 0; w < words.length; w++){
+                composite = composite.replace("%" + w + "%",words[w]);
+            }
+            
+            this.#element.attr("text", composite);
+        }
+        return this.#element
+    }
+
+}
+
+VC.Point = class {
+    #element = null;
+    x = 0;
+    y = 0;
+    constructor (x,y){
+        this.x = x;
+        this.y = y;
+    }
+    render(screen){
+        if (this.#element){
+            this.remove();
+        }
+        this.#element = screen.drawRect(this.x-1,this.y-1, 3, 3, "#fff","#000",0);
+        screen.onClear(this.remove)
+    }
+    remove(){
+        if(this.#element){
+            this.#element.remove();
+            this.#element = null;
+        }
+    }
+    
+    toString(){
+        return `(${this.x}, ${this.y})`
+    }
+    
+    distanceTo(point){
+        return VC.Trig.distance(this.x, this.y, point.x, point.y);
+    }
+
+    static vector(point1, point2){
+        return new VC.Point(point2.x - point1.x, point2.y - point1.y);
+    }
+
+    static normalizeDirection(point){
+        let gcd = VC.Math.greatestCommonDivisor(Math.abs(point.x), Math.abs(point.y));
+        return new VC.Point(point.x / gcd, point.y / gcd);
+    }
+    static normalizeToUnit(point){
+        let mag = Math.hypot(point.x, point.y);
+        if (mag === 0) return new VC.Point(0, 0);
+        return new VC.Point(point.x / mag, point.y / mag);
+    }
+}
+
+VC.Scene = class {
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
 }
 
 VC.Screen = class {
@@ -766,113 +829,147 @@ VC.AudioChannel = class{
     }
 }
 
-VC.Orientation = class {
-    static get UNSET(){
-        return -1;
+VC.Color = class {
+    static hexToRGB(hexColor){
+        if(hexColor.length===6 || hexColor.length == 3){
+            hexColor = "#" + hexColor
+        }
+        let red = "00";
+        let green = "00";
+        let blue = "00"
+        if(hexColor.length === 4){
+            red = hexColor.substring(1,2);
+            red += red;
+            green = hexColor.substring(2,3);
+            green += green;
+            blue = hexColor.substring(3,4);
+            blue += blue;
+        }
+        if(hexColor.length === 7){
+            red = hexColor.substring(1,3);
+            green = hexColor.substring(3,5);
+            blue = hexColor.substring(5,7);
+        }
+
+        return {
+            r: parseInt(red,16),
+            g: parseInt(green,16),
+            b: parseInt(blue,16)
+        }
     }
-    static get LANDSCAPE(){
+
+    static rgbToHex(rgb){
+        let hex="#"
+        hex += right("0" + rgb.r.toString(16),2);
+        hex += right("0" + rgb.g.toString(16),2);
+        hex += right("0" + rgb.b.toString(16),2);
+        return hex;
+    }
+
+    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
+        //alpha * new + (1 - alpha) * old
+        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
+        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
+        return VC.Color.rgbToHex({
+            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
+            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
+            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
+        });
+    }
+}
+VC.GameState = class {
+    static get PAUSED(){
         return 0;
     }
-    static get PORTRAIT(){
+    static get RUNNING(){
         return 1;
     }
 }
 
-VC.Client = class {
-    static get screenHeight(){
-        return window.screen.height;
-    }
-    static get screenWidth(){
-        return window.screen.width;
-    }
-    static _orientation = VC.Orientation.UNSET;
-    static get orientation(){
-        return VC.Client._orientation;
-    }
-    static _orientationChangeListeners=[];
-    static OnOrientationChange(func){
-        VC.Client._orientationChangeListeners.push(func);
-    }
-    static _lastOrientation = VC.Orientation.UNSET;
-    static _onOrientationChange(e){
-        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
-            VC.Client._orientation = VC.Orientation.LANDSCAPE;
-        } else {
-            VC.Client._orientation = VC.Orientation.PORTRAIT;
+VC.Game = class{
+    #state = VC.GameState.PAUSED;
+
+    onPreRender(deltaT){}
+    onRender(deltaT){}
+    onPostRender(deltaT){}
+    onPlay(){}
+    onPause(){}
+
+    #looping = false;
+    _loop(lastTime){
+        if(!this.#looping) {
+            this.#looping = true;
         }
-    
-        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
-            VC.Client._lastOrientation = VC.Client.orientation;
-            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
+        let startTime = Date.now();
+        let deltaT = Math.round(startTime-lastTime);
+        //if(deltaT>1000) deltaT === 1000;
+        if(this.#state === VC.GameState.RUNNING){
+            //this.#preRender(deltaT)
+            this.onPreRender(deltaT);
+            this.onRender(deltaT);
+            this.onPostRender(deltaT);
+        }
+        //window.setTimeout(()=>{this._loop(startTime);},0);
+        requestAnimationFrame(()=>{this._loop(startTime)})
+            
+    }
+    get state(){
+        return this.#state;
+    }
+    play(){
+        this.#state = VC.GameState.RUNNING;
+        this.onPlay();
+        if(!this.#looping){
+            this._loop(Date.now());
         }
     }
 
-    static _readyListeners=[];
-    static _ready = false;
-    static OnReady(func){
-        if (VC.Client._ready){
-            func();
-            return;
-        }
-        VC.Client._readyListeners.push(func);
-    }
-    static Start(func){
-        if (VC.Client._ready){
-            return
-        }
-        VC.Client._ready = true;
-        VC.Client._readyListeners.forEach((func)=>{func();})
+    pause(){
+        this.#state = VC.GameState.PAUSED;
+        this.onPause();
     }
 }
 
-//Call once to set
-VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
-
-//Bind for changes
-window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
-
-VC.Point = class {
+VC.LineSegment = class {
     #element = null;
-    x = 0;
-    y = 0;
-    constructor (x,y){
-        this.x = x;
-        this.y = y;
-    }
-    render(screen){
-        if (this.#element){
-            this.remove();
+    point1 = null;
+    point2 = null;
+    constructor (point1, point2){
+        if(point1 && point1 instanceof VC.Point){
+            this.point1 = point1;
         }
-        this.#element = screen.drawRect(this.x-1,this.y-1, 3, 3, "#fff","#000",0);
-        screen.onClear(this.remove)
-    }
-    remove(){
-        if(this.#element){
-            this.#element.remove();
-            this.#element = null;
+        if(point2 && point2 instanceof VC.Point){
+            this.point2 = point2;
         }
     }
-    
-    toString(){
-        return `(${this.x}, ${this.y})`
-    }
-    
-    distanceTo(point){
-        return VC.Trig.distance(this.x, this.y, point.x, point.y);
-    }
 
-    static vector(point1, point2){
-        return new VC.Point(point2.x - point1.x, point2.y - point1.y);
-    }
+    pointOfIntersection(lineSegment) {
+        if (!(lineSegment && lineSegment instanceof VC.LineSegment)){
+            console.warn("lineSegment argument is not an instance of VC.LineSegment")
+            return null;
+        }
+        let x1 = this.point1.x;
+        let y1 = this.point1.y;
+        let x2 = this.point2.x;
+        let y2 = this.point2.y;
+        let x3 = lineSegment.point1.x;
+        let y3 = lineSegment.point1.y;
+        let x4 = lineSegment.point2.x;
+        let y4 = lineSegment.point2.y;
 
-    static normalizeDirection(point){
-        let gcd = VC.Math.greatestCommonDivisor(Math.abs(point.x), Math.abs(point.y));
-        return new VC.Point(point.x / gcd, point.y / gcd);
-    }
-    static normalizeToUnit(point){
-        let mag = Math.hypot(point.x, point.y);
-        if (mag === 0) return new VC.Point(0, 0);
-        return new VC.Point(point.x / mag, point.y / mag);
+
+        let denom = ((x1-x2) * (y3-y4)) - ((y1-y2) * (x3-x4));
+        if(denom == 0){ // Parallel, return null
+            return null;
+        }
+        let t = (((x1-x3) * (y3-y4)) - ((y1-y3) * (x3-x4)))/ denom;
+        let u = -((((x1-x2) * (y1-y3)) - ((y1-y2) * (x1-x3)))/ denom);
+        if (0<=t && t<=1 && 0<=u && u<=1){
+            //return point of intersection
+            return new VC.Point(x1 + (t *(x2 - x1)), y1 + (t * (y2 - y1)));
+        }
+        //line segments do not intersect
+        return null;
     }
 }
 VC.Polygon = class {
@@ -1153,64 +1250,6 @@ VC.Polygon = class {
             this.#element.remove();
             this.#element = null;
         }   
-    }
-}
-
-VC.Scene = class {
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
-}
-
-VC.Color = class {
-    static hexToRGB(hexColor){
-        if(hexColor.length===6 || hexColor.length == 3){
-            hexColor = "#" + hexColor
-        }
-        let red = "00";
-        let green = "00";
-        let blue = "00"
-        if(hexColor.length === 4){
-            red = hexColor.substring(1,2);
-            red += red;
-            green = hexColor.substring(2,3);
-            green += green;
-            blue = hexColor.substring(3,4);
-            blue += blue;
-        }
-        if(hexColor.length === 7){
-            red = hexColor.substring(1,3);
-            green = hexColor.substring(3,5);
-            blue = hexColor.substring(5,7);
-        }
-
-        return {
-            r: parseInt(red,16),
-            g: parseInt(green,16),
-            b: parseInt(blue,16)
-        }
-    }
-
-    static rgbToHex(rgb){
-        let hex="#"
-        hex += right("0" + rgb.r.toString(16),2);
-        hex += right("0" + rgb.g.toString(16),2);
-        hex += right("0" + rgb.b.toString(16),2);
-        return hex;
-    }
-
-    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
-        //alpha * new + (1 - alpha) * old
-        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
-        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
-        return VC.Color.rgbToHex({
-            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
-            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
-            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
-        });
     }
 }
 VC.Triangle = class {
@@ -1575,107 +1614,68 @@ VC.Triangle = class {
         }   
     }
 }
-VC.GameState = class {
-    static get PAUSED(){
+
+VC.Orientation = class {
+    static get UNSET(){
+        return -1;
+    }
+    static get LANDSCAPE(){
         return 0;
     }
-    static get RUNNING(){
+    static get PORTRAIT(){
         return 1;
     }
 }
 
-VC.Game = class{
-    #state = VC.GameState.PAUSED;
-
-    onPreRender(deltaT){}
-    onRender(deltaT){}
-    onPostRender(deltaT){}
-    onPlay(){}
-    onPause(){}
-
-    #looping = false;
-    _loop(lastTime){
-        if(!this.#looping) {
-            this.#looping = true;
-        }
-        let startTime = Date.now();
-        let deltaT = Math.round(startTime-lastTime);
-        //if(deltaT>1000) deltaT === 1000;
-        if(this.#state === VC.GameState.RUNNING){
-            //this.#preRender(deltaT)
-            this.onPreRender(deltaT);
-            this.onRender(deltaT);
-            this.onPostRender(deltaT);
-        }
-        //window.setTimeout(()=>{this._loop(startTime);},0);
-        requestAnimationFrame(()=>{this._loop(startTime)})
-            
+VC.Client = class {
+    static get screenHeight(){
+        return window.screen.height;
     }
-    get state(){
-        return this.#state;
+    static get screenWidth(){
+        return window.screen.width;
     }
-    play(){
-        this.#state = VC.GameState.RUNNING;
-        this.onPlay();
-        if(!this.#looping){
-            this._loop(Date.now());
+    static _orientation = VC.Orientation.UNSET;
+    static get orientation(){
+        return VC.Client._orientation;
+    }
+    static _orientationChangeListeners=[];
+    static OnOrientationChange(func){
+        VC.Client._orientationChangeListeners.push(func);
+    }
+    static _lastOrientation = VC.Orientation.UNSET;
+    static _onOrientationChange(e){
+        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
+            VC.Client._orientation = VC.Orientation.LANDSCAPE;
+        } else {
+            VC.Client._orientation = VC.Orientation.PORTRAIT;
+        }
+    
+        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
+            VC.Client._lastOrientation = VC.Client.orientation;
+            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
         }
     }
 
-    pause(){
-        this.#state = VC.GameState.PAUSED;
-        this.onPause();
+    static _readyListeners=[];
+    static _ready = false;
+    static OnReady(func){
+        if (VC.Client._ready){
+            func();
+            return;
+        }
+        VC.Client._readyListeners.push(func);
+    }
+    static Start(func){
+        if (VC.Client._ready){
+            return
+        }
+        VC.Client._ready = true;
+        VC.Client._readyListeners.forEach((func)=>{func();})
     }
 }
 
-VC.Paragraph =  class {
-    #text = "";
-    #fontFamily = "monospace";
-    #fontSize = "12px";
-    #fontWeight = "normal";
-    #wrapWidth = 400;
-    #element = null;
-    #fill = "#FFF";
+//Call once to set
+VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
 
-    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
-        this.#text = text;
-        this.#fontFamily = fontFamily;
-        this.#fontSize = fontSize;
-        this.#fontWeight = fontWeight
-        this.#wrapWidth = wrapWidth;
-        this.#fill = fill;
-    }
-
-    render(screen){
-        if(!this.#element){
-                
-            let words = this.#text.split(" ");
-            let composite = "";
-            this.#element = screen.text(-10000, -10000, composite);
-            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
-
-            for(let w = 0; w < words.length; w++){
-                this.#element.attr("text", composite + " " + words[w]);
-                let width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += " " + words[w];
-                    continue;
-                }
-                this.#element.attr("text", composite + "\n" + words[w]);
-                width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += "\n" + words[w];
-                    continue;
-                }
-                composite += "%" + w + "%\n" //handle words too long for line (poorly)
-            }
-            for(let w = 0; w < words.length; w++){
-                composite = composite.replace("%" + w + "%",words[w]);
-            }
-            
-            this.#element.attr("text", composite);
-        }
-        return this.#element
-    }
-
-}
+//Bind for changes
+window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
