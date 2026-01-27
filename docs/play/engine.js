@@ -1,70 +1,5 @@
 'use strict';
 const VC={};
-
-VC.Orientation = class {
-    static get UNSET(){
-        return -1;
-    }
-    static get LANDSCAPE(){
-        return 0;
-    }
-    static get PORTRAIT(){
-        return 1;
-    }
-}
-
-VC.Client = class {
-    static get screenHeight(){
-        return window.screen.height;
-    }
-    static get screenWidth(){
-        return window.screen.width;
-    }
-    static _orientation = VC.Orientation.UNSET;
-    static get orientation(){
-        return VC.Client._orientation;
-    }
-    static _orientationChangeListeners=[];
-    static OnOrientationChange(func){
-        VC.Client._orientationChangeListeners.push(func);
-    }
-    static _lastOrientation = VC.Orientation.UNSET;
-    static _onOrientationChange(e){
-        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
-            VC.Client._orientation = VC.Orientation.LANDSCAPE;
-        } else {
-            VC.Client._orientation = VC.Orientation.PORTRAIT;
-        }
-    
-        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
-            VC.Client._lastOrientation = VC.Client.orientation;
-            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
-        }
-    }
-
-    static _readyListeners=[];
-    static _ready = false;
-    static OnReady(func){
-        if (VC.Client._ready){
-            func();
-            return;
-        }
-        VC.Client._readyListeners.push(func);
-    }
-    static Start(func){
-        if (VC.Client._ready){
-            return
-        }
-        VC.Client._ready = true;
-        VC.Client._readyListeners.forEach((func)=>{func();})
-    }
-}
-
-//Call once to set
-VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
-
-//Bind for changes
-window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
 VC.GameState = class {
     static get PAUSED(){
         return 0;
@@ -354,13 +289,47 @@ VC.Polygon = class {
     }
 }
 
-VC.Scene = class {
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
+VC.Trig = class {
+    static degreesToRadians(angle){
+        return (angle % 360) / 360 * 2 * Math.PI;
+    }
+    static radiansToDegrees(angle){
+        return angle * 57.2958;
+    }
+    static cotangent(radians){
+        return 1/Math.tan(radians);
+    }
+    static tangent(radians){
+        return Math.tan(radians);
+    }
+    static pointToAngle(opposite, adjacent){
+        if(adjacent<0){
+            return Math.PI + Math.atan(opposite/adjacent);        
+        }
+        return Math.atan(opposite/adjacent);
+    }
+    static distance (x1, y1, x2, y2){
+        return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    }
+    static tangentFromPoints(x1,y1,x2,y2){
+        return (y2-y1)/(x2-x1);
+    }
+
+    // Angle (in degrees) between two vectors
+    static angleBetweenVectors(v1, v2) {
+        let dot = v1.x * v2.x + v1.y * v2.y;
+        let mag1 = Math.hypot(v1.x, v1.y);
+        let mag2 = Math.hypot(v2.x, v2.y);
+
+        if (mag1 === 0 || mag2 === 0) return 0;
+
+        let cosTheta = dot / (mag1 * mag2);
+        // Clamp to handle tiny floating point errors
+        cosTheta = Math.max(-1, Math.min(1, cosTheta));
+
+        return Math.round(Math.acos(cosTheta) * 180 / Math.PI);
+    }
+
 }
 VC.AudioChannel = class{
     #player = null;    
@@ -515,49 +484,6 @@ VC.AudioChannel = class{
             this.#player = null;
         }
     }
-}
-
-VC.Trig = class {
-    static degreesToRadians(angle){
-        return (angle % 360) / 360 * 2 * Math.PI;
-    }
-    static radiansToDegrees(angle){
-        return angle * 57.2958;
-    }
-    static cotangent(radians){
-        return 1/Math.tan(radians);
-    }
-    static tangent(radians){
-        return Math.tan(radians);
-    }
-    static pointToAngle(opposite, adjacent){
-        if(adjacent<0){
-            return Math.PI + Math.atan(opposite/adjacent);        
-        }
-        return Math.atan(opposite/adjacent);
-    }
-    static distance (x1, y1, x2, y2){
-        return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-    }
-    static tangentFromPoints(x1,y1,x2,y2){
-        return (y2-y1)/(x2-x1);
-    }
-
-    // Angle (in degrees) between two vectors
-    static angleBetweenVectors(v1, v2) {
-        let dot = v1.x * v2.x + v1.y * v2.y;
-        let mag1 = Math.hypot(v1.x, v1.y);
-        let mag2 = Math.hypot(v2.x, v2.y);
-
-        if (mag1 === 0 || mag2 === 0) return 0;
-
-        let cosTheta = dot / (mag1 * mag2);
-        // Clamp to handle tiny floating point errors
-        cosTheta = Math.max(-1, Math.min(1, cosTheta));
-
-        return Math.round(Math.acos(cosTheta) * 180 / Math.PI);
-    }
-
 }
 
 VC.Screen = class {
@@ -1098,6 +1024,264 @@ VC.Point = class {
     }
 }
 
+VC.Orientation = class {
+    static get UNSET(){
+        return -1;
+    }
+    static get LANDSCAPE(){
+        return 0;
+    }
+    static get PORTRAIT(){
+        return 1;
+    }
+}
+
+VC.Client = class {
+    static get screenHeight(){
+        return window.screen.height;
+    }
+    static get screenWidth(){
+        return window.screen.width;
+    }
+    static _orientation = VC.Orientation.UNSET;
+    static get orientation(){
+        return VC.Client._orientation;
+    }
+    static _orientationChangeListeners=[];
+    static OnOrientationChange(func){
+        VC.Client._orientationChangeListeners.push(func);
+    }
+    static _lastOrientation = VC.Orientation.UNSET;
+    static _onOrientationChange(e){
+        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
+            VC.Client._orientation = VC.Orientation.LANDSCAPE;
+        } else {
+            VC.Client._orientation = VC.Orientation.PORTRAIT;
+        }
+    
+        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
+            VC.Client._lastOrientation = VC.Client.orientation;
+            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
+        }
+    }
+
+    static _readyListeners=[];
+    static _ready = false;
+    static OnReady(func){
+        if (VC.Client._ready){
+            func();
+            return;
+        }
+        VC.Client._readyListeners.push(func);
+    }
+    static Start(func){
+        if (VC.Client._ready){
+            return
+        }
+        VC.Client._ready = true;
+        VC.Client._readyListeners.forEach((func)=>{func();})
+    }
+}
+
+//Call once to set
+VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
+
+//Bind for changes
+window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
+
+VC.LineSegment = class {
+    #element = null;
+    point1 = null;
+    point2 = null;
+    constructor (point1, point2){
+        if(point1 && point1 instanceof VC.Point){
+            this.point1 = point1;
+        }
+        if(point2 && point2 instanceof VC.Point){
+            this.point2 = point2;
+        }
+    }
+
+    pointOfIntersection(lineSegment) {
+        if (!(lineSegment && lineSegment instanceof VC.LineSegment)){
+            console.warn("lineSegment argument is not an instance of VC.LineSegment")
+            return null;
+        }
+        let x1 = this.point1.x;
+        let y1 = this.point1.y;
+        let x2 = this.point2.x;
+        let y2 = this.point2.y;
+        let x3 = lineSegment.point1.x;
+        let y3 = lineSegment.point1.y;
+        let x4 = lineSegment.point2.x;
+        let y4 = lineSegment.point2.y;
+
+
+        let denom = ((x1-x2) * (y3-y4)) - ((y1-y2) * (x3-x4));
+        if(denom == 0){ // Parallel, return null
+            return null;
+        }
+        let t = (((x1-x3) * (y3-y4)) - ((y1-y3) * (x3-x4)))/ denom;
+        let u = -((((x1-x2) * (y1-y3)) - ((y1-y2) * (x1-x3)))/ denom);
+        if (0<=t && t<=1 && 0<=u && u<=1){
+            //return point of intersection
+            return new VC.Point(x1 + (t *(x2 - x1)), y1 + (t * (y2 - y1)));
+        }
+        //line segments do not intersect
+        return null;
+    }
+}
+
+VC.Paragraph =  class {
+    #text = "";
+    #fontFamily = "monospace";
+    #fontSize = "12px";
+    #fontWeight = "normal";
+    #wrapWidth = 400;
+    #element = null;
+    #fill = "#FFF";
+
+    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
+        this.#text = text;
+        this.#fontFamily = fontFamily;
+        this.#fontSize = fontSize;
+        this.#fontWeight = fontWeight
+        this.#wrapWidth = wrapWidth;
+        this.#fill = fill;
+    }
+
+    render(screen){
+        if(!this.#element){
+                
+            let words = this.#text.split(" ");
+            let composite = "";
+            this.#element = screen.text(-10000, -10000, composite);
+            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
+
+            for(let w = 0; w < words.length; w++){
+                this.#element.attr("text", composite + " " + words[w]);
+                let width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += " " + words[w];
+                    continue;
+                }
+                this.#element.attr("text", composite + "\n" + words[w]);
+                width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += "\n" + words[w];
+                    continue;
+                }
+                composite += "%" + w + "%\n" //handle words too long for line (poorly)
+            }
+            for(let w = 0; w < words.length; w++){
+                composite = composite.replace("%" + w + "%",words[w]);
+            }
+            
+            this.#element.attr("text", composite);
+        }
+        return this.#element
+    }
+
+}
+VC.Triangle = class {
+    #registered = false;
+    #p1 = new VC.Point(0,0);
+    #p2 = new VC.Point(0,0);
+    #p3 = new VC.Point(0,0);
+    #elements = []
+    constructor(p1, p2, p3){
+        this.p1 = p1;
+        this.p2 = p2;
+        this.p3 = p3;
+    }
+
+    get p1() {
+        return this.#p1;
+    }
+    set p1(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p1 = value;
+    }
+    
+    get p2() {
+        return this.#p2;
+    }
+    set p2(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p2 = value;
+    }
+    
+    get p3() {
+        return this.#p3;
+    }
+    set p3(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p3 = value;
+    }
+
+    get points() {
+        return[this.p1, this.p2, this.p3];
+    }
+
+    render(screen){
+        if(!this.#registered){
+            screen.onClear(this.remove);
+            this.#registered = true;
+        }
+        if(this.#elements.length>0){
+            this.remove();
+        }
+        this.p1.render(screen);
+        this.p2.render(screen);
+        this.p3.render(screen);
+        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
+        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
+        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
+    }
+
+    remove(){
+        if(this.#elements.length>0){
+            this.p1.remove();
+            this.p2.remove();
+            this.p3.remove();
+            this.#elements.forEach((element)=>element.remove());
+            this.#elements = [];
+        }
+    }
+
+    contains(obj){
+        if(obj instanceof VC.Point) {
+            let d1 = this.#sign(obj, this.p1, this.p2);
+            let d2 = this.#sign(obj, this.p2, this.p3);
+            let d3 = this.#sign(obj, this.p3, this.p1);
+        
+            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+        
+            return !(has_neg && has_pos);
+        }
+        if (obj instanceof VC.Box){
+            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
+        }
+        
+        if (obj instanceof VC.Triangle){
+            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
+        }
+        return false;
+    }
+
+    #sign (p1,p2,p3)
+    {
+        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    }
+}
+
 VC.Game = class{
     #state = VC.GameState.PAUSED;
 
@@ -1176,6 +1360,84 @@ VC.Math = class {
     }
 
 
+}
+
+VC.Scene = class {
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
+}
+
+VC.VisualEffects = class {
+    //Todo: refactor
+    static shaking = false
+    static shake(screen, intensity, ms){
+        var rate = 50;
+        var div =  document.getElementById(screen.domElementId);
+        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
+        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+
+        if(ms>0){
+            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
+            VC.VisualEffects.shaking=true;
+        }else{
+            div.style.top = 0;
+            div.style.left = 0;
+            VC.VisualEffects.shaking=false;
+        }
+    }
+}
+
+VC.Color = class {
+    static hexToRGB(hexColor){
+        if(hexColor.length===6 || hexColor.length == 3){
+            hexColor = "#" + hexColor
+        }
+        let red = "00";
+        let green = "00";
+        let blue = "00"
+        if(hexColor.length === 4){
+            red = hexColor.substring(1,2);
+            red += red;
+            green = hexColor.substring(2,3);
+            green += green;
+            blue = hexColor.substring(3,4);
+            blue += blue;
+        }
+        if(hexColor.length === 7){
+            red = hexColor.substring(1,3);
+            green = hexColor.substring(3,5);
+            blue = hexColor.substring(5,7);
+        }
+
+        return {
+            r: parseInt(red,16),
+            g: parseInt(green,16),
+            b: parseInt(blue,16)
+        }
+    }
+
+    static rgbToHex(rgb){
+        let hex="#"
+        hex += right("0" + rgb.r.toString(16),2);
+        hex += right("0" + rgb.g.toString(16),2);
+        hex += right("0" + rgb.b.toString(16),2);
+        return hex;
+    }
+
+    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
+        //alpha * new + (1 - alpha) * old
+        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
+        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
+        return VC.Color.rgbToHex({
+            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
+            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
+            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
+        });
+    }
 }
 
 VC.Sprite = class {
@@ -1417,265 +1679,3 @@ function drawSprite(ctx, spriteSheet, frameX, frameY, frameW, frameH, x, y, heat
   ctx.shadowBlur = 0;
 }
 */
-VC.Triangle = class {
-    #registered = false;
-    #p1 = new VC.Point(0,0);
-    #p2 = new VC.Point(0,0);
-    #p3 = new VC.Point(0,0);
-    #elements = []
-    constructor(p1, p2, p3){
-        this.p1 = p1;
-        this.p2 = p2;
-        this.p3 = p3;
-    }
-
-    get p1() {
-        return this.#p1;
-    }
-    set p1(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p1 = value;
-    }
-    
-    get p2() {
-        return this.#p2;
-    }
-    set p2(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p2 = value;
-    }
-    
-    get p3() {
-        return this.#p3;
-    }
-    set p3(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p3 = value;
-    }
-
-    get points() {
-        return[this.p1, this.p2, this.p3];
-    }
-
-    render(screen){
-        if(!this.#registered){
-            screen.onClear(this.remove);
-            this.#registered = true;
-        }
-        if(this.#elements.length>0){
-            this.remove();
-        }
-        this.p1.render(screen);
-        this.p2.render(screen);
-        this.p3.render(screen);
-        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
-        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
-        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
-    }
-
-    remove(){
-        if(this.#elements.length>0){
-            this.p1.remove();
-            this.p2.remove();
-            this.p3.remove();
-            this.#elements.forEach((element)=>element.remove());
-            this.#elements = [];
-        }
-    }
-
-    contains(obj){
-        if(obj instanceof VC.Point) {
-            let d1 = this.#sign(obj, this.p1, this.p2);
-            let d2 = this.#sign(obj, this.p2, this.p3);
-            let d3 = this.#sign(obj, this.p3, this.p1);
-        
-            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-        
-            return !(has_neg && has_pos);
-        }
-        if (obj instanceof VC.Box){
-            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
-        }
-        
-        if (obj instanceof VC.Triangle){
-            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
-        }
-        return false;
-    }
-
-    #sign (p1,p2,p3)
-    {
-        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
-    }
-}
-
-VC.VisualEffects = class {
-    //Todo: refactor
-    static shaking = false
-    static shake(screen, intensity, ms){
-        var rate = 50;
-        var div =  document.getElementById(screen.domElementId);
-        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
-        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
-
-        if(ms>0){
-            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
-            VC.VisualEffects.shaking=true;
-        }else{
-            div.style.top = 0;
-            div.style.left = 0;
-            VC.VisualEffects.shaking=false;
-        }
-    }
-}
-
-VC.Paragraph =  class {
-    #text = "";
-    #fontFamily = "monospace";
-    #fontSize = "12px";
-    #fontWeight = "normal";
-    #wrapWidth = 400;
-    #element = null;
-    #fill = "#FFF";
-
-    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
-        this.#text = text;
-        this.#fontFamily = fontFamily;
-        this.#fontSize = fontSize;
-        this.#fontWeight = fontWeight
-        this.#wrapWidth = wrapWidth;
-        this.#fill = fill;
-    }
-
-    render(screen){
-        if(!this.#element){
-                
-            let words = this.#text.split(" ");
-            let composite = "";
-            this.#element = screen.text(-10000, -10000, composite);
-            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
-
-            for(let w = 0; w < words.length; w++){
-                this.#element.attr("text", composite + " " + words[w]);
-                let width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += " " + words[w];
-                    continue;
-                }
-                this.#element.attr("text", composite + "\n" + words[w]);
-                width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += "\n" + words[w];
-                    continue;
-                }
-                composite += "%" + w + "%\n" //handle words too long for line (poorly)
-            }
-            for(let w = 0; w < words.length; w++){
-                composite = composite.replace("%" + w + "%",words[w]);
-            }
-            
-            this.#element.attr("text", composite);
-        }
-        return this.#element
-    }
-
-}
-
-VC.Color = class {
-    static hexToRGB(hexColor){
-        if(hexColor.length===6 || hexColor.length == 3){
-            hexColor = "#" + hexColor
-        }
-        let red = "00";
-        let green = "00";
-        let blue = "00"
-        if(hexColor.length === 4){
-            red = hexColor.substring(1,2);
-            red += red;
-            green = hexColor.substring(2,3);
-            green += green;
-            blue = hexColor.substring(3,4);
-            blue += blue;
-        }
-        if(hexColor.length === 7){
-            red = hexColor.substring(1,3);
-            green = hexColor.substring(3,5);
-            blue = hexColor.substring(5,7);
-        }
-
-        return {
-            r: parseInt(red,16),
-            g: parseInt(green,16),
-            b: parseInt(blue,16)
-        }
-    }
-
-    static rgbToHex(rgb){
-        let hex="#"
-        hex += right("0" + rgb.r.toString(16),2);
-        hex += right("0" + rgb.g.toString(16),2);
-        hex += right("0" + rgb.b.toString(16),2);
-        return hex;
-    }
-
-    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
-        //alpha * new + (1 - alpha) * old
-        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
-        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
-        return VC.Color.rgbToHex({
-            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
-            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
-            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
-        });
-    }
-}
-
-VC.LineSegment = class {
-    #element = null;
-    point1 = null;
-    point2 = null;
-    constructor (point1, point2){
-        if(point1 && point1 instanceof VC.Point){
-            this.point1 = point1;
-        }
-        if(point2 && point2 instanceof VC.Point){
-            this.point2 = point2;
-        }
-    }
-
-    pointOfIntersection(lineSegment) {
-        if (!(lineSegment && lineSegment instanceof VC.LineSegment)){
-            console.warn("lineSegment argument is not an instance of VC.LineSegment")
-            return null;
-        }
-        let x1 = this.point1.x;
-        let y1 = this.point1.y;
-        let x2 = this.point2.x;
-        let y2 = this.point2.y;
-        let x3 = lineSegment.point1.x;
-        let y3 = lineSegment.point1.y;
-        let x4 = lineSegment.point2.x;
-        let y4 = lineSegment.point2.y;
-
-
-        let denom = ((x1-x2) * (y3-y4)) - ((y1-y2) * (x3-x4));
-        if(denom == 0){ // Parallel, return null
-            return null;
-        }
-        let t = (((x1-x3) * (y3-y4)) - ((y1-y3) * (x3-x4)))/ denom;
-        let u = -((((x1-x2) * (y1-y3)) - ((y1-y2) * (x1-x3)))/ denom);
-        if (0<=t && t<=1 && 0<=u && u<=1){
-            //return point of intersection
-            return new VC.Point(x1 + (t *(x2 - x1)), y1 + (t * (y2 - y1)));
-        }
-        //line segments do not intersect
-        return null;
-    }
-}
