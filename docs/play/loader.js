@@ -27,6 +27,14 @@ class System {
             document.body.appendChild(script);
         });
     }
+    
+    loadClickyScript(){
+        //<script async data-id="101501165" src="//static.getclicky.com/js"></script>
+        var script = document.createElement('script');
+        script.src = "//static.getclicky.com/js";
+        script.async = true;
+        script.setAttribute("data-id", "101501165");
+    }
 
     async fetchLastModified(callback) {
         let r = await fetch('loader.js', {method: "HEAD"});
@@ -94,7 +102,12 @@ class System {
         let lastModified = await s.fetchLastModified();
         let lastLoaded = s.getCookie("lm");
         System.newClient = (lastLoaded != lastModified.getTime().toString())
-        if(System.newClient){
+        let isLocal = document.URL.includes("localhost");
+        if(!isLocal){
+            s.loadClickyScript();
+        }
+
+        if(System.newClient && !isLocal){
             var os = document.createElement('div');
             os.id = "os";
             document.body.appendChild(os);
@@ -112,7 +125,6 @@ class System {
             await s.print("\n\nLoading Gold & Ruin...")
             s.spin();
             await s.loadScript("goldruin.js");
-            s.setCookie("lm", lastModified.getTime().toString(), 365);
             os.style.visibility = 'hidden';
             os.style.display = 'none';
         }else{
@@ -122,6 +134,7 @@ class System {
             await s.loadScript("goldruin.js");
         }
         
+        s.setCookie("lm", lastModified.getTime().toString(), 365);
 
         VC.Client.Start();
     }
