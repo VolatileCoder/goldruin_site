@@ -115,6 +115,7 @@ class System {
             await s.print("  .: VC Loader v1.1 BETA :.")
             await s.print("\n\nLoading Display Subsystem...")
             await s.loadScript("raphael.min.js");
+            await s.loadScript("clipper.js");
             await s.print("OK")
             await s.print("\n\nLoading Audio Subsystem...")
             await s.loadScript("howler.min.js");
@@ -129,6 +130,7 @@ class System {
             os.style.display = 'none';
         }else{
             await s.loadScript("raphael.min.js");
+            await s.loadScript("clipper.js");
             await s.loadScript("howler.min.js");
             await s.loadScript("engine.js");
             await s.loadScript("goldruin.js");
