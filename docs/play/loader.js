@@ -129,6 +129,7 @@ class System {
             os.style.visibility = 'hidden';
             os.style.display = 'none';
         }else{
+            //await s.loadScript("colorpicker.iife.min.js")
             await s.loadScript("raphael.min.js");
             await s.loadScript("clipper.js");
             await s.loadScript("howler.min.js");
