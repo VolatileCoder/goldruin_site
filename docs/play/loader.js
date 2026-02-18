@@ -105,6 +105,9 @@ class System {
         let isLocal = document.URL.includes("localhost");
         if(!isLocal){
             s.loadClickyScript();
+        }else {
+
+            await s.loadScript("colorpicker.iife.min.js")
         }
 
         if(System.newClient && !isLocal){
@@ -129,7 +132,6 @@ class System {
             os.style.visibility = 'hidden';
             os.style.display = 'none';
         }else{
-            //await s.loadScript("colorpicker.iife.min.js")
             await s.loadScript("raphael.min.js");
             await s.loadScript("clipper.js");
             await s.loadScript("howler.min.js");
