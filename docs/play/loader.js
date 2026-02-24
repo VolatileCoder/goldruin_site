@@ -1,5 +1,6 @@
 class System {
     static newClient = false;
+    static isLocal = false;
     console = null;
     constructor(){
         
@@ -103,6 +104,7 @@ class System {
         let lastLoaded = s.getCookie("lm");
         System.newClient = (lastLoaded != lastModified.getTime().toString())
         let isLocal = document.URL.includes("localhost");
+        System.isLocal = isLocal;
         if(!isLocal){
             s.loadClickyScript();
         }else {
