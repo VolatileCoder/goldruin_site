@@ -1,71 +1,6 @@
 'use strict';
 const VC={};
 
-VC.Orientation = class {
-    static get UNSET(){
-        return -1;
-    }
-    static get LANDSCAPE(){
-        return 0;
-    }
-    static get PORTRAIT(){
-        return 1;
-    }
-}
-
-VC.Client = class {
-    static get screenHeight(){
-        return window.screen.height;
-    }
-    static get screenWidth(){
-        return window.screen.width;
-    }
-    static _orientation = VC.Orientation.UNSET;
-    static get orientation(){
-        return VC.Client._orientation;
-    }
-    static _orientationChangeListeners=[];
-    static OnOrientationChange(func){
-        VC.Client._orientationChangeListeners.push(func);
-    }
-    static _lastOrientation = VC.Orientation.UNSET;
-    static _onOrientationChange(e){
-        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
-            VC.Client._orientation = VC.Orientation.LANDSCAPE;
-        } else {
-            VC.Client._orientation = VC.Orientation.PORTRAIT;
-        }
-    
-        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
-            VC.Client._lastOrientation = VC.Client.orientation;
-            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
-        }
-    }
-
-    static _readyListeners=[];
-    static _ready = false;
-    static OnReady(func){
-        if (VC.Client._ready){
-            func();
-            return;
-        }
-        VC.Client._readyListeners.push(func);
-    }
-    static Start(func){
-        if (VC.Client._ready){
-            return
-        }
-        VC.Client._ready = true;
-        VC.Client._readyListeners.forEach((func)=>{func();})
-    }
-}
-
-//Call once to set
-VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
-
-//Bind for changes
-window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
-
 VC.Color = class {
     static hexToRGB(hexColor){
         if(hexColor.length===6 || hexColor.length == 3){
@@ -112,6 +47,1040 @@ VC.Color = class {
             g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
             b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
         });
+    }
+}
+
+VC.Scene = class {
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
+}
+
+VC.Trig = class {
+    static degreesToRadians(angle){
+        return (angle % 360) / 360 * 2 * Math.PI;
+    }
+    static radiansToDegrees(angle){
+        return angle * 57.2958;
+    }
+    static cotangent(radians){
+        return 1/Math.tan(radians);
+    }
+    static tangent(radians){
+        return Math.tan(radians);
+    }
+    static pointToAngle(opposite, adjacent){
+        if(adjacent<0){
+            return Math.PI + Math.atan(opposite/adjacent);        
+        }
+        return Math.atan(opposite/adjacent);
+    }
+    static distance (x1, y1, x2, y2){
+        return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    }
+    static tangentFromPoints(x1,y1,x2,y2){
+        return (y2-y1)/(x2-x1);
+    }
+
+    // Angle (in degrees) between two vectors
+    static angleBetweenVectors(v1, v2) {
+        let dot = v1.x * v2.x + v1.y * v2.y;
+        let mag1 = Math.hypot(v1.x, v1.y);
+        let mag2 = Math.hypot(v2.x, v2.y);
+
+        if (mag1 === 0 || mag2 === 0) return 0;
+
+        let cosTheta = dot / (mag1 * mag2);
+        // Clamp to handle tiny floating point errors
+        cosTheta = Math.max(-1, Math.min(1, cosTheta));
+
+        return Math.round(Math.acos(cosTheta) * 180 / Math.PI);
+    }
+
+}
+
+VC.Screen = class {
+    #screen = null;
+    #x = 0;
+    #y = 0;
+    #width = 0;
+    #height = 0;
+    #domElementId = "";
+    #topLevelGroup = null;
+    #topLevelClipPath = null;
+    constructor(domElementId, x, y, width, height){
+        let screen = Raphael(domElementId, width, height);
+        screen.setViewBox(x, y, width, height, true);
+        screen.canvas.setAttribute('preserveAspectRatio', 'meet');
+        screen.canvas.setAttributeNS("http://www.w3.org/XML/1998/namespace", "xml:space","preserve"); 
+        this.#screen = screen;
+        this.#width = width;
+        this.#height = height;
+        this.#x = x;
+        this.#y = y;
+        this.#domElementId = domElementId;
+        console.log({domElementId: domElementId, x: x, y: y, width: width, height: height})
+    }
+    get topLevelGroup(){
+        if(!this.#topLevelGroup){
+            this.#topLevelGroup = this.#createGroup([]);
+            this.#topLevelGroup.clipPath(this.topLevelClipPath);
+        }   
+        return this.#topLevelGroup;
+    }
+
+    get topLevelClipPath(){
+        if(!this.#topLevelClipPath){
+            this.#topLevelClipPath = this.#screen.rect(0,0,this.width,this.height);
+        }
+        return this.#topLevelClipPath
+    }
+    get domElementId(){
+        return this.#domElementId;
+    }
+    get x(){
+        return this.#x;
+    }
+    get y(){
+        return this.#y;
+    }
+    get height(){
+        return this.#height;
+    }
+    get width(){
+        return this.#width;
+    }
+
+    group(){
+        let g = this.#createGroup(arguments);
+        this.topLevelGroup.addElement(g);
+        return g
+    };
+
+    drawLine(x1,y1,x2,y2,color,thickness){
+        let path = "M" + x1 + "," + y1 + "L" + x2 + "," + y2;
+        let el = this.#screen.path(path)
+        el.attr({"stroke-width": thickness, "stroke":color});
+        this.topLevelGroup.addElement(el);
+        el.toFront = () => this.topLevelGroup.addElement(el);
+        return el;
+    };
+
+    drawTriangle(x1,y1,x2,y2,x3,y3, translateX, translateY, fillColor, strokeColor, thickness){
+        let path =  "M" + (x1 + translateX) + "," + (y1 + translateY) + "L" + (x2 + translateX) + "," + (y2 + translateY) + "L" + (x3 + translateX) + "," + (y3 + translateY) + "Z";
+        let el = this.#screen.path(path)
+        el.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor});
+        this.topLevelGroup.addElement(el);
+        el.toFront = () => this.topLevelGroup.addElement(el);
+        return el
+    };
+    
+    drawRect(x,y,w,h,color,strokecolor, thickness, radius){
+        if(isNaN(radius)){
+            radius=0;
+        }
+        let el = this.rect(x,y,w,h,radius)
+        el.attr({"stroke-width": thickness, "stroke":strokecolor, "fill": color});
+        //Note: handled by the rect() function, below   
+        //this.topLevelGroup.addElement(el);
+        //el.toFront = () => this.topLevelGroup.addElement(el);
+        return el;
+    };
+
+    drawQuad(x1,y1,x2,y2,x3,y3,x4,y4, translateX, translateY, fillColor, strokeColor, thickness){
+        let path =  "M" + (x1 + translateX) + "," + (y1 + translateY) + "L" + (x2 + translateX) + "," + (y2 + translateY) + "L" + (x3 + translateX) + "," + (y3 + translateY) + "L" + (x4 + translateX) + "," + (y4 + translateY) + "Z";
+        let el = this.#screen.path(path);
+        el.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor}); 
+        this.topLevelGroup.addElement(el);
+        el.toFront = () => this.topLevelGroup.addElement(el);
+        return el;
+    };
+
+    drawPoly(points, fillColor, strokeColor, thickness){
+        let path = ""
+        for(let p=0; p < points.length;p++){
+            if(p === 0){
+                path = "M";
+            }else {
+                path = path + "L";
+            }
+            let point = points[p];
+            path = path + point.x + "," + point.y;
+        }
+        path = path + "Z";
+        let result = this.#screen.path(path);
+        result.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor})
+        this.topLevelGroup.addElement(result);
+        result.toFront = () => this.topLevelGroup.addElement(result);
+        return result;
+    }
+
+    drawEllipse (x1,y1,r1,r2, translateX, translateY, fillColor, strokeColor, thickness){
+        let e = this.ellipse(x1+translateX, y1+translateY, r1, r2)
+        e.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor});
+        //handled by the ellipse function below
+        //this.topLevelGroup.addElement(e);
+        //e.toFront = () => this.topLevelGroup.addElement(e);
+        return e;
+    };
+
+    drawAngleSegmentX(angle, startX, endX, translateX, translateY, color, thickness){
+        let startY = Math.round(VC.Trig.tangent(angle) * startX);
+        let endY = Math.round(VC.Trig.tangent(angle) * endX);
+        startX+=translateX; endX += translateX;
+        startY+=translateY; endY += translateY;
+        return this.drawLine(startX, startY, endX, endY, color, thickness);
+    };
+    
+    drawAngleSegmentY = function(angle, startY, endY, translateX, translateY, color, thickness){
+        let startX = Math.round(VC.Trig.cotangent(angle) * startY);
+        let endX = Math.round(VC.Trig.cotangent(angle) * endY);
+        startX+=translateX; endX += translateX;
+        startY+=translateY; endY += translateY;
+        return this.drawLine(startX, startY, endX, endY, color, thickness);
+    }
+
+    #clearListeners = [];
+    clear(){
+        this.#clearListeners.forEach((f)=>{
+            try{
+                f();
+            } catch(e){
+                console.log(e);
+            }
+        });
+        this.#topLevelGroup = null;
+        this.#clearListeners.length = 0;
+        this.#screen.clear();
+    }
+
+    onClear(handler){
+        //register handler
+        this.#clearListeners.push(handler);
+    }
+
+    fadeTo(color, callback){
+        let rect = this.#screen.rect(0,0,this.#width, this.#width);
+        rect.toFront();
+        rect.attr({opacity: 0, fill: color});
+        rect.animate({opacity:1}, 350, null, ()=>{rect.remove(); callback()});
+    }
+    
+    fadeInFrom(color, callback){
+        let rect = this.#screen.rect(0,0,this.#width, this.#width, color, color, 0);
+        rect.toFront();
+        rect.attr({opacity: 1, fill: color});
+        rect.animate({opacity:0}, 350, null, ()=>{rect.remove(); callback()});
+    }
+
+    get svgNS(){
+        return "http://www.w3.org/2000/svg";
+    }
+    
+    get defs(){
+        let dv = document.getElementById(this.#domElementId);
+        let svg = dv.getElementsByTagName("svg")[0];
+        let defsel = svg.getElementsByTagName("defs");
+        if(defsel.length!=1){
+            let def = document.createElementNS(this.svgNS, "defs")
+            svg.appendChild(def)
+            console.log("creating new def")
+            console.log(def);
+            return def;
+        }
+        return defsel[0];
+    }
+
+    #createGroup(g) {
+		if(Raphael.svg == true) {
+			let dv = document.getElementById(this.#domElementId);
+			let defs = dv.getElementsByTagName("defs")[0];
+			var svgHead = this.svgNS;
+			let svgcanv = dv.getElementsByTagName("svg")[0];
+			svgcanv.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+			var countGroups = svgcanv.getElementsByTagName("g").length;
+			var createUUID=function(b,a){return function(){return"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(b,a).toUpperCase()}}(/[xy]/g,function(b){var a=16*Math.random()|0;return("x"==b?a:a&3|8).toString(16)});		
+			let masterGroup = null;
+            if(countGroups == 0) {
+				masterGroup = document.createElementNS(this.svgNS, "g");
+				svgcanv.appendChild(masterGroup)
+			}else {
+				masterGroup = svgcanv.getElementsByTagName("g")[0]
+			}		
+			let group = document.createElementNS(this.svgNS, "g");
+			for(let i = 0;i < g.length;i++) {
+                if(g[i] instanceof Node){
+				    group.appendChild(g[i])
+                }else if(g[i].node instanceof Node){
+				    group.appendChild(g[i].node)
+                }else{
+                    console.warn(g[i]);
+                }
+			}
+			masterGroup.appendChild(group);
+			group.set = [];
+			var _mg = masterGroup;
+			group.getMaster = function() {
+				return _mg
+			};
+			group.remove = function() {
+				this.parentNode.removeChild(this)
+			};
+			var thisTransform = {translate:{x:0, y:0}, scale:{x:1, y:1}, rotate:{x:0, y:0, z:0}};
+			var transformString = function() {
+				return"translate(" + thisTransform.translate.x + "," + thisTransform.translate.y + ") scale(" + thisTransform.scale.x + "," + thisTransform.scale.y + ") rotate(" + thisTransform.rotate.x + "," + thisTransform.rotate.y + "," + thisTransform.rotate.z + ")"
+			};
+			group.translate = function(c, a) {
+				thisTransform.translate.x = c;
+				thisTransform.translate.y = a;
+				this.setAttribute("transform", transformString())
+			};
+			group.rotate = function(c, a, e) {
+				thisTransform.rotate.x = c;
+				thisTransform.rotate.y = a;
+				thisTransform.rotate.z = e;
+				this.setAttribute("transform", transformString())
+			};
+			group.scale = function(c, a) {
+				thisTransform.scale.x = c;
+				thisTransform.scale.y = a;
+				this.setAttribute("transform", transformString())
+			};
+			group.push = function() {
+				for(let i = 0;i < arguments.length;i++) {
+					this.appendChild(arguments[i].node)
+				}
+			};
+			group.addElement = function() {
+                //console.log("adding")
+				for(let i = 0;i < arguments.length;i++) {
+                    if(arguments[i] instanceof Node){
+                        this.appendChild(arguments[i])
+                    }else if(arguments[i].node instanceof Node){
+                        this.appendChild(arguments[i].node)
+                    }else {
+                        console.log("nothing to add!")
+                    }
+				}
+			    //this.set = [];
+			};
+			group.getAttr = function(c) {
+				return thisTransform[c]
+			};
+			group.copy = function(el) {
+				this.copy = el.node.cloneNode(true);
+				this.appendChild(this.copy)
+			};
+			group.toFront = function(){
+				this.parentNode.appendChild(this);
+			};
+			group.clipPath = function(c){						
+				var cp = document.createElementNS(svgHead, "clipPath");
+				var cpID = createUUID();
+				cp.setAttribute("id",cpID);
+				cp.appendChild(c.node);
+				defs.appendChild(cp);
+				this.setAttribute("clip-path","url(#"+cpID+")")
+                return cp;
+			};
+
+	
+			return group
+		}
+    }
+
+    //RAPHAEL PASS-THRU
+
+    get bottom(){
+        return this.#screen.bottom;
+    }
+
+    circle(x, y, r){
+
+        let e = this.#screen.circle(x, y, r);
+        this.topLevelGroup.addElement(e);
+        e.toFront = () => this.topLevelGroup.addElement(e);
+        return e;
+    }
+
+    get canvas(){
+        return this.#screen.canvas;
+    }
+
+    get customAttributes(){
+        return this.#screen.customAttributes;
+    }
+
+    ellipse(x, y, rx, ry){
+        let e = this.#screen.ellipse(x, y, rx, ry);
+        this.topLevelGroup.addElement(e);
+        e.toFront = () => this.topLevelGroup.addElement(e);
+        return e
+    }
+
+    forEach(callback, thisArg){
+        return this.#screen.forEach(callback, thisArg);
+    }
+
+    getById(id){
+        return this.#screen.getById(id);
+    }
+
+    getElementByPoint(x, y){
+        return this.#screen.getElementByPoint(x, y);
+    }
+
+    getFont(family, weight, style, stretch){
+        return this.#screen.getFont(family, weight, style, stretch);
+    }
+
+    image(src, x, y, width, height){
+        let i = this.#screen.image(src, x, y, width, height);
+        this.topLevelGroup.addElement(i);
+        i.toFront = () => this.topLevelGroup.addElement(i);
+        return i;
+    }
+
+    path(pathString){
+        let p = this.#screen.path(pathString);
+        this.topLevelGroup.addElement(p);
+        p.toFront = () => this.topLevelGroup.addElement(p);
+        return p;
+    }
+    
+    print(x, y, text, font, size, origin, letter_spacing){
+        let p = this.#screen.print(x, y, text, font, size, origin, letter_spacing);
+        this.topLevelGroup.addElement(p);
+        p.toFront = () => this.topLevelGroup.addElement(p);
+        return p;
+    }
+
+    get raphael(){
+        return this.#screen.raphael
+    }
+
+    rect(x, y, width, height, r){
+        let rct = this.#screen.rect(x, y, width, height, r)
+        this.topLevelGroup.addElement(rct);
+        rct.toFront = () => this.topLevelGroup.addElement(rct);
+        return rct
+    }
+
+    remove(){
+        return this.#screen.remove();
+    }
+
+    renderfix(){
+        return this.#screen.renderfix();
+    }
+
+    safari(){
+        return this.#screen.safari();
+    }
+
+    set(){
+        return this.#screen.set();
+    }
+
+    setFinish(){
+        return this.
+        #screen.setFinish();
+    }
+
+    setSize(width, height){
+        return this.#screen.setSize(width, height);
+    }
+
+    setStart(){
+        return this.#screen.setStart();
+    }
+
+    setViewBox(x, y, w, h, fit){
+        //this.#width = w;
+        //this.#height = h;
+        return this.#screen.setViewBox(x, y, w, h, fit);
+    }
+
+    text(x, y, text){
+        let p = this.#screen.text(x, y, text);
+        this.topLevelGroup.addElement(p);
+        p.toFront = () => this.topLevelGroup.addElement(p);
+        return p;
+    }
+
+    get top(){
+        return this.#screen.top;
+    }
+
+
+}
+
+VC.Sprite = class {
+    #scaleX = 1;
+    #scaleY = 1;
+    #screen = null;
+    #forceRender = false;
+    #image = {
+        frameset: null, 
+        width: 0,
+        height: 0
+    };
+    #size = {
+        width: 0,
+        height: 0
+    };
+    #location = {
+        x: 0,
+        y: 0,
+        z: 0,
+        r: 0
+    };
+    #lastLocation = {
+        x: 0,
+        y: 0, 
+        z: 0,
+        r: 0
+    };
+
+    #animation = {
+        index: 0,
+        series: 0,
+        frame: 0,
+        startTime: Date.now()
+    };
+    #lastAnimation = {
+        index: -1,
+        series: -1,
+        frame: -1
+    };
+    #opacity = 1;
+    #ready = 1;
+    #element = null;
+    #lastIndex = -1;
+    #framesPerSecond = 10;
+
+    get opacity(){
+        return this.#opacity
+    }
+
+    set opacity(value){
+        if(this.#opacity!=value){
+            this.#opacity = value;
+            this.#forceRender = true;
+        }
+    }
+    
+    get animation(){
+        return this.#animation;
+    }
+
+    get location(){
+        return this.#location;
+    }
+
+    get element(){
+        return this.#element;
+    }
+    
+    get lastLocation(){
+        return this.#lastLocation;
+    }
+    
+    get id(){
+        if(this.#element){
+            return this.#element.id;
+        }
+        return null;
+    }
+
+    get size(){
+        return this.#size;
+    }
+
+    get scaleX(){
+        return this.#scaleX;
+    }
+
+    get scaleY(){
+        return this.#scaleY;
+    }
+    
+    set scale(value){
+        this.#scaleX = value;
+        this.#scaleY = value;
+    }
+    set scaleX(value){
+        this.#scaleX = value;
+    }
+    set scaleY(value){
+        this.#scaleY = value;
+    }
+
+    get framesPerSecond(){
+        return this.#framesPerSecond;
+    }
+    set framesPerSecond(value){
+        if(typeof(value)==='number'){
+            this.#framesPerSecond = value;         
+        }
+    }
+
+    constructor(screen, frameset, imageWidth, imageHeight, spriteWidth, spriteHeight, x, y, framesPerSecond){
+        this.#screen = screen;
+        this.#image.frameset = frameset;
+        this.#image.width = imageWidth;
+        this.#image.height = imageHeight;
+        this.#size.width = spriteWidth;
+        this.#size.height = spriteHeight;
+        this.#location.x = x;
+        this.#location.y = y;
+        this.#lastLocation.x = x;
+        this.#lastLocation.y = y;
+        this.#framesPerSecond = framesPerSecond && typeof(framesPerSecond) === 'number' ? framesPerSecond : 10;
+        this.#forceRender = false;
+    }
+
+    clone(){
+        return new VC.Sprite(
+            this.#screen, 
+            this.#image.frameset,
+            this.#image.width,
+            this.#image.height,
+            this.#size.width,
+            this.#size.height,
+            this.#location.x,
+            this.#location.y,
+            this.#framesPerSecond
+        );
+    }
+
+    setAnimation(index,series){
+
+        if(!(index!==this.#animation.index&&series==this.#animation.series)){
+            this.#animation.frame = 0;
+        }
+
+        if (index!==this.#animation.index||series!==this.#animation.series){
+            
+            this.#animation.index = index;
+            this.#animation.series = series;
+            this.#animation.startTime = Date.now();
+        }
+        if (this.#animation.startTime === 0){
+            this.#animation.startTime = Date.now();
+        }
+    }
+    setFrame (index, series, frame){
+            this.#animation.index = index;
+            this.#animation.series = series;
+            this.#animation.frame = frame;
+            this.#animation.startTime = 0;
+    }
+    render(deltaT){
+        let forceRender = this.#forceRender;
+        this.#animation.frame = this.#calculateCurrentFrame(deltaT);
+        if(this.#animation.startTime===0)
+        {
+            forceRender = true
+        }
+        let trans0 = this.#buildTranslation(this.#lastLocation.x, this.#lastLocation.y, this.#lastLocation.r);
+        let trans1 = this.#buildTranslation(this.#location.x, this.#location.y, this.#location.r);
+
+        let rect = this.#buildClipRect(); 
+
+        if(!this.#element){
+            this.#element = this.#screen.image(this.#image.frameset[this.#animation.index], 0, 0, this.#image.width, this.#image.height).attr({opacity:0, "clip-rect": rect, transform:trans1});
+
+            trans0 = trans1;
+            this.#lastLocation.x = this.#location.x;
+            this.#lastLocation.y = this.#location.y;
+            this.#lastLocation.z = this.#location.z;
+            this.#lastLocation.r = this.#location.r;
+            this.#screen.onClear(()=>{this.#element = null});
+            this.#ready = 1  
+            this.#lastIndex = this.#animation.index;
+            forceRender = true
+        } 
+        if(this.#lastIndex !== this.#animation.index){
+            this.#element.attr("src",this.#image.frameset[this.#animation.index]);
+            this.#lastIndex = this.#animation.index;
+        }
+
+        let frameChanged = (this.#lastAnimation.frame !== this.#animation.frame || this.#lastAnimation.index !== this.#animation.index || this.#lastAnimation.series !== this.#animation.series)
+        let positionChanged = true; //(this.#location.x!==this.#lastLocation.x || this.#location.y !== this.#lastLocation.y || this.#location.r !== this.#lastLocation.r);
+
+        if ((frameChanged || positionChanged || forceRender) && this.#element ){//&& this.#ready===1){
+            //this.#ready = 0;
+            this.#element.attr({opacity:this.#opacity}).animate({transform:trans0, "clip-rect": rect},0, 'linear',()=>{
+                if (this.#element){
+                    this.#element.animate({transform:trans1, "clip-rect": rect}, 0, 'linear',()=>{
+                        //this.#ready = 1
+                    });
+                }
+            });
+        }
+
+        this.#lastAnimation.frame = this.#animation.frame;
+        this.#lastAnimation.index = this.#animation.index;
+        this.#lastAnimation.series = this.#animation.series;
+        this.#lastLocation.x = this.#location.x;
+        this.#lastLocation.y = this.#location.y;
+        this.#lastLocation.r = this.#location.r;
+        this.#lastLocation.z = this.#location.z;
+        this.#element.toFront();
+        this.#forceRender = false;
+        return this.#element;
+    }
+    
+    remove (){
+        if (this.#element){
+            this.#element.remove();
+            this.#element = null;
+        }
+    }
+
+    #buildTranslation (x, y, r){
+        if(this.location.z!=0){
+            y -= this.location.z;
+        }
+        if(this.#scaleX!==1 || this.#scaleY!==1){
+            x = x + VC.Math.inversePercentToRange(this.#scaleX, 0, this.#size.width/2);
+            y = y + VC.Math.inversePercentToRange(this.#scaleY, 0, this.#size.height/2); 
+        }
+        let tx = Math.round(x * (1/this.#scaleX) - this.#animation.frame * this.#size.width);
+        let ty = Math.round(y * (1/this.#scaleY) - this.#animation.series *  this.#size.height) ;
+        let t = "t" + tx + "," + ty;
+        var rs = "";
+        var s = "";
+
+        if(this.#scaleX!==1||this.#scaleY!==1){
+            s= "s" + this.#scaleX + "," + this.#scaleY + ",0,0";
+        }
+
+        if(r != 0){
+            let rx = Math.round(this.#animation.frame * this.#size.width + this.#size.width/2);
+            let ry = Math.round(this.#animation.series *  this.#size.height + this.#size.height/2);
+
+            rs = "r" + r + "," + rx + "," + ry;
+        }
+        return s + t + rs;
+       
+    }
+
+    /*
+    #buildTranslation (x, y, r){
+        if(this.location.z<0){
+            y -= this.location.z;
+        }
+        if(this.#scaleX!==1 || this.#scaleY!==1){
+            x = x + VC.Math.inversePercentToRange(this.#scaleX, 0, this.#size.width/2);
+            y = y + VC.Math.inversePercentToRange(this.#scaleY, 0, this.#size.height/2); 
+        }
+        let tx = Math.round(x * (1/this.#scaleX) - this.#animation.frame * this.#size.width);
+        let ty = Math.round(y * (1/this.#scaleY) - this.#animation.series *  this.#size.height);
+        let t = "t" + tx + "," + ty;
+        let r = "";
+        if(r != 0){
+            let rx = Math.round(this.#animation.frame * this.#size.width + this.#size.width/2);
+            let ry = Math.round(this.#animation.series *  this.#size.height + this.#size.height/2);
+            r = "r" + r + "," + rx + "," + ry;
+        }
+        let s = "";
+        if(this.#scaleX !== 1 || this.#scaleY !== 1){
+            s = "s" + this.#scaleX +"," + this.#scaleY + ",0,0";
+        }
+        return r + s + t;
+    }
+        */
+
+    #buildClipRect(){
+        let x = Math.round(this.#animation.frame * this.#size.width)+1
+        let y = Math.round(this.#animation.series * this.#size.height)+1
+        let w = this.#size.width-2;
+        let h = this.#size.height-2;
+        if(this.location.z<0){
+            h=h+this.location.z;
+        }
+        return "" + x + "," + y +"," + w + "," + h;
+    }
+
+
+
+    #calculateCurrentFrame(deltaT) {
+        if (this.#animation.startTime === 0){
+            return this.#animation.frame;
+        }
+        let animdelta = Date.now() - this.#animation.startTime;
+        let frame = Math.round((animdelta / 1000) * this.framesPerSecond) % Math.round(this.#image.width/this.#size.width);
+        return frame;
+    }
+}
+VC.Triangle = class {
+    #registered = false;
+    #p1 = new VC.Point(0,0);
+    #p2 = new VC.Point(0,0);
+    #p3 = new VC.Point(0,0);
+    #elements = []
+    constructor(p1, p2, p3){
+        this.p1 = p1;
+        this.p2 = p2;
+        this.p3 = p3;
+    }
+
+    get p1() {
+        return this.#p1;
+    }
+    set p1(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p1 = value;
+    }
+    
+    get p2() {
+        return this.#p2;
+    }
+    set p2(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p2 = value;
+    }
+    
+    get p3() {
+        return this.#p3;
+    }
+    set p3(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p3 = value;
+    }
+
+    get points() {
+        return[this.p1, this.p2, this.p3];
+    }
+
+    render(screen){
+        if(!this.#registered){
+            screen.onClear(this.remove);
+            this.#registered = true;
+        }
+        if(this.#elements.length>0){
+            this.remove();
+        }
+        this.p1.render(screen);
+        this.p2.render(screen);
+        this.p3.render(screen);
+        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
+        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
+        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
+    }
+
+    remove(){
+        if(this.#elements.length>0){
+            this.p1.remove();
+            this.p2.remove();
+            this.p3.remove();
+            this.#elements.forEach((element)=>element.remove());
+            this.#elements = [];
+        }
+    }
+
+    contains(obj){
+        if(obj instanceof VC.Point) {
+            let d1 = this.#sign(obj, this.p1, this.p2);
+            let d2 = this.#sign(obj, this.p2, this.p3);
+            let d3 = this.#sign(obj, this.p3, this.p1);
+        
+            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+        
+            return !(has_neg && has_pos);
+        }
+        if (obj instanceof VC.Box){
+            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
+        }
+        
+        if (obj instanceof VC.Triangle){
+            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
+        }
+        return false;
+    }
+
+    #sign (p1,p2,p3)
+    {
+        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    }
+}
+VC.AudioChannel = class{
+    static count = 0;
+    #player = null;    
+    #volume = 1;
+    #relativeVolume = 1;
+    #relativePan = 0;
+    #uri = "";
+    #fadeOutCancellationToken = null;
+    #index = 0;
+
+    #setVolume(){
+        if(this.#player && this.#player instanceof Howl){
+            this.#player.volume(this.#volume * this.#relativeVolume);
+            this.#player.stereo(this.#relativePan);
+            //this.#player.mute(false);
+        }
+    }
+    get player(){
+        return this.#player;
+    }
+
+    get volume(){
+        return this.#volume;
+    }
+
+    set volume(value){
+        value = value < 0 ? 0 : (value > 1 ? 1 : value);
+        if(this.#volume !== value){
+            this.#volume = value;
+            this.#setVolume();
+        }
+    }
+
+    get relativeVolume(){
+        return this.#relativeVolume;
+    }
+
+    set relativeVolume(value){
+        value = value < 0 ? 0 : (value > 1 ? 1 : value);
+        if(this.#relativeVolume !== value){
+            this.#relativeVolume = value;
+            this.#setVolume();
+        }
+    }
+
+    get relativePan(){
+        return this.#relativePan;
+    }
+
+    set relativePan(value){
+        value = value < -1 ? -1 : (value > 1 ? 1 : value);
+        if(this.#relativePan !== value){
+            this.#relativePan = value;
+            this.#setVolume()
+        }
+    }
+
+    playNext(){
+        console.log("playnext")
+        this.play(this.#uri, this.volume, true, this.#index+1);
+    }
+    
+    play(uri, volume, loop, index, pos){
+        if(pos == null){
+            pos = 0;
+        }
+        if(index == null){
+            index = 0;
+        }
+        if(this.#fadeOutCancellationToken){
+            window.clearTimeout(this.#fadeOutCancellationToken);
+            
+            if(this.#player && this.#player instanceof Howl && this.#player.playing()){
+                this.#player.stop();
+            } 
+            this.#fadeOutCancellationToken = null;
+        }
+
+        this.volume = volume;
+        
+        if(this.#player && this.#player instanceof Howl && this.#uri === uri && !this.#player.playing() && index == this.#index){
+            if(pos>0){
+                this.#player.once("play", () => {
+                    this.#player.seek(pos);
+                });
+            }
+            
+            this.#player.play();
+            return;
+        }
+
+        if(this.#player && this.#player instanceof Howl && (this.#uri !== uri || index !== this.#index)){
+            this.dispose();
+        }
+
+        if(!this.#player){
+            if(Array.isArray(uri)){
+                this.#player = new Howl({
+                    src: [uri[index]],
+                    format: "webm",
+                    autoplay: true, 
+                    loop: index==uri.length-1,
+                    stereo: this.#relativePan,
+                    volume: this.#volume * this.relativeVolume,
+                    onend: index==uri.length-1 ? null : this.playNext.bind(this)
+                });
+                VC.AudioChannel.count++;    
+            } else {
+                this.#player = new Howl({
+                    src: [uri],
+                    format: "webm",
+                    autoplay: true,
+                    loop: false,
+                    stereo: this.#relativePan,
+                    volume: this.#volume * this.relativeVolume,
+                    onend: loop ? ()=>{
+                        if(this.player){
+                            this.player.stop().play();         
+                        }
+                    } : ()=>{this.dispose()}
+                });   
+                VC.AudioChannel.count++;  
+            }
+            
+        }
+        this.#uri = uri;
+        this.#index = index;
+    }
+  
+    stop(uri){
+        if(uri && this.#uri !== uri){
+            //already playing something else. 
+            return;
+        } 
+        if(this.#player!=null && this.#player.playing()){
+            this.#player.stop(); 
+            this.dispose();
+        }
+    }
+  
+    fadeOut(callback){
+        if(this.#player){
+            if( this.volume > 0){
+                this.volume-=.1;
+                this.#fadeOutCancellationToken = setTimeout(()=>{this.fadeOut(callback)}, 75);
+            }else {
+                this.#player.stop();
+                if(callback){
+                    callback();
+                }
+            }
+        } else if (callback){
+            callback();
+        }
+    };
+    
+    dispose(){
+        if(this.#player && this.#player instanceof Howl){
+            if (this.#player.playing()) {
+                this.#player.stop();
+            }
+            this.#player.unload();  
+            this.#player = null;
+            VC.AudioChannel.count--;
+        }
     }
 }
 
@@ -167,32 +1136,275 @@ VC.Point = class {
     }
 }
 
-VC.Scene = class {
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
-}
+ VC.Box = class{
+    #x=0;
+    #y=0;
+    #width=0;
+    #height=0;
+    #points = [];
+    #poly = null;
+    constructor(x,y,w,h){
+        this.#x = x;
+        this.#y = y;
+        this.#width = w;
+        this.#height = h;
+        this.#points = [];
+        this.#poly = null;
+    }
 
-VC.VisualEffects = class {
-    //Todo: refactor
-    static shaking = false
-    static shake(screen, intensity, ms){
-        var rate = 50;
-        var div =  document.getElementById(screen.domElementId);
-        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
-        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+    reset(newX, newY, newW, newH){
+        this.x = newX;
+        this.y = newY;
+        this.width = newW;
+        this.height = newH;
+        this.#points = [];
+        this.poly = null;
+    }
 
-        if(ms>0){
-            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
-            VC.VisualEffects.shaking=true;
-        }else{
-            div.style.top = 0;
-            div.style.left = 0;
-            VC.VisualEffects.shaking=false;
+    clone(){
+        return new VC.Box(this.#x, this.#y, this.#width, this.#height);
+    }
+
+    set x(value){
+        if(value!=this.#x){
+            this.#x = value;
+            this.#points = [];
         }
+    }
+    get x(){
+        return this.#x;
+    }
+    
+    set y(value){
+        if(value!=this.#y){
+            this.#y = value;
+            this.#points = [];
+        }
+    }
+    get y(){
+        return this.#y;
+    }
+
+    
+    set width(value){
+        if(value!=this.#width){
+            this.#width = value;
+            this.#points = [];
+        }
+    }
+    get width(){
+        return this.#width;
+    }
+
+    set height(value){
+        if(value!=this.#height){
+            this.#height = value;
+            this.#points = [];
+        }
+    }
+    get height(){
+        return this.#height;
+    }
+
+
+    #setPoints(){
+        this.#points = [new VC.Point(this.#x, this.#y), new VC.Point(this.#x + this.#width, this.#y), new VC.Point(this.#x + this.#width, this.#y + this.#height), new VC.Point(this.#x, this.#y + this.#height)];
+        this.#poly = null;
+    }
+    get points() {
+        if(this.#points.length===0){
+            this.#setPoints();
+        }
+        return this.#points
+    }
+    get polygon(){
+        if(!this.#points.length===0 || this.#poly==null){
+            this.#poly = new VC.Polygon(this.points, true);
+        }
+        return this.#poly;
+    }
+    
+    center(x,y) {
+        if(arguments.length === 1 && x!=null){
+            this.x = x.x - Math.round(this.width / 2);
+            this.y = x.y - Math.round(this.height / 2);
+            this.#points = [];
+        }
+        if(arguments.length === 2 && x!=null && y!=null){
+            this.x = x - Math.round(this.width / 2);
+            this.y = y - Math.round(this.height / 2);
+            this.#points = [];
+        }
+        return new VC.Point(
+            this.x + Math.round(this.width / 2),
+            this.y + Math.round(this.height / 2)
+        );
+    }
+    
+    area(){
+        return this.width * this.height;
+    }
+
+    inside(box){
+        if(
+            box && 
+            this.x > box.x && this.x < box.x + box.width &&
+            this.x + this.width > box.x && this.x + this.width < box.x + box.width &&
+            this.y > box.y && this.y < box.y + box.height &&
+            this.y + this.height > box.y && this.y + this.height < box.y + box.height
+        ){
+            return true;
+        }
+        return false;
+    }
+
+    containsPoint(point){
+        if (point instanceof VC.Point){
+            return(this.x<point.x && this.x+this.width>point.x && this.y<point.y && this.y+this.height>point.y)
+        }
+        return false;
+    }
+
+    collidesWith(box){
+
+            // Check for overlap along the X axis
+            if (this.x + this.width < box.x || this.x > box.x + box.width) {
+                return false;
+            }
+
+            // Check for overlap along the Y axis
+            if (this.y + this.height < box.y || this.y > box.y + box.height) {
+                return false;
+            }
+
+            // If there is overlap along all axes, collision has occurred
+            return true;
+    }
+    resolveCollision_centers(box, variant){
+
+        //we don't move. YOU move.
+        if(this.collidesWith(box)){
+            var tc = this.center();
+            var bc = box.center();
+            if(Math.abs(tc.x-bc.x)>Math.abs(tc.y-bc.y)){
+                if(tc.x>bc.x){
+                    box.x = this.x - box.width;
+                }else{
+                    box.x = this.x + this.width;
+                }
+            }else {
+                if(tc.y>bc.y){
+                    box.y = this.y - box.height;
+                }else{
+                    box.y = this.y + this.height;
+                }
+            }
+        }
+
+    }
+
+    resolveCollision(box){
+
+        var overlapX = Math.min(this.x + this.width, box.x + box.width) - Math.max(this.x, box.x);
+        var overlapY = Math.min(this.y + this.height, box.y + box.height) - Math.max(this.y, box.y);
+    
+        if (overlapX > 0 && overlapY > 0) {
+            let mtvX = 0;
+            let mtvY = 0;
+    
+            if (overlapX < overlapY) {
+                mtvX = this.center().x < box.center().x ? 1 : -1;
+            } else {
+                mtvY = this.center().y < box.center().y ? 1 : -1;
+            }
+            box.x += mtvX * overlapX;
+            box.y += mtvY * overlapY;
+        }
+    }
+
+
+
+    intersectRect(box) {
+        let left = Math.max(this.x, box.x);
+        let top = Math.max(this.y, box.y);
+        let right = Math.min(this.x + this.width, box.x + box.width);
+        let bottom = Math.min(this.y + this.height, box.y + box.height);
+        
+        // Check if there's an actual intersection
+        if (left < right && top < bottom) {
+            return new VC.Box(left, top, right-left, bottom-top);
+        } else {
+            // No intersection
+            return null;
+        }
+    }
+
+    pointOfIntersection(lineSegment){
+        if(this.containsPoint(lineSegment.point1) && this.containsPoint(lineSegment.point2)){
+            //return...? What should we expect?
+            return null; 
+        }
+        //check each wall. 
+        //North
+        let w = new VC.LineSegment(new VC.Point(this.x, this.y), new VC.Point(this.x+this.width, this.y))
+        let p = w.pointOfIntersection(lineSegment);
+        if(p){
+            return p;
+        }
+
+        //East
+        w = new VC.LineSegment(new VC.Point(this.x+this.width, this.y), new VC.Point(this.x+this.width, this.y+this.height))
+        p = w.pointOfIntersection(lineSegment);
+        if(p){
+            return p;
+        }
+
+        //South
+        w = new VC.LineSegment(new VC.Point(this.x, this.y+this.height), new VC.Point(this.x+this.width, this.y+this.height))
+        p = w.pointOfIntersection(lineSegment);
+        if(p){
+            return p;
+        }
+
+        //West
+        w = new VC.LineSegment(new VC.Point(this.x, this.y), new VC.Point(this.x, this.y+this.height))
+        p = w.pointOfIntersection(lineSegment);
+        if(p){
+            return p;
+        }
+
+        return null;
+
+    }
+    
+    distance(box){
+        let c1 = this.center();
+        let c2 = box.center();
+        let dx = c2.x - c1.x;
+        let dy = c2.y - c1.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    render(screen, color){
+        if(!this.element){ 
+            this.element = screen.rect(this.x, this.y, this.width, this.height).attr("stroke", color);
+            screen.onClear(()=>{this.element = null});
+        };
+        this.element.attr({x:this.x, y:this.y, width: this.width, height: this.height});
+        this.element.toFront();
+    }
+    remove(){
+        if(this.element){
+            this.element.remove();
+            this.element = null;
+        }   
+    }
+}
+VC.GameState = class {
+    static get PAUSED(){
+        return 0;
+    }
+    static get RUNNING(){
+        return 1;
     }
 }
 
@@ -798,734 +2010,23 @@ VC.Polygon = class {
     }
 }
 
-VC.Trig = class {
-    static degreesToRadians(angle){
-        return (angle % 360) / 360 * 2 * Math.PI;
-    }
-    static radiansToDegrees(angle){
-        return angle * 57.2958;
-    }
-    static cotangent(radians){
-        return 1/Math.tan(radians);
-    }
-    static tangent(radians){
-        return Math.tan(radians);
-    }
-    static pointToAngle(opposite, adjacent){
-        if(adjacent<0){
-            return Math.PI + Math.atan(opposite/adjacent);        
+VC.VisualEffects = class {
+    //Todo: refactor
+    static shaking = false
+    static shake(screen, intensity, ms){
+        var rate = 50;
+        var div =  document.getElementById(screen.domElementId);
+        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
+        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+
+        if(ms>0){
+            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
+            VC.VisualEffects.shaking=true;
+        }else{
+            div.style.top = 0;
+            div.style.left = 0;
+            VC.VisualEffects.shaking=false;
         }
-        return Math.atan(opposite/adjacent);
-    }
-    static distance (x1, y1, x2, y2){
-        return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-    }
-    static tangentFromPoints(x1,y1,x2,y2){
-        return (y2-y1)/(x2-x1);
-    }
-
-    // Angle (in degrees) between two vectors
-    static angleBetweenVectors(v1, v2) {
-        let dot = v1.x * v2.x + v1.y * v2.y;
-        let mag1 = Math.hypot(v1.x, v1.y);
-        let mag2 = Math.hypot(v2.x, v2.y);
-
-        if (mag1 === 0 || mag2 === 0) return 0;
-
-        let cosTheta = dot / (mag1 * mag2);
-        // Clamp to handle tiny floating point errors
-        cosTheta = Math.max(-1, Math.min(1, cosTheta));
-
-        return Math.round(Math.acos(cosTheta) * 180 / Math.PI);
-    }
-
-}
-
-VC.Screen = class {
-    #screen = null;
-    #x = 0;
-    #y = 0;
-    #width = 0;
-    #height = 0;
-    #domElementId = "";
-    #topLevelGroup = null;
-    #topLevelClipPath = null;
-    constructor(domElementId, x, y, width, height){
-        let screen = Raphael(domElementId, width, height);
-        screen.setViewBox(x, y, width, height, true);
-        screen.canvas.setAttribute('preserveAspectRatio', 'meet');
-        screen.canvas.setAttributeNS("http://www.w3.org/XML/1998/namespace", "xml:space","preserve"); 
-        this.#screen = screen;
-        this.#width = width;
-        this.#height = height;
-        this.#x = x;
-        this.#y = y;
-        this.#domElementId = domElementId;
-        console.log({domElementId: domElementId, x: x, y: y, width: width, height: height})
-    }
-    get topLevelGroup(){
-        if(!this.#topLevelGroup){
-            this.#topLevelGroup = this.#createGroup([]);
-            this.#topLevelGroup.clipPath(this.topLevelClipPath);
-        }   
-        return this.#topLevelGroup;
-    }
-
-    get topLevelClipPath(){
-        if(!this.#topLevelClipPath){
-            this.#topLevelClipPath = this.#screen.rect(0,0,this.width,this.height);
-        }
-        return this.#topLevelClipPath
-    }
-    get domElementId(){
-        return this.#domElementId;
-    }
-    get x(){
-        return this.#x;
-    }
-    get y(){
-        return this.#y;
-    }
-    get height(){
-        return this.#height;
-    }
-    get width(){
-        return this.#width;
-    }
-
-    group(){
-        let g = this.#createGroup(arguments);
-        this.topLevelGroup.addElement(g);
-        return g
-    };
-
-    drawLine(x1,y1,x2,y2,color,thickness){
-        let path = "M" + x1 + "," + y1 + "L" + x2 + "," + y2;
-        let el = this.#screen.path(path)
-        el.attr({"stroke-width": thickness, "stroke":color});
-        this.topLevelGroup.addElement(el);
-        el.toFront = () => this.topLevelGroup.addElement(el);
-        return el;
-    };
-
-    drawTriangle(x1,y1,x2,y2,x3,y3, translateX, translateY, fillColor, strokeColor, thickness){
-        let path =  "M" + (x1 + translateX) + "," + (y1 + translateY) + "L" + (x2 + translateX) + "," + (y2 + translateY) + "L" + (x3 + translateX) + "," + (y3 + translateY) + "Z";
-        let el = this.#screen.path(path)
-        el.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor});
-        this.topLevelGroup.addElement(el);
-        el.toFront = () => this.topLevelGroup.addElement(el);
-        return el
-    };
-    
-    drawRect(x,y,w,h,color,strokecolor, thickness, radius){
-        if(isNaN(radius)){
-            radius=0;
-        }
-        let el = this.rect(x,y,w,h,radius)
-        el.attr({"stroke-width": thickness, "stroke":strokecolor, "fill": color});
-        //Note: handled by the rect() function, below   
-        //this.topLevelGroup.addElement(el);
-        //el.toFront = () => this.topLevelGroup.addElement(el);
-        return el;
-    };
-
-    drawQuad(x1,y1,x2,y2,x3,y3,x4,y4, translateX, translateY, fillColor, strokeColor, thickness){
-        let path =  "M" + (x1 + translateX) + "," + (y1 + translateY) + "L" + (x2 + translateX) + "," + (y2 + translateY) + "L" + (x3 + translateX) + "," + (y3 + translateY) + "L" + (x4 + translateX) + "," + (y4 + translateY) + "Z";
-        let el = this.#screen.path(path);
-        el.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor}); 
-        this.topLevelGroup.addElement(el);
-        el.toFront = () => this.topLevelGroup.addElement(el);
-        return el;
-    };
-
-    drawPoly(points, fillColor, strokeColor, thickness){
-        let path = ""
-        for(let p=0; p < points.length;p++){
-            if(p === 0){
-                path = "M";
-            }else {
-                path = path + "L";
-            }
-            let point = points[p];
-            path = path + point.x + "," + point.y;
-        }
-        path = path + "Z";
-        let result = this.#screen.path(path);
-        result.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor})
-        this.topLevelGroup.addElement(result);
-        result.toFront = () => this.topLevelGroup.addElement(result);
-        return result;
-    }
-
-    drawEllipse (x1,y1,r1,r2, translateX, translateY, fillColor, strokeColor, thickness){
-        let e = this.ellipse(x1+translateX, y1+translateY, r1, r2)
-        e.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor});
-        //handled by the ellipse function below
-        //this.topLevelGroup.addElement(e);
-        //e.toFront = () => this.topLevelGroup.addElement(e);
-        return e;
-    };
-
-    drawAngleSegmentX(angle, startX, endX, translateX, translateY, color, thickness){
-        let startY = Math.round(VC.Trig.tangent(angle) * startX);
-        let endY = Math.round(VC.Trig.tangent(angle) * endX);
-        startX+=translateX; endX += translateX;
-        startY+=translateY; endY += translateY;
-        return this.drawLine(startX, startY, endX, endY, color, thickness);
-    };
-    
-    drawAngleSegmentY = function(angle, startY, endY, translateX, translateY, color, thickness){
-        let startX = Math.round(VC.Trig.cotangent(angle) * startY);
-        let endX = Math.round(VC.Trig.cotangent(angle) * endY);
-        startX+=translateX; endX += translateX;
-        startY+=translateY; endY += translateY;
-        return this.drawLine(startX, startY, endX, endY, color, thickness);
-    }
-
-    #clearListeners = [];
-    clear(){
-        this.#clearListeners.forEach((f)=>{
-            try{
-                f();
-            } catch(e){
-                console.log(e);
-            }
-        });
-        this.#topLevelGroup = null;
-        this.#clearListeners.length = 0;
-        this.#screen.clear();
-    }
-
-    onClear(handler){
-        //register handler
-        this.#clearListeners.push(handler);
-    }
-
-    fadeTo(color, callback){
-        let rect = this.#screen.rect(0,0,this.#width, this.#width);
-        rect.toFront();
-        rect.attr({opacity: 0, fill: color});
-        rect.animate({opacity:1}, 350, null, ()=>{rect.remove(); callback()});
-    }
-    
-    fadeInFrom(color, callback){
-        let rect = this.#screen.rect(0,0,this.#width, this.#width, color, color, 0);
-        rect.toFront();
-        rect.attr({opacity: 1, fill: color});
-        rect.animate({opacity:0}, 350, null, ()=>{rect.remove(); callback()});
-    }
-
-    get svgNS(){
-        return "http://www.w3.org/2000/svg";
-    }
-    
-    get defs(){
-        let dv = document.getElementById(this.#domElementId);
-        let svg = dv.getElementsByTagName("svg")[0];
-        let defsel = svg.getElementsByTagName("defs");
-        if(defsel.length!=1){
-            let def = document.createElementNS(this.svgNS, "defs")
-            svg.appendChild(def)
-            console.log("creating new def")
-            console.log(def);
-            return def;
-        }
-        return defsel[0];
-    }
-
-    #createGroup(g) {
-		if(Raphael.svg == true) {
-			let dv = document.getElementById(this.#domElementId);
-			let defs = dv.getElementsByTagName("defs")[0];
-			var svgHead = this.svgNS;
-			let svgcanv = dv.getElementsByTagName("svg")[0];
-			svgcanv.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
-			var countGroups = svgcanv.getElementsByTagName("g").length;
-			var createUUID=function(b,a){return function(){return"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(b,a).toUpperCase()}}(/[xy]/g,function(b){var a=16*Math.random()|0;return("x"==b?a:a&3|8).toString(16)});		
-			let masterGroup = null;
-            if(countGroups == 0) {
-				masterGroup = document.createElementNS(this.svgNS, "g");
-				svgcanv.appendChild(masterGroup)
-			}else {
-				masterGroup = svgcanv.getElementsByTagName("g")[0]
-			}		
-			let group = document.createElementNS(this.svgNS, "g");
-			for(let i = 0;i < g.length;i++) {
-                if(g[i] instanceof Node){
-				    group.appendChild(g[i])
-                }else if(g[i].node instanceof Node){
-				    group.appendChild(g[i].node)
-                }else{
-                    console.warn(g[i]);
-                }
-			}
-			masterGroup.appendChild(group);
-			group.set = [];
-			var _mg = masterGroup;
-			group.getMaster = function() {
-				return _mg
-			};
-			group.remove = function() {
-				this.parentNode.removeChild(this)
-			};
-			var thisTransform = {translate:{x:0, y:0}, scale:{x:1, y:1}, rotate:{x:0, y:0, z:0}};
-			var transformString = function() {
-				return"translate(" + thisTransform.translate.x + "," + thisTransform.translate.y + ") scale(" + thisTransform.scale.x + "," + thisTransform.scale.y + ") rotate(" + thisTransform.rotate.x + "," + thisTransform.rotate.y + "," + thisTransform.rotate.z + ")"
-			};
-			group.translate = function(c, a) {
-				thisTransform.translate.x = c;
-				thisTransform.translate.y = a;
-				this.setAttribute("transform", transformString())
-			};
-			group.rotate = function(c, a, e) {
-				thisTransform.rotate.x = c;
-				thisTransform.rotate.y = a;
-				thisTransform.rotate.z = e;
-				this.setAttribute("transform", transformString())
-			};
-			group.scale = function(c, a) {
-				thisTransform.scale.x = c;
-				thisTransform.scale.y = a;
-				this.setAttribute("transform", transformString())
-			};
-			group.push = function() {
-				for(let i = 0;i < arguments.length;i++) {
-					this.appendChild(arguments[i].node)
-				}
-			};
-			group.addElement = function() {
-                //console.log("adding")
-				for(let i = 0;i < arguments.length;i++) {
-                    if(arguments[i] instanceof Node){
-                        this.appendChild(arguments[i])
-                    }else if(arguments[i].node instanceof Node){
-                        this.appendChild(arguments[i].node)
-                    }else {
-                        console.log("nothing to add!")
-                    }
-				}
-			    //this.set = [];
-			};
-			group.getAttr = function(c) {
-				return thisTransform[c]
-			};
-			group.copy = function(el) {
-				this.copy = el.node.cloneNode(true);
-				this.appendChild(this.copy)
-			};
-			group.toFront = function(){
-				this.parentNode.appendChild(this);
-			};
-			group.clipPath = function(c){						
-				var cp = document.createElementNS(svgHead, "clipPath");
-				var cpID = createUUID();
-				cp.setAttribute("id",cpID);
-				cp.appendChild(c.node);
-				defs.appendChild(cp);
-				this.setAttribute("clip-path","url(#"+cpID+")")
-                return cp;
-			};
-
-	
-			return group
-		}
-    }
-
-    //RAPHAEL PASS-THRU
-
-    get bottom(){
-        return this.#screen.bottom;
-    }
-
-    circle(x, y, r){
-
-        let e = this.#screen.circle(x, y, r);
-        this.topLevelGroup.addElement(e);
-        e.toFront = () => this.topLevelGroup.addElement(e);
-        return e;
-    }
-
-    get canvas(){
-        return this.#screen.canvas;
-    }
-
-    get customAttributes(){
-        return this.#screen.customAttributes;
-    }
-
-    ellipse(x, y, rx, ry){
-        let e = this.#screen.ellipse(x, y, rx, ry);
-        this.topLevelGroup.addElement(e);
-        e.toFront = () => this.topLevelGroup.addElement(e);
-        return e
-    }
-
-    forEach(callback, thisArg){
-        return this.#screen.forEach(callback, thisArg);
-    }
-
-    getById(id){
-        return this.#screen.getById(id);
-    }
-
-    getElementByPoint(x, y){
-        return this.#screen.getElementByPoint(x, y);
-    }
-
-    getFont(family, weight, style, stretch){
-        return this.#screen.getFont(family, weight, style, stretch);
-    }
-
-    image(src, x, y, width, height){
-        let i = this.#screen.image(src, x, y, width, height);
-        this.topLevelGroup.addElement(i);
-        i.toFront = () => this.topLevelGroup.addElement(i);
-        return i;
-    }
-
-    path(pathString){
-        let p = this.#screen.path(pathString);
-        this.topLevelGroup.addElement(p);
-        p.toFront = () => this.topLevelGroup.addElement(p);
-        return p;
-    }
-    
-    print(x, y, text, font, size, origin, letter_spacing){
-        let p = this.#screen.print(x, y, text, font, size, origin, letter_spacing);
-        this.topLevelGroup.addElement(p);
-        p.toFront = () => this.topLevelGroup.addElement(p);
-        return p;
-    }
-
-    get raphael(){
-        return this.#screen.raphael
-    }
-
-    rect(x, y, width, height, r){
-        let rct = this.#screen.rect(x, y, width, height, r)
-        this.topLevelGroup.addElement(rct);
-        rct.toFront = () => this.topLevelGroup.addElement(rct);
-        return rct
-    }
-
-    remove(){
-        return this.#screen.remove();
-    }
-
-    renderfix(){
-        return this.#screen.renderfix();
-    }
-
-    safari(){
-        return this.#screen.safari();
-    }
-
-    set(){
-        return this.#screen.set();
-    }
-
-    setFinish(){
-        return this.
-        #screen.setFinish();
-    }
-
-    setSize(width, height){
-        return this.#screen.setSize(width, height);
-    }
-
-    setStart(){
-        return this.#screen.setStart();
-    }
-
-    setViewBox(x, y, w, h, fit){
-        //this.#width = w;
-        //this.#height = h;
-        return this.#screen.setViewBox(x, y, w, h, fit);
-    }
-
-    text(x, y, text){
-        let p = this.#screen.text(x, y, text);
-        this.topLevelGroup.addElement(p);
-        p.toFront = () => this.topLevelGroup.addElement(p);
-        return p;
-    }
-
-    get top(){
-        return this.#screen.top;
-    }
-
-
-}
-
- VC.Box = class{
-    #x=0;
-    #y=0;
-    #width=0;
-    #height=0;
-    #points = [];
-    #poly = null;
-    constructor(x,y,w,h){
-        this.#x = x;
-        this.#y = y;
-        this.#width = w;
-        this.#height = h;
-        this.#points = [];
-        this.#poly = null;
-    }
-
-    reset(newX, newY, newW, newH){
-        this.x = newX;
-        this.y = newY;
-        this.width = newW;
-        this.height = newH;
-        this.#points = [];
-        this.poly = null;
-    }
-
-    clone(){
-        return new VC.Box(this.#x, this.#y, this.#width, this.#height);
-    }
-
-    set x(value){
-        if(value!=this.#x){
-            this.#x = value;
-            this.#points = [];
-        }
-    }
-    get x(){
-        return this.#x;
-    }
-    
-    set y(value){
-        if(value!=this.#y){
-            this.#y = value;
-            this.#points = [];
-        }
-    }
-    get y(){
-        return this.#y;
-    }
-
-    
-    set width(value){
-        if(value!=this.#width){
-            this.#width = value;
-            this.#points = [];
-        }
-    }
-    get width(){
-        return this.#width;
-    }
-
-    set height(value){
-        if(value!=this.#height){
-            this.#height = value;
-            this.#points = [];
-        }
-    }
-    get height(){
-        return this.#height;
-    }
-
-
-    #setPoints(){
-        this.#points = [new VC.Point(this.#x, this.#y), new VC.Point(this.#x + this.#width, this.#y), new VC.Point(this.#x + this.#width, this.#y + this.#height), new VC.Point(this.#x, this.#y + this.#height)];
-        this.#poly = null;
-    }
-    get points() {
-        if(this.#points.length===0){
-            this.#setPoints();
-        }
-        return this.#points
-    }
-    get polygon(){
-        if(!this.#points.length===0 || this.#poly==null){
-            this.#poly = new VC.Polygon(this.points, true);
-        }
-        return this.#poly;
-    }
-    
-    center(x,y) {
-        if(arguments.length === 1 && x!=null){
-            this.x = x.x - Math.round(this.width / 2);
-            this.y = x.y - Math.round(this.height / 2);
-            this.#points = [];
-        }
-        if(arguments.length === 2 && x!=null && y!=null){
-            this.x = x - Math.round(this.width / 2);
-            this.y = y - Math.round(this.height / 2);
-            this.#points = [];
-        }
-        return new VC.Point(
-            this.x + Math.round(this.width / 2),
-            this.y + Math.round(this.height / 2)
-        );
-    }
-    
-    area(){
-        return this.width * this.height;
-    }
-
-    inside(box){
-        if(
-            box && 
-            this.x > box.x && this.x < box.x + box.width &&
-            this.x + this.width > box.x && this.x + this.width < box.x + box.width &&
-            this.y > box.y && this.y < box.y + box.height &&
-            this.y + this.height > box.y && this.y + this.height < box.y + box.height
-        ){
-            return true;
-        }
-        return false;
-    }
-
-    containsPoint(point){
-        if (point instanceof VC.Point){
-            return(this.x<point.x && this.x+this.width>point.x && this.y<point.y && this.y+this.height>point.y)
-        }
-        return false;
-    }
-
-    collidesWith(box){
-
-            // Check for overlap along the X axis
-            if (this.x + this.width < box.x || this.x > box.x + box.width) {
-                return false;
-            }
-
-            // Check for overlap along the Y axis
-            if (this.y + this.height < box.y || this.y > box.y + box.height) {
-                return false;
-            }
-
-            // If there is overlap along all axes, collision has occurred
-            return true;
-    }
-    resolveCollision_centers(box, variant){
-
-        //we don't move. YOU move.
-        if(this.collidesWith(box)){
-            var tc = this.center();
-            var bc = box.center();
-            if(Math.abs(tc.x-bc.x)>Math.abs(tc.y-bc.y)){
-                if(tc.x>bc.x){
-                    box.x = this.x - box.width;
-                }else{
-                    box.x = this.x + this.width;
-                }
-            }else {
-                if(tc.y>bc.y){
-                    box.y = this.y - box.height;
-                }else{
-                    box.y = this.y + this.height;
-                }
-            }
-        }
-
-    }
-
-    resolveCollision(box){
-
-        var overlapX = Math.min(this.x + this.width, box.x + box.width) - Math.max(this.x, box.x);
-        var overlapY = Math.min(this.y + this.height, box.y + box.height) - Math.max(this.y, box.y);
-    
-        if (overlapX > 0 && overlapY > 0) {
-            let mtvX = 0;
-            let mtvY = 0;
-    
-            if (overlapX < overlapY) {
-                mtvX = this.center().x < box.center().x ? 1 : -1;
-            } else {
-                mtvY = this.center().y < box.center().y ? 1 : -1;
-            }
-            box.x += mtvX * overlapX;
-            box.y += mtvY * overlapY;
-        }
-    }
-
-
-
-    intersectRect(box) {
-        let left = Math.max(this.x, box.x);
-        let top = Math.max(this.y, box.y);
-        let right = Math.min(this.x + this.width, box.x + box.width);
-        let bottom = Math.min(this.y + this.height, box.y + box.height);
-        
-        // Check if there's an actual intersection
-        if (left < right && top < bottom) {
-            return new VC.Box(left, top, right-left, bottom-top);
-        } else {
-            // No intersection
-            return null;
-        }
-    }
-
-    pointOfIntersection(lineSegment){
-        if(this.containsPoint(lineSegment.point1) && this.containsPoint(lineSegment.point2)){
-            //return...? What should we expect?
-            return null; 
-        }
-        //check each wall. 
-        //North
-        let w = new VC.LineSegment(new VC.Point(this.x, this.y), new VC.Point(this.x+this.width, this.y))
-        let p = w.pointOfIntersection(lineSegment);
-        if(p){
-            return p;
-        }
-
-        //East
-        w = new VC.LineSegment(new VC.Point(this.x+this.width, this.y), new VC.Point(this.x+this.width, this.y+this.height))
-        p = w.pointOfIntersection(lineSegment);
-        if(p){
-            return p;
-        }
-
-        //South
-        w = new VC.LineSegment(new VC.Point(this.x, this.y+this.height), new VC.Point(this.x+this.width, this.y+this.height))
-        p = w.pointOfIntersection(lineSegment);
-        if(p){
-            return p;
-        }
-
-        //West
-        w = new VC.LineSegment(new VC.Point(this.x, this.y), new VC.Point(this.x, this.y+this.height))
-        p = w.pointOfIntersection(lineSegment);
-        if(p){
-            return p;
-        }
-
-        return null;
-
-    }
-    
-    distance(box){
-        let c1 = this.center();
-        let c2 = box.center();
-        let dx = c2.x - c1.x;
-        let dy = c2.y - c1.y;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-    render(screen, color){
-        if(!this.element){ 
-            this.element = screen.rect(this.x, this.y, this.width, this.height).attr("stroke", color);
-            screen.onClear(()=>{this.element = null});
-        };
-        this.element.attr({x:this.x, y:this.y, width: this.width, height: this.height});
-        this.element.toFront();
-    }
-    remove(){
-        if(this.element){
-            this.element.remove();
-            this.element = null;
-        }   
-    }
-}
-VC.GameState = class {
-    static get PAUSED(){
-        return 0;
-    }
-    static get RUNNING(){
-        return 1;
     }
 }
 
@@ -1608,271 +2109,71 @@ VC.Math = class {
 
 
 }
-VC.Triangle = class {
-    #registered = false;
-    #p1 = new VC.Point(0,0);
-    #p2 = new VC.Point(0,0);
-    #p3 = new VC.Point(0,0);
-    #elements = []
-    constructor(p1, p2, p3){
-        this.p1 = p1;
-        this.p2 = p2;
-        this.p3 = p3;
-    }
 
-    get p1() {
-        return this.#p1;
+VC.Orientation = class {
+    static get UNSET(){
+        return -1;
     }
-    set p1(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p1 = value;
+    static get LANDSCAPE(){
+        return 0;
     }
-    
-    get p2() {
-        return this.#p2;
-    }
-    set p2(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p2 = value;
-    }
-    
-    get p3() {
-        return this.#p3;
-    }
-    set p3(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p3 = value;
-    }
-
-    get points() {
-        return[this.p1, this.p2, this.p3];
-    }
-
-    render(screen){
-        if(!this.#registered){
-            screen.onClear(this.remove);
-            this.#registered = true;
-        }
-        if(this.#elements.length>0){
-            this.remove();
-        }
-        this.p1.render(screen);
-        this.p2.render(screen);
-        this.p3.render(screen);
-        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
-        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
-        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
-    }
-
-    remove(){
-        if(this.#elements.length>0){
-            this.p1.remove();
-            this.p2.remove();
-            this.p3.remove();
-            this.#elements.forEach((element)=>element.remove());
-            this.#elements = [];
-        }
-    }
-
-    contains(obj){
-        if(obj instanceof VC.Point) {
-            let d1 = this.#sign(obj, this.p1, this.p2);
-            let d2 = this.#sign(obj, this.p2, this.p3);
-            let d3 = this.#sign(obj, this.p3, this.p1);
-        
-            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-        
-            return !(has_neg && has_pos);
-        }
-        if (obj instanceof VC.Box){
-            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
-        }
-        
-        if (obj instanceof VC.Triangle){
-            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
-        }
-        return false;
-    }
-
-    #sign (p1,p2,p3)
-    {
-        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    static get PORTRAIT(){
+        return 1;
     }
 }
-VC.AudioChannel = class{
-    static count = 0;
-    #player = null;    
-    #volume = 1;
-    #relativeVolume = 1;
-    #relativePan = 0;
-    #uri = "";
-    #fadeOutCancellationToken = null;
-    #index = 0;
 
-    #setVolume(){
-        if(this.#player && this.#player instanceof Howl){
-            this.#player.volume(this.#volume * this.#relativeVolume);
-            this.#player.stereo(this.#relativePan);
-            //this.#player.mute(false);
+VC.Client = class {
+    static get screenHeight(){
+        return window.screen.height;
+    }
+    static get screenWidth(){
+        return window.screen.width;
+    }
+    static _orientation = VC.Orientation.UNSET;
+    static get orientation(){
+        return VC.Client._orientation;
+    }
+    static _orientationChangeListeners=[];
+    static OnOrientationChange(func){
+        VC.Client._orientationChangeListeners.push(func);
+    }
+    static _lastOrientation = VC.Orientation.UNSET;
+    static _onOrientationChange(e){
+        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
+            VC.Client._orientation = VC.Orientation.LANDSCAPE;
+        } else {
+            VC.Client._orientation = VC.Orientation.PORTRAIT;
         }
-    }
-    get player(){
-        return this.#player;
-    }
-
-    get volume(){
-        return this.#volume;
-    }
-
-    set volume(value){
-        value = value < 0 ? 0 : (value > 1 ? 1 : value);
-        if(this.#volume !== value){
-            this.#volume = value;
-            this.#setVolume();
-        }
-    }
-
-    get relativeVolume(){
-        return this.#relativeVolume;
-    }
-
-    set relativeVolume(value){
-        value = value < 0 ? 0 : (value > 1 ? 1 : value);
-        if(this.#relativeVolume !== value){
-            this.#relativeVolume = value;
-            this.#setVolume();
-        }
-    }
-
-    get relativePan(){
-        return this.#relativePan;
-    }
-
-    set relativePan(value){
-        value = value < -1 ? -1 : (value > 1 ? 1 : value);
-        if(this.#relativePan !== value){
-            this.#relativePan = value;
-            this.#setVolume()
-        }
-    }
-
-    playNext(){
-        console.log("playnext")
-        this.play(this.#uri, this.volume, true, this.#index+1);
-    }
     
-    play(uri, volume, loop, index, pos){
-        if(pos == null){
-            pos = 0;
+        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
+            VC.Client._lastOrientation = VC.Client.orientation;
+            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
         }
-        if(index == null){
-            index = 0;
-        }
-        if(this.#fadeOutCancellationToken){
-            window.clearTimeout(this.#fadeOutCancellationToken);
-            
-            if(this.#player && this.#player instanceof Howl && this.#player.playing()){
-                this.#player.stop();
-            } 
-            this.#fadeOutCancellationToken = null;
-        }
+    }
 
-        this.volume = volume;
-        
-        if(this.#player && this.#player instanceof Howl && this.#uri === uri && !this.#player.playing() && index == this.#index){
-            if(pos>0){
-                this.#player.once("play", () => {
-                    this.#player.seek(pos);
-                });
-            }
-            
-            this.#player.play();
+    static _readyListeners=[];
+    static _ready = false;
+    static OnReady(func){
+        if (VC.Client._ready){
+            func();
             return;
         }
-
-        if(this.#player && this.#player instanceof Howl && (this.#uri !== uri || index !== this.#index)){
-            this.dispose();
-        }
-
-        if(!this.#player){
-            if(Array.isArray(uri)){
-                this.#player = new Howl({
-                    src: [uri[index]],
-                    format: "mp3",
-                    autoplay: true, 
-                    loop: index==uri.length-1,
-                    stereo: this.#relativePan,
-                    volume: this.#volume * this.relativeVolume,
-                    onend: index==uri.length-1 ? null : this.playNext.bind(this)
-                });
-                VC.AudioChannel.count++;    
-            } else {
-                this.#player = new Howl({
-                    src: [uri],
-                    format: "mp3",
-                    autoplay: true,
-                    loop: false,
-                    stereo: this.#relativePan,
-                    volume: this.#volume * this.relativeVolume,
-                    onend: loop ? ()=>{
-                        if(this.player){
-                            this.player.stop().play();         
-                        }
-                    } : ()=>{this.dispose()}
-                });   
-                VC.AudioChannel.count++;  
-            }
-            
-        }
-        this.#uri = uri;
-        this.#index = index;
+        VC.Client._readyListeners.push(func);
     }
-  
-    stop(uri){
-        if(uri && this.#uri !== uri){
-            //already playing something else. 
-            return;
-        } 
-        if(this.#player!=null && this.#player.playing()){
-            this.#player.stop(); 
-            this.dispose();
+    static Start(func){
+        if (VC.Client._ready){
+            return
         }
-    }
-  
-    fadeOut(callback){
-        if(this.#player){
-            if( this.volume > 0){
-                this.volume-=.1;
-                this.#fadeOutCancellationToken = setTimeout(()=>{this.fadeOut(callback)}, 75);
-            }else {
-                this.#player.stop();
-                if(callback){
-                    callback();
-                }
-            }
-        } else if (callback){
-            callback();
-        }
-    };
-    
-    dispose(){
-        if(this.#player && this.#player instanceof Howl){
-            if (this.#player.playing()) {
-                this.#player.stop();
-            }
-            this.#player.unload();  
-            this.#player = null;
-            VC.AudioChannel.count--;
-        }
+        VC.Client._ready = true;
+        VC.Client._readyListeners.forEach((func)=>{func();})
     }
 }
+
+//Call once to set
+VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
+
+//Bind for changes
+window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
 
 VC.LineSegment = class {
     #element = null;
@@ -1940,306 +2241,5 @@ VC.LineSegment = class {
     }
     render(screen, color){
         return screen.drawLine(this.point1.x, this.point1.y, this.point2.x, this.point2.y, color, 2);
-    }
-}
-
-VC.Sprite = class {
-    #scaleX = 1;
-    #scaleY = 1;
-    #screen = null;
-    #forceRender = false;
-    #image = {
-        frameset: null, 
-        width: 0,
-        height: 0
-    };
-    #size = {
-        width: 0,
-        height: 0
-    };
-    #location = {
-        x: 0,
-        y: 0,
-        z: 0,
-        r: 0
-    };
-    #lastLocation = {
-        x: 0,
-        y: 0, 
-        z: 0,
-        r: 0
-    };
-
-    #animation = {
-        index: 0,
-        series: 0,
-        frame: 0,
-        startTime: Date.now()
-    };
-    #lastAnimation = {
-        index: -1,
-        series: -1,
-        frame: -1
-    };
-    #opacity = 1;
-    #ready = 1;
-    #element = null;
-    #lastIndex = -1;
-    #framesPerSecond = 10;
-
-    get opacity(){
-        return this.#opacity
-    }
-
-    set opacity(value){
-        if(this.#opacity!=value){
-            this.#opacity = value;
-            this.#forceRender = true;
-        }
-    }
-    
-    get animation(){
-        return this.#animation;
-    }
-
-    get location(){
-        return this.#location;
-    }
-
-    get element(){
-        return this.#element;
-    }
-    
-    get lastLocation(){
-        return this.#lastLocation;
-    }
-    
-    get id(){
-        if(this.#element){
-            return this.#element.id;
-        }
-        return null;
-    }
-
-    get size(){
-        return this.#size;
-    }
-
-    get scaleX(){
-        return this.#scaleX;
-    }
-
-    get scaleY(){
-        return this.#scaleY;
-    }
-    
-    set scale(value){
-        this.#scaleX = value;
-        this.#scaleY = value;
-    }
-    set scaleX(value){
-        this.#scaleX = value;
-    }
-    set scaleY(value){
-        this.#scaleY = value;
-    }
-
-    get framesPerSecond(){
-        return this.#framesPerSecond;
-    }
-    set framesPerSecond(value){
-        if(typeof(value)==='number'){
-            this.#framesPerSecond = value;         
-        }
-    }
-
-    constructor(screen, frameset, imageWidth, imageHeight, spriteWidth, spriteHeight, x, y, framesPerSecond){
-        this.#screen = screen;
-        this.#image.frameset = frameset;
-        this.#image.width = imageWidth;
-        this.#image.height = imageHeight;
-        this.#size.width = spriteWidth;
-        this.#size.height = spriteHeight;
-        this.#location.x = x;
-        this.#location.y = y;
-        this.#lastLocation.x = x;
-        this.#lastLocation.y = y;
-        this.#framesPerSecond = framesPerSecond && typeof(framesPerSecond) === 'number' ? framesPerSecond : 10;
-        this.#forceRender = false;
-    }
-
-    clone(){
-        return new VC.Sprite(
-            this.#screen, 
-            this.#image.frameset,
-            this.#image.width,
-            this.#image.height,
-            this.#size.width,
-            this.#size.height,
-            this.#location.x,
-            this.#location.y,
-            this.#framesPerSecond
-        );
-    }
-
-    setAnimation(index,series){
-
-        if(!(index!==this.#animation.index&&series==this.#animation.series)){
-            this.#animation.frame = 0;
-        }
-
-        if (index!==this.#animation.index||series!==this.#animation.series){
-            
-            this.#animation.index = index;
-            this.#animation.series = series;
-            this.#animation.startTime = Date.now();
-        }
-        if (this.#animation.startTime === 0){
-            this.#animation.startTime = Date.now();
-        }
-    }
-    setFrame (index, series, frame){
-            this.#animation.index = index;
-            this.#animation.series = series;
-            this.#animation.frame = frame;
-            this.#animation.startTime = 0;
-    }
-    render(deltaT){
-        let forceRender = this.#forceRender;
-        this.#animation.frame = this.#calculateCurrentFrame(deltaT);
-        if(this.#animation.startTime===0)
-        {
-            forceRender = true
-        }
-        let trans0 = this.#buildTranslation(this.#lastLocation.x, this.#lastLocation.y, this.#lastLocation.r);
-        let trans1 = this.#buildTranslation(this.#location.x, this.#location.y, this.#location.r);
-
-        let rect = this.#buildClipRect(); 
-
-        if(!this.#element){
-            this.#element = this.#screen.image(this.#image.frameset[this.#animation.index], 0, 0, this.#image.width, this.#image.height).attr({opacity:0, "clip-rect": rect, transform:trans1});
-
-            trans0 = trans1;
-            this.#lastLocation.x = this.#location.x;
-            this.#lastLocation.y = this.#location.y;
-            this.#lastLocation.z = this.#location.z;
-            this.#lastLocation.r = this.#location.r;
-            this.#screen.onClear(()=>{this.#element = null});
-            this.#ready = 1  
-            this.#lastIndex = this.#animation.index;
-            forceRender = true
-        } 
-        if(this.#lastIndex !== this.#animation.index){
-            this.#element.attr("src",this.#image.frameset[this.#animation.index]);
-            this.#lastIndex = this.#animation.index;
-        }
-
-        let frameChanged = (this.#lastAnimation.frame !== this.#animation.frame || this.#lastAnimation.index !== this.#animation.index || this.#lastAnimation.series !== this.#animation.series)
-        let positionChanged = true; //(this.#location.x!==this.#lastLocation.x || this.#location.y !== this.#lastLocation.y || this.#location.r !== this.#lastLocation.r);
-
-        if ((frameChanged || positionChanged || forceRender) && this.#element ){//&& this.#ready===1){
-            //this.#ready = 0;
-            this.#element.attr({opacity:this.#opacity}).animate({transform:trans0, "clip-rect": rect},0, 'linear',()=>{
-                if (this.#element){
-                    this.#element.animate({transform:trans1, "clip-rect": rect}, 0, 'linear',()=>{
-                        //this.#ready = 1
-                    });
-                }
-            });
-        }
-
-        this.#lastAnimation.frame = this.#animation.frame;
-        this.#lastAnimation.index = this.#animation.index;
-        this.#lastAnimation.series = this.#animation.series;
-        this.#lastLocation.x = this.#location.x;
-        this.#lastLocation.y = this.#location.y;
-        this.#lastLocation.r = this.#location.r;
-        this.#lastLocation.z = this.#location.z;
-        this.#element.toFront();
-        this.#forceRender = false;
-        return this.#element;
-    }
-    
-    remove (){
-        if (this.#element){
-            this.#element.remove();
-            this.#element = null;
-        }
-    }
-
-    #buildTranslation (x, y, r){
-        if(this.location.z!=0){
-            y -= this.location.z;
-        }
-        if(this.#scaleX!==1 || this.#scaleY!==1){
-            x = x + VC.Math.inversePercentToRange(this.#scaleX, 0, this.#size.width/2);
-            y = y + VC.Math.inversePercentToRange(this.#scaleY, 0, this.#size.height/2); 
-        }
-        let tx = Math.round(x * (1/this.#scaleX) - this.#animation.frame * this.#size.width);
-        let ty = Math.round(y * (1/this.#scaleY) - this.#animation.series *  this.#size.height) ;
-        let t = "t" + tx + "," + ty;
-        var rs = "";
-        var s = "";
-
-        if(this.#scaleX!==1||this.#scaleY!==1){
-            s= "s" + this.#scaleX + "," + this.#scaleY + ",0,0";
-        }
-
-        if(r != 0){
-            let rx = Math.round(this.#animation.frame * this.#size.width + this.#size.width/2);
-            let ry = Math.round(this.#animation.series *  this.#size.height + this.#size.height/2);
-
-            rs = "r" + r + "," + rx + "," + ry;
-        }
-        return s + t + rs;
-       
-    }
-
-    /*
-    #buildTranslation (x, y, r){
-        if(this.location.z<0){
-            y -= this.location.z;
-        }
-        if(this.#scaleX!==1 || this.#scaleY!==1){
-            x = x + VC.Math.inversePercentToRange(this.#scaleX, 0, this.#size.width/2);
-            y = y + VC.Math.inversePercentToRange(this.#scaleY, 0, this.#size.height/2); 
-        }
-        let tx = Math.round(x * (1/this.#scaleX) - this.#animation.frame * this.#size.width);
-        let ty = Math.round(y * (1/this.#scaleY) - this.#animation.series *  this.#size.height);
-        let t = "t" + tx + "," + ty;
-        let r = "";
-        if(r != 0){
-            let rx = Math.round(this.#animation.frame * this.#size.width + this.#size.width/2);
-            let ry = Math.round(this.#animation.series *  this.#size.height + this.#size.height/2);
-            r = "r" + r + "," + rx + "," + ry;
-        }
-        let s = "";
-        if(this.#scaleX !== 1 || this.#scaleY !== 1){
-            s = "s" + this.#scaleX +"," + this.#scaleY + ",0,0";
-        }
-        return r + s + t;
-    }
-        */
-
-    #buildClipRect(){
-        let x = Math.round(this.#animation.frame * this.#size.width)+1
-        let y = Math.round(this.#animation.series * this.#size.height)+1
-        let w = this.#size.width-2;
-        let h = this.#size.height-2;
-        if(this.location.z<0){
-            h=h+this.location.z;
-        }
-        return "" + x + "," + y +"," + w + "," + h;
-    }
-
-
-
-    #calculateCurrentFrame(deltaT) {
-        if (this.#animation.startTime === 0){
-            return this.#animation.frame;
-        }
-        let animdelta = Date.now() - this.#animation.startTime;
-        let frame = Math.round((animdelta / 1000) * this.framesPerSecond) % Math.round(this.#image.width/this.#size.width);
-        return frame;
     }
 }
