@@ -1,6 +1,192 @@
 'use strict';
 const VC={};
 
+VC.Color = class {
+    static hexToRGB(hexColor){
+        if(hexColor.length===6 || hexColor.length == 3){
+            hexColor = "#" + hexColor
+        }
+        let red = "00";
+        let green = "00";
+        let blue = "00"
+        if(hexColor.length === 4){
+            red = hexColor.substring(1,2);
+            red += red;
+            green = hexColor.substring(2,3);
+            green += green;
+            blue = hexColor.substring(3,4);
+            blue += blue;
+        }
+        if(hexColor.length === 7){
+            red = hexColor.substring(1,3);
+            green = hexColor.substring(3,5);
+            blue = hexColor.substring(5,7);
+        }
+
+        return {
+            r: parseInt(red,16),
+            g: parseInt(green,16),
+            b: parseInt(blue,16)
+        }
+    }
+
+    static rgbToHex(rgb){
+        let hex="#"
+        hex += right("0" + rgb.r.toString(16),2);
+        hex += right("0" + rgb.g.toString(16),2);
+        hex += right("0" + rgb.b.toString(16),2);
+        return hex;
+    }
+
+    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
+        //alpha * new + (1 - alpha) * old
+        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
+        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
+        return VC.Color.rgbToHex({
+            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
+            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
+            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
+        });
+    }
+}
+VC.GameState = class {
+    static get PAUSED(){
+        return 0;
+    }
+    static get RUNNING(){
+        return 1;
+    }
+}
+
+VC.Game = class{    
+    #state = VC.GameState.PAUSED;
+    #looping = false;
+    #rafId = null;
+    #fps = 0;
+
+    onPreRender(deltaT){}
+    onRender(deltaT){}
+    onPostRender(deltaT){}
+    onPlay(){}
+    onPause(){}
+
+    get fps(){
+        return this.#fps;
+    }
+
+    _loop(lastTime){
+        if(!this.#looping) {
+            this.#looping = true;
+        }
+
+        let startTime = Date.now();
+        let deltaT = Math.round(startTime-lastTime);
+        
+        if(deltaT > 0){
+            this.#fps = Math.round(1000 / deltaT);
+        }
+
+        //if(deltaT>1000) deltaT === 1000;
+        if(this.#state === VC.GameState.RUNNING){
+            //this.#preRender(deltaT)
+            this.onPreRender(deltaT);
+            this.onRender(deltaT);
+            this.onPostRender(deltaT);
+        }
+        //window.setTimeout(()=>{this._loop(startTime);},0);
+        requestAnimationFrame(()=>{this._loop(startTime)})
+            
+    }
+    get state(){
+        return this.#state;
+    }
+    play(){
+        this.#state = VC.GameState.RUNNING;
+        this.onPlay();
+        if(!this.#looping){
+            this._loop(Date.now());
+        }
+    }
+
+    pause(){
+        this.#state = VC.GameState.PAUSED;
+        this.onPause();
+    }
+}
+
+VC.Orientation = class {
+    static get UNSET(){
+        return -1;
+    }
+    static get LANDSCAPE(){
+        return 0;
+    }
+    static get PORTRAIT(){
+        return 1;
+    }
+}
+
+VC.Point = class {
+    #element = null;
+    x = 0;
+    y = 0;
+    constructor (x,y){
+        this.x = x;
+        this.y = y;
+    }
+    render(screen, color){
+        if(!color){
+            color = "#FFF";
+        }
+        if (this.#element){
+            this.remove();
+        }
+        this.#element = screen.drawRect(this.x-1,this.y-1, 3, 3, color,"#000",0);
+        screen.onClear(this.remove)
+    }
+    remove(){
+        if(this && this.#element){
+            this.#element.remove();
+            this.#element = null;
+        }
+    }
+    
+    toString(){
+        return `(${this.x}, ${this.y})`
+    }
+
+    diff(point){
+        return new VC.Point(this.x-point.x, this.y-point.y);
+    }
+    
+    distanceTo(point){
+        return VC.Trig.distance(this.x, this.y, point.x, point.y);
+    }
+
+    static vector(point1, point2){
+        return new VC.Point(point2.x - point1.x, point2.y - point1.y);
+    }
+
+    static normalizeDirection(point){
+        let gcd = VC.Math.greatestCommonDivisor(Math.abs(point.x), Math.abs(point.y));
+        return new VC.Point(point.x / gcd, point.y / gcd);
+    }
+    static normalizeToUnit(point){
+        let mag = Math.hypot(point.x, point.y);
+        if (mag === 0) return new VC.Point(0, 0);
+        return new VC.Point(point.x / mag, point.y / mag);
+    }
+}
+
+VC.Scene = class {
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
+}
+
 VC.Trig = class {
     static degreesToRadians(angle){
         return (angle % 360) / 360 * 2 * Math.PI;
@@ -465,58 +651,6 @@ VC.Screen = class {
 
 }
 
-VC.Point = class {
-    #element = null;
-    x = 0;
-    y = 0;
-    constructor (x,y){
-        this.x = x;
-        this.y = y;
-    }
-    render(screen, color){
-        if(!color){
-            color = "#FFF";
-        }
-        if (this.#element){
-            this.remove();
-        }
-        this.#element = screen.drawRect(this.x-1,this.y-1, 3, 3, color,"#000",0);
-        screen.onClear(this.remove)
-    }
-    remove(){
-        if(this && this.#element){
-            this.#element.remove();
-            this.#element = null;
-        }
-    }
-    
-    toString(){
-        return `(${this.x}, ${this.y})`
-    }
-
-    diff(point){
-        return new VC.Point(this.x-point.x, this.y-point.y);
-    }
-    
-    distanceTo(point){
-        return VC.Trig.distance(this.x, this.y, point.x, point.y);
-    }
-
-    static vector(point1, point2){
-        return new VC.Point(point2.x - point1.x, point2.y - point1.y);
-    }
-
-    static normalizeDirection(point){
-        let gcd = VC.Math.greatestCommonDivisor(Math.abs(point.x), Math.abs(point.y));
-        return new VC.Point(point.x / gcd, point.y / gcd);
-    }
-    static normalizeToUnit(point){
-        let mag = Math.hypot(point.x, point.y);
-        if (mag === 0) return new VC.Point(0, 0);
-        return new VC.Point(point.x / mag, point.y / mag);
-    }
-}
-
  VC.Box = class{
     #x=0;
     #y=0;
@@ -781,6 +915,59 @@ VC.Point = class {
     }
 }
 
+VC.Client = class {
+    static get screenHeight(){
+        return window.screen.height;
+    }
+    static get screenWidth(){
+        return window.screen.width;
+    }
+    static _orientation = VC.Orientation.UNSET;
+    static get orientation(){
+        return VC.Client._orientation;
+    }
+    static _orientationChangeListeners=[];
+    static OnOrientationChange(func){
+        VC.Client._orientationChangeListeners.push(func);
+    }
+    static _lastOrientation = VC.Orientation.UNSET;
+    static _onOrientationChange(e){
+        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
+            VC.Client._orientation = VC.Orientation.LANDSCAPE;
+        } else {
+            VC.Client._orientation = VC.Orientation.PORTRAIT;
+        }
+    
+        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
+            VC.Client._lastOrientation = VC.Client.orientation;
+            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
+        }
+    }
+
+    static _readyListeners=[];
+    static _ready = false;
+    static OnReady(func){
+        if (VC.Client._ready){
+            func();
+            return;
+        }
+        VC.Client._readyListeners.push(func);
+    }
+    static Start(func){
+        if (VC.Client._ready){
+            return
+        }
+        VC.Client._ready = true;
+        VC.Client._readyListeners.forEach((func)=>{func();})
+    }
+}
+
+//Call once to set
+VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
+
+//Bind for changes
+window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
+
 VC.LineSegment = class {
     #element = null;
     point1 = null;
@@ -886,25 +1073,56 @@ VC.Math = class {
 
 }
 
-VC.Orientation = class {
-    static get UNSET(){
-        return -1;
-    }
-    static get LANDSCAPE(){
-        return 0;
-    }
-    static get PORTRAIT(){
-        return 1;
-    }
-}
+VC.Paragraph =  class {
+    #text = "";
+    #fontFamily = "monospace";
+    #fontSize = "12px";
+    #fontWeight = "normal";
+    #wrapWidth = 400;
+    #element = null;
+    #fill = "#FFF";
 
-VC.Scene = class {
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
+    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
+        this.#text = text;
+        this.#fontFamily = fontFamily;
+        this.#fontSize = fontSize;
+        this.#fontWeight = fontWeight
+        this.#wrapWidth = wrapWidth;
+        this.#fill = fill;
+    }
+
+    render(screen){
+        if(!this.#element){
+                
+            let words = this.#text.split(" ");
+            let composite = "";
+            this.#element = screen.text(-10000, -10000, composite);
+            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
+
+            for(let w = 0; w < words.length; w++){
+                this.#element.attr("text", composite + " " + words[w]);
+                let width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += " " + words[w];
+                    continue;
+                }
+                this.#element.attr("text", composite + "\n" + words[w]);
+                width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += "\n" + words[w];
+                    continue;
+                }
+                composite += "%" + w + "%\n" //handle words too long for line (poorly)
+            }
+            for(let w = 0; w < words.length; w++){
+                composite = composite.replace("%" + w + "%",words[w]);
+            }
+            
+            this.#element.attr("text", composite);
+        }
+        return this.#element
+    }
+
 }
 
 VC.Sprite = class {
@@ -1242,177 +1460,6 @@ VC.Sprite = class {
         return frame;
     }
 }
-VC.Triangle = class {
-    #registered = false;
-    #p1 = new VC.Point(0,0);
-    #p2 = new VC.Point(0,0);
-    #p3 = new VC.Point(0,0);
-    #elements = []
-    constructor(p1, p2, p3){
-        this.p1 = p1;
-        this.p2 = p2;
-        this.p3 = p3;
-    }
-
-    get p1() {
-        return this.#p1;
-    }
-    set p1(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p1 = value;
-    }
-    
-    get p2() {
-        return this.#p2;
-    }
-    set p2(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p2 = value;
-    }
-    
-    get p3() {
-        return this.#p3;
-    }
-    set p3(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p3 = value;
-    }
-
-    get points() {
-        return[this.p1, this.p2, this.p3];
-    }
-
-    render(screen){
-        if(!this.#registered){
-            screen.onClear(this.remove);
-            this.#registered = true;
-        }
-        if(this.#elements.length>0){
-            this.remove();
-        }
-        this.p1.render(screen);
-        this.p2.render(screen);
-        this.p3.render(screen);
-        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
-        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
-        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
-    }
-
-    remove(){
-        if(this.#elements.length>0){
-            this.p1.remove();
-            this.p2.remove();
-            this.p3.remove();
-            this.#elements.forEach((element)=>element.remove());
-            this.#elements = [];
-        }
-    }
-
-    contains(obj){
-        if(obj instanceof VC.Point) {
-            let d1 = this.#sign(obj, this.p1, this.p2);
-            let d2 = this.#sign(obj, this.p2, this.p3);
-            let d3 = this.#sign(obj, this.p3, this.p1);
-        
-            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-        
-            return !(has_neg && has_pos);
-        }
-        if (obj instanceof VC.Box){
-            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
-        }
-        
-        if (obj instanceof VC.Triangle){
-            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
-        }
-        return false;
-    }
-
-    #sign (p1,p2,p3)
-    {
-        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
-    }
-}
-
-VC.VisualEffects = class {
-    //Todo: refactor
-    static shaking = false
-    static shake(screen, intensity, ms){
-        var rate = 50;
-        var div =  document.getElementById(screen.domElementId);
-        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
-        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
-
-        if(ms>0){
-            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
-            VC.VisualEffects.shaking=true;
-        }else{
-            div.style.top = 0;
-            div.style.left = 0;
-            VC.VisualEffects.shaking=false;
-        }
-    }
-}
-
-VC.Client = class {
-    static get screenHeight(){
-        return window.screen.height;
-    }
-    static get screenWidth(){
-        return window.screen.width;
-    }
-    static _orientation = VC.Orientation.UNSET;
-    static get orientation(){
-        return VC.Client._orientation;
-    }
-    static _orientationChangeListeners=[];
-    static OnOrientationChange(func){
-        VC.Client._orientationChangeListeners.push(func);
-    }
-    static _lastOrientation = VC.Orientation.UNSET;
-    static _onOrientationChange(e){
-        if((e && e.matches)||VC.Client.screenWidth>=VC.Client.screenHeight) {
-            VC.Client._orientation = VC.Orientation.LANDSCAPE;
-        } else {
-            VC.Client._orientation = VC.Orientation.PORTRAIT;
-        }
-    
-        if (VC.Client.orientation!==VC.Client._lastOrientation || VC.Client._lastOrientation === VC.Orientation.UNSET){
-            VC.Client._lastOrientation = VC.Client.orientation;
-            VC.Client._orientationChangeListeners.forEach((func)=>{func();})
-        }
-    }
-
-    static _readyListeners=[];
-    static _ready = false;
-    static OnReady(func){
-        if (VC.Client._ready){
-            func();
-            return;
-        }
-        VC.Client._readyListeners.push(func);
-    }
-    static Start(func){
-        if (VC.Client._ready){
-            return
-        }
-        VC.Client._ready = true;
-        VC.Client._readyListeners.forEach((func)=>{func();})
-    }
-}
-
-//Call once to set
-VC.Client._onOrientationChange(window.matchMedia("(orientation: landscape)"));
-
-//Bind for changes
-window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Client._onOrientationChange)
 VC.Polygon = class {
     #element = null;
     #registered = false;
@@ -1964,6 +2011,26 @@ VC.Polygon = class {
     }
 }
 
+VC.VisualEffects = class {
+    //Todo: refactor
+    static shaking = false
+    static shake(screen, intensity, ms){
+        var rate = 50;
+        var div =  document.getElementById(screen.domElementId);
+        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
+        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+
+        if(ms>0){
+            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
+            VC.VisualEffects.shaking=true;
+        }else{
+            div.style.top = 0;
+            div.style.left = 0;
+            VC.VisualEffects.shaking=false;
+        }
+    }
+}
+
 VC.AudioChannel = class{
     static howlPool = new Map();
     static count = 0;
@@ -2146,168 +2213,101 @@ VC.AudioChannel = class{
 }
 
 setInterval(()=>{VC.AudioChannel.cullPool()}, 5000);
+VC.Triangle = class {
+    #registered = false;
+    #p1 = new VC.Point(0,0);
+    #p2 = new VC.Point(0,0);
+    #p3 = new VC.Point(0,0);
+    #elements = []
+    constructor(p1, p2, p3){
+        this.p1 = p1;
+        this.p2 = p2;
+        this.p3 = p3;
+    }
 
-VC.Color = class {
-    static hexToRGB(hexColor){
-        if(hexColor.length===6 || hexColor.length == 3){
-            hexColor = "#" + hexColor
+    get p1() {
+        return this.#p1;
+    }
+    set p1(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
         }
-        let red = "00";
-        let green = "00";
-        let blue = "00"
-        if(hexColor.length === 4){
-            red = hexColor.substring(1,2);
-            red += red;
-            green = hexColor.substring(2,3);
-            green += green;
-            blue = hexColor.substring(3,4);
-            blue += blue;
+        this.#p1 = value;
+    }
+    
+    get p2() {
+        return this.#p2;
+    }
+    set p2(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
         }
-        if(hexColor.length === 7){
-            red = hexColor.substring(1,3);
-            green = hexColor.substring(3,5);
-            blue = hexColor.substring(5,7);
+        this.#p2 = value;
+    }
+    
+    get p3() {
+        return this.#p3;
+    }
+    set p3(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
         }
-
-        return {
-            r: parseInt(red,16),
-            g: parseInt(green,16),
-            b: parseInt(blue,16)
-        }
+        this.#p3 = value;
     }
 
-    static rgbToHex(rgb){
-        let hex="#"
-        hex += right("0" + rgb.r.toString(16),2);
-        hex += right("0" + rgb.g.toString(16),2);
-        hex += right("0" + rgb.b.toString(16),2);
-        return hex;
-    }
-
-    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
-        //alpha * new + (1 - alpha) * old
-        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
-        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
-        return VC.Color.rgbToHex({
-            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
-            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
-            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
-        });
-    }
-}
-VC.GameState = class {
-    static get PAUSED(){
-        return 0;
-    }
-    static get RUNNING(){
-        return 1;
-    }
-}
-
-VC.Game = class{    
-    #state = VC.GameState.PAUSED;
-    #looping = false;
-    #rafId = null;
-    #fps = 0;
-
-    onPreRender(deltaT){}
-    onRender(deltaT){}
-    onPostRender(deltaT){}
-    onPlay(){}
-    onPause(){}
-
-    get fps(){
-        return this.#fps;
-    }
-
-    _loop(lastTime){
-        if(!this.#looping) {
-            this.#looping = true;
-        }
-
-        let startTime = Date.now();
-        let deltaT = Math.round(startTime-lastTime);
-        
-        if(deltaT > 0){
-            this.#fps = Math.round(1000 / deltaT);
-        }
-
-        //if(deltaT>1000) deltaT === 1000;
-        if(this.#state === VC.GameState.RUNNING){
-            //this.#preRender(deltaT)
-            this.onPreRender(deltaT);
-            this.onRender(deltaT);
-            this.onPostRender(deltaT);
-        }
-        //window.setTimeout(()=>{this._loop(startTime);},0);
-        requestAnimationFrame(()=>{this._loop(startTime)})
-            
-    }
-    get state(){
-        return this.#state;
-    }
-    play(){
-        this.#state = VC.GameState.RUNNING;
-        this.onPlay();
-        if(!this.#looping){
-            this._loop(Date.now());
-        }
-    }
-
-    pause(){
-        this.#state = VC.GameState.PAUSED;
-        this.onPause();
-    }
-}
-
-VC.Paragraph =  class {
-    #text = "";
-    #fontFamily = "monospace";
-    #fontSize = "12px";
-    #fontWeight = "normal";
-    #wrapWidth = 400;
-    #element = null;
-    #fill = "#FFF";
-
-    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
-        this.#text = text;
-        this.#fontFamily = fontFamily;
-        this.#fontSize = fontSize;
-        this.#fontWeight = fontWeight
-        this.#wrapWidth = wrapWidth;
-        this.#fill = fill;
+    get points() {
+        return[this.p1, this.p2, this.p3];
     }
 
     render(screen){
-        if(!this.#element){
-                
-            let words = this.#text.split(" ");
-            let composite = "";
-            this.#element = screen.text(-10000, -10000, composite);
-            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
-
-            for(let w = 0; w < words.length; w++){
-                this.#element.attr("text", composite + " " + words[w]);
-                let width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += " " + words[w];
-                    continue;
-                }
-                this.#element.attr("text", composite + "\n" + words[w]);
-                width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += "\n" + words[w];
-                    continue;
-                }
-                composite += "%" + w + "%\n" //handle words too long for line (poorly)
-            }
-            for(let w = 0; w < words.length; w++){
-                composite = composite.replace("%" + w + "%",words[w]);
-            }
-            
-            this.#element.attr("text", composite);
+        if(!this.#registered){
+            screen.onClear(this.remove);
+            this.#registered = true;
         }
-        return this.#element
+        if(this.#elements.length>0){
+            this.remove();
+        }
+        this.p1.render(screen);
+        this.p2.render(screen);
+        this.p3.render(screen);
+        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
+        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
+        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
     }
 
+    remove(){
+        if(this.#elements.length>0){
+            this.p1.remove();
+            this.p2.remove();
+            this.p3.remove();
+            this.#elements.forEach((element)=>element.remove());
+            this.#elements = [];
+        }
+    }
+
+    contains(obj){
+        if(obj instanceof VC.Point) {
+            let d1 = this.#sign(obj, this.p1, this.p2);
+            let d2 = this.#sign(obj, this.p2, this.p3);
+            let d3 = this.#sign(obj, this.p3, this.p1);
+        
+            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+        
+            return !(has_neg && has_pos);
+        }
+        if (obj instanceof VC.Box){
+            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
+        }
+        
+        if (obj instanceof VC.Triangle){
+            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
+        }
+        return false;
+    }
+
+    #sign (p1,p2,p3)
+    {
+        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    }
 }
