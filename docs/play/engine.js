@@ -1,13 +1,673 @@
 'use strict';
 const VC={};
+VC.GameState = class {
+    static get PAUSED(){
+        return 0;
+    }
+    static get RUNNING(){
+        return 1;
+    }
+}
 
-VC.Scene = class {
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
+VC.Game = class{    
+    #state = VC.GameState.PAUSED;
+    #looping = false;
+    #rafId = null;
+    #fps = 0;
+
+    onPreRender(deltaT){}
+    onRender(deltaT){}
+    onPostRender(deltaT){}
+    onPlay(){}
+    onPause(){}
+
+    get fps(){
+        return this.#fps;
+    }
+
+    _loop(lastTime){
+        if(!this.#looping) {
+            this.#looping = true;
+        }
+
+        let startTime = Date.now();
+        let deltaT = Math.round(startTime-lastTime);
+        
+        if(deltaT > 0){
+            this.#fps = Math.round(1000 / deltaT);
+        }
+
+        //if(deltaT>1000) deltaT === 1000;
+        if(this.#state === VC.GameState.RUNNING){
+            //this.#preRender(deltaT)
+            this.onPreRender(deltaT);
+            this.onRender(deltaT);
+            this.onPostRender(deltaT);
+        }
+        //window.setTimeout(()=>{this._loop(startTime);},0);
+        requestAnimationFrame(()=>{this._loop(startTime)})
+            
+    }
+    get state(){
+        return this.#state;
+    }
+    play(){
+        this.#state = VC.GameState.RUNNING;
+        this.onPlay();
+        if(!this.#looping){
+            this._loop(Date.now());
+        }
+    }
+
+    pause(){
+        this.#state = VC.GameState.PAUSED;
+        this.onPause();
+    }
+}
+
+VC.LineSegment = class {
+    #element = null;
+    point1 = null;
+    point2 = null;
+    constructor (point1, point2){
+        if(point1 && point1 instanceof VC.Point){
+            this.point1 = point1;
+        }
+        if(point2 && point2 instanceof VC.Point){
+            this.point2 = point2;
+        }
+    }
+    get length() {
+        return this.point1.distanceTo(this.point2);
+    }
+    pointOfIntersection(lineSegment) {
+        if (!(lineSegment && lineSegment instanceof VC.LineSegment)){
+            console.warn("lineSegment argument is not an instance of VC.LineSegment")
+            return null;
+        }
+        let x1 = this.point1.x;
+        let y1 = this.point1.y;
+        let x2 = this.point2.x;
+        let y2 = this.point2.y;
+        let x3 = lineSegment.point1.x;
+        let y3 = lineSegment.point1.y;
+        let x4 = lineSegment.point2.x;
+        let y4 = lineSegment.point2.y;
+
+
+        let denom = ((x1-x2) * (y3-y4)) - ((y1-y2) * (x3-x4));
+        if(denom == 0){ // Parallel, return null
+            return null;
+        }
+        let t = (((x1-x3) * (y3-y4)) - ((y1-y3) * (x3-x4)))/ denom;
+        let u = -((((x1-x2) * (y1-y3)) - ((y1-y2) * (x1-x3)))/ denom);
+        if (0<=t && t<=1 && 0<=u && u<=1){
+            //return point of intersection
+            return new VC.Point(x1 + (t *(x2 - x1)), y1 + (t * (y2 - y1)));
+        }
+        //line segments do not intersect
+        return null;
+    }
+
+    pointOfReflection(point){
+        const dx = this.point2.x - this.point1.x;
+        const dy = this.point2.y - this.point1.y;
+
+        const apx = point.x - this.point1.x;
+        const apy = point.y - this.point1.y;
+
+        const dot = apx * dx + apy * dy;
+        const lenSq = dx * dx + dy * dy;
+
+        const t = dot / lenSq;
+
+        const qx = this.point1.x + t * dx;
+        const qy = this.point1.y + t * dy;
+
+        return new VC.Point (
+            2 * qx - point.x,
+            2 * qy - point.y
+        );
+    }
+    render(screen, color){
+        return screen.drawLine(this.point1.x, this.point1.y, this.point2.x, this.point2.y, color, 2);
+    }
+}
+
+VC.Point = class {
+    #element = null;
+    x = 0;
+    y = 0;
+    constructor (x,y){
+        this.x = x;
+        this.y = y;
+    }
+    render(screen, color){
+        if(!color){
+            color = "#FFF";
+        }
+        if (this.#element){
+            this.remove();
+        }
+        this.#element = screen.drawRect(this.x-1,this.y-1, 3, 3, color,"#000",0);
+        screen.onClear(this.remove)
+    }
+    remove(){
+        if(this && this.#element){
+            this.#element.remove();
+            this.#element = null;
+        }
+    }
+    
+    toString(){
+        return `(${this.x}, ${this.y})`
+    }
+
+    diff(point){
+        return new VC.Point(this.x-point.x, this.y-point.y);
+    }
+    
+    distanceTo(point){
+        return VC.Trig.distance(this.x, this.y, point.x, point.y);
+    }
+
+    static vector(point1, point2){
+        return new VC.Point(point2.x - point1.x, point2.y - point1.y);
+    }
+
+    static normalizeDirection(point){
+        let gcd = VC.Math.greatestCommonDivisor(Math.abs(point.x), Math.abs(point.y));
+        return new VC.Point(point.x / gcd, point.y / gcd);
+    }
+    static normalizeToUnit(point){
+        let mag = Math.hypot(point.x, point.y);
+        if (mag === 0) return new VC.Point(0, 0);
+        return new VC.Point(point.x / mag, point.y / mag);
+    }
+}
+
+VC.Trig = class {
+    static degreesToRadians(angle){
+        return (angle % 360) / 360 * 2 * Math.PI;
+    }
+    static radiansToDegrees(angle){
+        return angle * 57.2958;
+    }
+    static cotangent(radians){
+        return 1/Math.tan(radians);
+    }
+    static tangent(radians){
+        return Math.tan(radians);
+    }
+    static pointToAngle(opposite, adjacent){
+        if(adjacent<0){
+            return Math.PI + Math.atan(opposite/adjacent);        
+        }
+        return Math.atan(opposite/adjacent);
+    }
+    static distance (x1, y1, x2, y2){
+        return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    }
+    static tangentFromPoints(x1,y1,x2,y2){
+        return (y2-y1)/(x2-x1);
+    }
+
+    // Angle (in degrees) between two vectors
+    static angleBetweenVectors(v1, v2) {
+        let dot = v1.x * v2.x + v1.y * v2.y;
+        let mag1 = Math.hypot(v1.x, v1.y);
+        let mag2 = Math.hypot(v2.x, v2.y);
+
+        if (mag1 === 0 || mag2 === 0) return 0;
+
+        let cosTheta = dot / (mag1 * mag2);
+        // Clamp to handle tiny floating point errors
+        cosTheta = Math.max(-1, Math.min(1, cosTheta));
+
+        return Math.round(Math.acos(cosTheta) * 180 / Math.PI);
+    }
+
+}
+
+VC.Screen = class {
+    #screen = null;
+    #x = 0;
+    #y = 0;
+    #width = 0;
+    #height = 0;
+    #domElementId = "";
+    #topLevelGroup = null;
+    #topLevelClipPath = null;
+    constructor(domElementId, x, y, width, height){
+        let screen = Raphael(domElementId, width, height);
+        screen.setViewBox(x, y, width, height, true);
+        screen.canvas.setAttribute('preserveAspectRatio', 'meet');
+        screen.canvas.setAttributeNS("http://www.w3.org/XML/1998/namespace", "xml:space","preserve"); 
+        this.#screen = screen;
+        this.#width = width;
+        this.#height = height;
+        this.#x = x;
+        this.#y = y;
+        this.#domElementId = domElementId;
+        console.log({domElementId: domElementId, x: x, y: y, width: width, height: height})
+    }
+    get topLevelGroup(){
+        if(!this.#topLevelGroup){
+            this.#topLevelGroup = this.#createGroup([]);
+            this.#topLevelGroup.clipPath(this.topLevelClipPath);
+        }   
+        return this.#topLevelGroup;
+    }
+
+    get topLevelClipPath(){
+        if(!this.#topLevelClipPath){
+            this.#topLevelClipPath = this.#screen.rect(0,0,this.width,this.height);
+        }
+        return this.#topLevelClipPath
+    }
+    get domElementId(){
+        return this.#domElementId;
+    }
+    get x(){
+        return this.#x;
+    }
+    get y(){
+        return this.#y;
+    }
+    get height(){
+        return this.#height;
+    }
+    get width(){
+        return this.#width;
+    }
+
+    group(){
+        let g = this.#createGroup(arguments);
+        this.topLevelGroup.addElement(g);
+        return g
+    };
+
+    drawLine(x1,y1,x2,y2,color,thickness){
+        let path = "M" + x1 + "," + y1 + "L" + x2 + "," + y2;
+        let el = this.#screen.path(path)
+        el.attr({"stroke-width": thickness, "stroke":color});
+        this.topLevelGroup.addElement(el);
+        el.toFront = () => this.topLevelGroup.addElement(el);
+        return el;
+    };
+
+    drawTriangle(x1,y1,x2,y2,x3,y3, translateX, translateY, fillColor, strokeColor, thickness){
+        let path =  "M" + (x1 + translateX) + "," + (y1 + translateY) + "L" + (x2 + translateX) + "," + (y2 + translateY) + "L" + (x3 + translateX) + "," + (y3 + translateY) + "Z";
+        let el = this.#screen.path(path)
+        el.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor});
+        this.topLevelGroup.addElement(el);
+        el.toFront = () => this.topLevelGroup.addElement(el);
+        return el
+    };
+    
+    drawRect(x,y,w,h,color,strokecolor, thickness, radius){
+        if(isNaN(radius)){
+            radius=0;
+        }
+        let el = this.rect(x,y,w,h,radius)
+        el.attr({"stroke-width": thickness, "stroke":strokecolor, "fill": color});
+        //Note: handled by the rect() function, below   
+        //this.topLevelGroup.addElement(el);
+        //el.toFront = () => this.topLevelGroup.addElement(el);
+        return el;
+    };
+
+    drawQuad(x1,y1,x2,y2,x3,y3,x4,y4, translateX, translateY, fillColor, strokeColor, thickness){
+        let path =  "M" + (x1 + translateX) + "," + (y1 + translateY) + "L" + (x2 + translateX) + "," + (y2 + translateY) + "L" + (x3 + translateX) + "," + (y3 + translateY) + "L" + (x4 + translateX) + "," + (y4 + translateY) + "Z";
+        let el = this.#screen.path(path);
+        el.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor}); 
+        this.topLevelGroup.addElement(el);
+        el.toFront = () => this.topLevelGroup.addElement(el);
+        return el;
+    };
+
+    drawPoly(points, fillColor, strokeColor, thickness){
+        let path = ""
+        for(let p=0; p < points.length;p++){
+            if(p === 0){
+                path = "M";
+            }else {
+                path = path + "L";
+            }
+            let point = points[p];
+            path = path + point.x + "," + point.y;
+        }
+        path = path + "Z";
+        let result = this.#screen.path(path);
+        result.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor})
+        this.topLevelGroup.addElement(result);
+        result.toFront = () => this.topLevelGroup.addElement(result);
+        return result;
+    }
+
+    drawEllipse (x1,y1,r1,r2, translateX, translateY, fillColor, strokeColor, thickness){
+        let e = this.ellipse(x1+translateX, y1+translateY, r1, r2)
+        e.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor});
+        //handled by the ellipse function below
+        //this.topLevelGroup.addElement(e);
+        //e.toFront = () => this.topLevelGroup.addElement(e);
+        return e;
+    };
+
+    drawAngleSegmentX(angle, startX, endX, translateX, translateY, color, thickness){
+        let startY = Math.round(VC.Trig.tangent(angle) * startX);
+        let endY = Math.round(VC.Trig.tangent(angle) * endX);
+        startX+=translateX; endX += translateX;
+        startY+=translateY; endY += translateY;
+        return this.drawLine(startX, startY, endX, endY, color, thickness);
+    };
+    
+    drawAngleSegmentY = function(angle, startY, endY, translateX, translateY, color, thickness){
+        let startX = Math.round(VC.Trig.cotangent(angle) * startY);
+        let endX = Math.round(VC.Trig.cotangent(angle) * endY);
+        startX+=translateX; endX += translateX;
+        startY+=translateY; endY += translateY;
+        return this.drawLine(startX, startY, endX, endY, color, thickness);
+    }
+
+    #clearListeners = [];
+    clear(){
+        this.#clearListeners.forEach((f)=>{
+            try{
+                f();
+            } catch(e){
+                console.log(e);
+            }
+        });
+        if(this.#topLevelGroup){
+            this.#topLevelGroup.remove();
+        }
+        if(this.#topLevelClipPath){
+            this.#topLevelClipPath.remove();
+        }
+        this.#topLevelClipPath = null;
+        this.#topLevelGroup = null;
+        this.#clearListeners.length = 0;
+        this.#screen.clear();
+    }
+
+    onClear(handler){
+        //register handler
+        this.#clearListeners.push(handler);
+    }
+
+    fadeTo(color, callback){
+        let rect = this.#screen.rect(0,0,this.#width, this.#width);
+        rect.toFront();
+        rect.attr({opacity: 0, fill: color});
+        rect.animate({opacity:1}, 350, null, ()=>{rect.remove(); callback()});
+    }
+    
+    fadeInFrom(color, callback){
+        let rect = this.#screen.rect(0,0,this.#width, this.#width);
+        rect.toFront();
+        rect.attr({opacity: 1, fill: color});
+        rect.animate({opacity:0}, 350, null, ()=>{rect.remove(); callback()});
+    }
+
+    get svgNS(){
+        return "http://www.w3.org/2000/svg";
+    }
+    
+    get defs(){
+        let dv = document.getElementById(this.#domElementId);
+        let svg = dv.getElementsByTagName("svg")[0];
+        let defsel = svg.getElementsByTagName("defs");
+        if(defsel.length!=1){
+            let def = document.createElementNS(this.svgNS, "defs")
+            svg.appendChild(def)
+            return def;
+        }
+        return defsel[0];
+    }
+
+    #createGroup(g) {
+		if(Raphael.svg == true) {
+			let dv = document.getElementById(this.#domElementId);
+			let defs = dv.getElementsByTagName("defs")[0];
+			let svgHead = this.svgNS;
+			let svgcanv = dv.getElementsByTagName("svg")[0];
+			svgcanv.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+			let countGroups = svgcanv.getElementsByTagName("g").length;
+			let createUUID=function(b,a){return function(){return"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(b,a).toUpperCase()}}(/[xy]/g,function(b){var a=16*Math.random()|0;return("x"==b?a:a&3|8).toString(16)});		
+			let masterGroup = null;
+            if(countGroups == 0) {
+				masterGroup = document.createElementNS(this.svgNS, "g");
+				svgcanv.appendChild(masterGroup)
+			}else {
+				masterGroup = svgcanv.getElementsByTagName("g")[0]
+			}		
+			let group = document.createElementNS(this.svgNS, "g");
+			for(let i = 0;i < g.length;i++) {
+                if(g[i] instanceof Node){
+				    group.appendChild(g[i])
+                }else if(g[i].node instanceof Node){
+				    group.appendChild(g[i].node)
+                }else{
+                    //console.warn(g[i]);
+                }
+			}
+			masterGroup.appendChild(group);
+			group.set = [];
+			let _mg = masterGroup;
+			group.getMaster = function() {
+				return _mg
+			};
+			// group.remove = function() {
+			// 	masterGroup.removeChild(this)
+			// };
+			let thisTransform = {translate:{x:0, y:0}, scale:{x:1, y:1}, rotate:{x:0, y:0, z:0}};
+			let transformString = function() {
+				return"translate(" + thisTransform.translate.x + "," + thisTransform.translate.y + ") scale(" + thisTransform.scale.x + "," + thisTransform.scale.y + ") rotate(" + thisTransform.rotate.x + "," + thisTransform.rotate.y + "," + thisTransform.rotate.z + ")"
+			};
+			group.translate = function(c, a) {
+				thisTransform.translate.x = c;
+				thisTransform.translate.y = a;
+				this.setAttribute("transform", transformString())
+			};
+			group.rotate = function(c, a, e) {
+				thisTransform.rotate.x = c;
+				thisTransform.rotate.y = a;
+				thisTransform.rotate.z = e;
+				this.setAttribute("transform", transformString())
+			};
+			group.scale = function(c, a) {
+				thisTransform.scale.x = c;
+				thisTransform.scale.y = a;
+				this.setAttribute("transform", transformString())
+			};
+			group.push = function() {
+				for(let i = 0;i < arguments.length;i++) {
+					this.appendChild(arguments[i].node)
+				}
+			};
+			group.addElement = function() {
+                //console.log("adding")
+				for(let i = 0;i < arguments.length;i++) {
+                    if(arguments[i] instanceof Node){
+                        this.appendChild(arguments[i])
+                    }else if(arguments[i].node instanceof Node){
+                        this.appendChild(arguments[i].node)
+                    }else {
+                        console.log("nothing to add!")
+                    }
+				}
+			    //this.set = [];
+			};
+			group.getAttr = function(c) {
+				return thisTransform[c]
+			};
+			group.copy = function(el) {
+				this.copy = el.node.cloneNode(true);
+				this.appendChild(this.copy)
+			};
+			group.toFront = function(){
+				this.parentNode.appendChild(this);
+			};
+			group.clipPath = function(c){				
+				let cp = document.createElementNS(svgHead, "clipPath");
+				let cpID = createUUID();
+				cp.setAttribute("id",cpID);
+				cp.appendChild(c.node);
+				defs.appendChild(cp);
+				this.setAttribute("clip-path","url(#"+cpID+")")
+                return cp;
+			};
+
+	
+			return group
+		}
+    }
+
+    //RAPHAEL PASS-THRU
+
+    get bottom(){
+        return this.#screen.bottom;
+    }
+
+    circle(x, y, r){
+
+        let e = this.#screen.circle(x, y, r);
+        this.topLevelGroup.addElement(e);
+        e.toFront = () => this.topLevelGroup.addElement(e);
+        return e;
+    }
+
+    get canvas(){
+        return this.#screen.canvas;
+    }
+
+    get customAttributes(){
+        return this.#screen.customAttributes;
+    }
+
+    ellipse(x, y, rx, ry){
+        let e = this.#screen.ellipse(x, y, rx, ry);
+        this.topLevelGroup.addElement(e);
+        e.toFront = () => this.topLevelGroup.addElement(e);
+        return e
+    }
+
+    forEach(callback, thisArg){
+        return this.#screen.forEach(callback, thisArg);
+    }
+
+    getById(id){
+        return this.#screen.getById(id);
+    }
+
+    getElementByPoint(x, y){
+        return this.#screen.getElementByPoint(x, y);
+    }
+
+    getFont(family, weight, style, stretch){
+        return this.#screen.getFont(family, weight, style, stretch);
+    }
+
+    image(src, x, y, width, height){
+        let i = this.#screen.image(src, x, y, width, height);
+        this.topLevelGroup.addElement(i);
+        i.toFront = () => this.topLevelGroup.addElement(i);
+        return i;
+    }
+
+    path(pathString){
+        let p = this.#screen.path(pathString);
+        this.topLevelGroup.addElement(p);
+        p.toFront = () => this.topLevelGroup.addElement(p);
+        return p;
+    }
+    
+    print(x, y, text, font, size, origin, letter_spacing){
+        let p = this.#screen.print(x, y, text, font, size, origin, letter_spacing);
+        this.topLevelGroup.addElement(p);
+        p.toFront = () => this.topLevelGroup.addElement(p);
+        return p;
+    }
+
+    get raphael(){
+        return this.#screen.raphael
+    }
+
+    rect(x, y, width, height, r){
+        let rct = this.#screen.rect(x, y, width, height, r)
+        this.topLevelGroup.addElement(rct);
+        rct.toFront = () => this.topLevelGroup.addElement(rct);
+        return rct
+    }
+
+    remove(){
+        return this.#screen.remove();
+    }
+
+    renderfix(){
+        return this.#screen.renderfix();
+    }
+
+    safari(){
+        return this.#screen.safari();
+    }
+
+    set(){
+        return this.#screen.set();
+    }
+
+    setFinish(){
+        return this.
+        #screen.setFinish();
+    }
+
+    setSize(width, height){
+        return this.#screen.setSize(width, height);
+    }
+
+    setStart(){
+        return this.#screen.setStart();
+    }
+
+    setViewBox(x, y, w, h, fit){
+        //this.#width = w;
+        //this.#height = h;
+        return this.#screen.setViewBox(x, y, w, h, fit);
+    }
+
+    text(x, y, text){
+        let p = this.#screen.text(x, y, text);
+        this.topLevelGroup.addElement(p);
+        p.toFront = () => this.topLevelGroup.addElement(p);
+        return p;
+    }
+
+    get top(){
+        return this.#screen.top;
+    }
+
+
+}
+
+VC.VisualEffects = class {
+    //Todo: refactor
+    static shaking = false
+    static shake(screen, intensity, ms){
+        var rate = 50;
+        var div =  document.getElementById(screen.domElementId);
+        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
+        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+
+        if(ms>0){
+            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
+            VC.VisualEffects.shaking=true;
+        }else{
+            div.style.top = 0;
+            div.style.left = 0;
+            VC.VisualEffects.shaking=false;
+        }
+    }
 }
 
 VC.Orientation = class {
@@ -123,69 +783,57 @@ VC.Color = class {
         });
     }
 }
-VC.GameState = class {
-    static get PAUSED(){
-        return 0;
-    }
-    static get RUNNING(){
-        return 1;
-    }
-}
 
-VC.Game = class{    
-    #state = VC.GameState.PAUSED;
-    #looping = false;
-    #rafId = null;
-    #fps = 0;
+VC.Paragraph =  class {
+    #text = "";
+    #fontFamily = "monospace";
+    #fontSize = "12px";
+    #fontWeight = "normal";
+    #wrapWidth = 400;
+    #element = null;
+    #fill = "#FFF";
 
-    onPreRender(deltaT){}
-    onRender(deltaT){}
-    onPostRender(deltaT){}
-    onPlay(){}
-    onPause(){}
-
-    get fps(){
-        return this.#fps;
+    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
+        this.#text = text;
+        this.#fontFamily = fontFamily;
+        this.#fontSize = fontSize;
+        this.#fontWeight = fontWeight
+        this.#wrapWidth = wrapWidth;
+        this.#fill = fill;
     }
 
-    _loop(lastTime){
-        if(!this.#looping) {
-            this.#looping = true;
-        }
+    render(screen){
+        if(!this.#element){
+                
+            let words = this.#text.split(" ");
+            let composite = "";
+            this.#element = screen.text(-10000, -10000, composite);
+            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
 
-        let startTime = Date.now();
-        let deltaT = Math.round(startTime-lastTime);
-        
-        if(deltaT > 0){
-            this.#fps = Math.round(1000 / deltaT);
-        }
-
-        //if(deltaT>1000) deltaT === 1000;
-        if(this.#state === VC.GameState.RUNNING){
-            //this.#preRender(deltaT)
-            this.onPreRender(deltaT);
-            this.onRender(deltaT);
-            this.onPostRender(deltaT);
-        }
-        //window.setTimeout(()=>{this._loop(startTime);},0);
-        requestAnimationFrame(()=>{this._loop(startTime)})
+            for(let w = 0; w < words.length; w++){
+                this.#element.attr("text", composite + " " + words[w]);
+                let width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += " " + words[w];
+                    continue;
+                }
+                this.#element.attr("text", composite + "\n" + words[w]);
+                width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += "\n" + words[w];
+                    continue;
+                }
+                composite += "%" + w + "%\n" //handle words too long for line (poorly)
+            }
+            for(let w = 0; w < words.length; w++){
+                composite = composite.replace("%" + w + "%",words[w]);
+            }
             
-    }
-    get state(){
-        return this.#state;
-    }
-    play(){
-        this.#state = VC.GameState.RUNNING;
-        this.onPlay();
-        if(!this.#looping){
-            this._loop(Date.now());
+            this.#element.attr("text", composite);
         }
+        return this.#element
     }
 
-    pause(){
-        this.#state = VC.GameState.PAUSED;
-        this.onPause();
-    }
 }
 VC.Polygon = class {
     #element = null;
@@ -738,705 +1386,6 @@ VC.Polygon = class {
     }
 }
 
-VC.AudioChannel = class{
-    static howlPool = new Map();
-    static count = 0;
-    #player = null;    
-    #volume = 1;
-    #relativeVolume = 1;
-    #relativePan = 0;
-    #uri = "";
-    #fadeOutCancellationToken = null;
-
-    static cullPool(){
-        var now = Date.now()
-        for (const [key, value] of VC.AudioChannel.howlPool) {
-            var keepers = [];
-            value.forEach((h)=>{
-                if(now-h.pooledTime>10000){
-                    h.unload();
-                }else{
-                    keepers.push(h);
-                }
-            });
-            VC.AudioChannel.howlPool.set(key, keepers);
-        }
-    }
-
-    static poolSize(){
-        let size = 0;
-        for (const [key, value] of VC.AudioChannel.howlPool) {
-            size +=value.length;
-        }
-        return size;
-    }
-
-    static getHowl(uri){
-        if(uri){
-            if(VC.AudioChannel.howlPool.has(uri) && VC.AudioChannel.howlPool.get(uri).length>0){
-                return VC.AudioChannel.howlPool.get(uri).shift();
-            }
-            var howl = new Howl({src: [uri], autoplay:true, format: "webm"});
-            howl.html5PoolSize = 20;//todo: grow this value
-            return howl;
-        }
-    }
-
-    #setVolume(){
-        if(this.#player && this.#player instanceof Howl){
-            this.#player.volume(this.#volume * this.#relativeVolume);
-            this.#player.stereo(this.#relativePan);
-            //this.#player.mute(false);
-        }
-    }
-    get player(){
-        return this.#player;
-    }
-
-    get volume(){
-        return this.#volume;
-    }
-
-    set volume(value){
-        value = value < 0 ? 0 : (value > 1 ? 1 : value);
-        if(this.#volume !== value){
-            this.#volume = value;
-            this.#setVolume();
-        }
-    }
-
-    get relativeVolume(){
-        return this.#relativeVolume;
-    }
-
-    set relativeVolume(value){
-        value = value < 0 ? 0 : (value > 1 ? 1 : value);
-        if(this.#relativeVolume !== value){
-            this.#relativeVolume = value;
-            this.#setVolume();
-        }
-    }
-
-    get relativePan(){
-        return this.#relativePan;
-    }
-
-    set relativePan(value){
-        value = value < -1 ? -1 : (value > 1 ? 1 : value);
-        if(this.#relativePan !== value){
-            this.#relativePan = value;
-            this.#setVolume()
-        }
-    }
-
-    
-    play(uri, volume, loop, pos){
-
-        if(pos == null){
-            pos = 0;
-        }
-
-        if(this.#fadeOutCancellationToken){
-            window.clearTimeout(this.#fadeOutCancellationToken);
-            
-            if(this.#player && this.#player instanceof Howl && this.#player.playing()){
-                this.#player.stop();
-            } 
-            this.#fadeOutCancellationToken = null;
-        }
-
-        this.volume = volume;
-        
-        if(this.#player && this.#player instanceof Howl && this.#uri === uri && !this.#player.playing()){
-            this.#player.seek(pos);
-            this.#player.play();
-            return;
-        }
-
-        if(this.#player && this.#player instanceof Howl && (this.#uri !== uri)){
-            this.dispose();
-        }
-
-        if(!this.#player){
-            this.#player =  VC.AudioChannel.getHowl(uri);
-            this.#player.stereo(this.#relativePan);
-            this.#player.volume(this.#volume * this.relativeVolume);
-            this.#player.on("end",loop ? ()=>{
-                    if(this.#player){
-                        this.#player.stop().seek(0).play();         
-                    }
-                } : ()=>{this.dispose()});
-            this.#player.play();
-            this.#player.seek(pos);
-            VC.AudioChannel.count++;
-        }
-        this.#uri = uri;
-    }
-  
-    stop(uri){
-        if(uri && this.#uri !== uri){
-            //already playing something else. 
-            return;
-        } 
-        if(this.#player!=null && this.#player.playing()){
-            this.#player.stop(); 
-            this.dispose();
-        }
-    }
-  
-    fadeOut(callback){
-        if(this.#player){
-            if( this.volume > 0){
-                this.volume-=.1;
-                this.#fadeOutCancellationToken = setTimeout(()=>{this.fadeOut(callback)}, 75);
-            }else {
-                this.#player.stop();
-                if(callback){
-                    callback();
-                }
-            }
-        } else if (callback){
-            callback();
-        }
-    };
-    
-    dispose(){
-        if(this.#player && this.#player instanceof Howl){
-            if (this.#player.playing()) {
-                this.#player.stop();
-            }
-            //this.#player.unload();
-            //send to pool.
-            this.#player.pooledTime = Date.now();
-            if(VC.AudioChannel.howlPool.has(this.#uri)){
-                VC.AudioChannel.howlPool.get(this.#uri).push(this.#player);
-            }else {
-                VC.AudioChannel.howlPool.set(this.#uri,[this.#player]);
-            }
-            this.#player = null;
-            VC.AudioChannel.count--;
-        }
-    }
-}
-
-setInterval(()=>{VC.AudioChannel.cullPool()}, 5000);
-
-VC.Paragraph =  class {
-    #text = "";
-    #fontFamily = "monospace";
-    #fontSize = "12px";
-    #fontWeight = "normal";
-    #wrapWidth = 400;
-    #element = null;
-    #fill = "#FFF";
-
-    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
-        this.#text = text;
-        this.#fontFamily = fontFamily;
-        this.#fontSize = fontSize;
-        this.#fontWeight = fontWeight
-        this.#wrapWidth = wrapWidth;
-        this.#fill = fill;
-    }
-
-    render(screen){
-        if(!this.#element){
-                
-            let words = this.#text.split(" ");
-            let composite = "";
-            this.#element = screen.text(-10000, -10000, composite);
-            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
-
-            for(let w = 0; w < words.length; w++){
-                this.#element.attr("text", composite + " " + words[w]);
-                let width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += " " + words[w];
-                    continue;
-                }
-                this.#element.attr("text", composite + "\n" + words[w]);
-                width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += "\n" + words[w];
-                    continue;
-                }
-                composite += "%" + w + "%\n" //handle words too long for line (poorly)
-            }
-            for(let w = 0; w < words.length; w++){
-                composite = composite.replace("%" + w + "%",words[w]);
-            }
-            
-            this.#element.attr("text", composite);
-        }
-        return this.#element
-    }
-
-}
-
-VC.Trig = class {
-    static degreesToRadians(angle){
-        return (angle % 360) / 360 * 2 * Math.PI;
-    }
-    static radiansToDegrees(angle){
-        return angle * 57.2958;
-    }
-    static cotangent(radians){
-        return 1/Math.tan(radians);
-    }
-    static tangent(radians){
-        return Math.tan(radians);
-    }
-    static pointToAngle(opposite, adjacent){
-        if(adjacent<0){
-            return Math.PI + Math.atan(opposite/adjacent);        
-        }
-        return Math.atan(opposite/adjacent);
-    }
-    static distance (x1, y1, x2, y2){
-        return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-    }
-    static tangentFromPoints(x1,y1,x2,y2){
-        return (y2-y1)/(x2-x1);
-    }
-
-    // Angle (in degrees) between two vectors
-    static angleBetweenVectors(v1, v2) {
-        let dot = v1.x * v2.x + v1.y * v2.y;
-        let mag1 = Math.hypot(v1.x, v1.y);
-        let mag2 = Math.hypot(v2.x, v2.y);
-
-        if (mag1 === 0 || mag2 === 0) return 0;
-
-        let cosTheta = dot / (mag1 * mag2);
-        // Clamp to handle tiny floating point errors
-        cosTheta = Math.max(-1, Math.min(1, cosTheta));
-
-        return Math.round(Math.acos(cosTheta) * 180 / Math.PI);
-    }
-
-}
-
-VC.Screen = class {
-    #screen = null;
-    #x = 0;
-    #y = 0;
-    #width = 0;
-    #height = 0;
-    #domElementId = "";
-    #topLevelGroup = null;
-    #topLevelClipPath = null;
-    constructor(domElementId, x, y, width, height){
-        let screen = Raphael(domElementId, width, height);
-        screen.setViewBox(x, y, width, height, true);
-        screen.canvas.setAttribute('preserveAspectRatio', 'meet');
-        screen.canvas.setAttributeNS("http://www.w3.org/XML/1998/namespace", "xml:space","preserve"); 
-        this.#screen = screen;
-        this.#width = width;
-        this.#height = height;
-        this.#x = x;
-        this.#y = y;
-        this.#domElementId = domElementId;
-        console.log({domElementId: domElementId, x: x, y: y, width: width, height: height})
-    }
-    get topLevelGroup(){
-        if(!this.#topLevelGroup){
-            this.#topLevelGroup = this.#createGroup([]);
-            this.#topLevelGroup.clipPath(this.topLevelClipPath);
-        }   
-        return this.#topLevelGroup;
-    }
-
-    get topLevelClipPath(){
-        if(!this.#topLevelClipPath){
-            this.#topLevelClipPath = this.#screen.rect(0,0,this.width,this.height);
-        }
-        return this.#topLevelClipPath
-    }
-    get domElementId(){
-        return this.#domElementId;
-    }
-    get x(){
-        return this.#x;
-    }
-    get y(){
-        return this.#y;
-    }
-    get height(){
-        return this.#height;
-    }
-    get width(){
-        return this.#width;
-    }
-
-    group(){
-        let g = this.#createGroup(arguments);
-        this.topLevelGroup.addElement(g);
-        return g
-    };
-
-    drawLine(x1,y1,x2,y2,color,thickness){
-        let path = "M" + x1 + "," + y1 + "L" + x2 + "," + y2;
-        let el = this.#screen.path(path)
-        el.attr({"stroke-width": thickness, "stroke":color});
-        this.topLevelGroup.addElement(el);
-        el.toFront = () => this.topLevelGroup.addElement(el);
-        return el;
-    };
-
-    drawTriangle(x1,y1,x2,y2,x3,y3, translateX, translateY, fillColor, strokeColor, thickness){
-        let path =  "M" + (x1 + translateX) + "," + (y1 + translateY) + "L" + (x2 + translateX) + "," + (y2 + translateY) + "L" + (x3 + translateX) + "," + (y3 + translateY) + "Z";
-        let el = this.#screen.path(path)
-        el.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor});
-        this.topLevelGroup.addElement(el);
-        el.toFront = () => this.topLevelGroup.addElement(el);
-        return el
-    };
-    
-    drawRect(x,y,w,h,color,strokecolor, thickness, radius){
-        if(isNaN(radius)){
-            radius=0;
-        }
-        let el = this.rect(x,y,w,h,radius)
-        el.attr({"stroke-width": thickness, "stroke":strokecolor, "fill": color});
-        //Note: handled by the rect() function, below   
-        //this.topLevelGroup.addElement(el);
-        //el.toFront = () => this.topLevelGroup.addElement(el);
-        return el;
-    };
-
-    drawQuad(x1,y1,x2,y2,x3,y3,x4,y4, translateX, translateY, fillColor, strokeColor, thickness){
-        let path =  "M" + (x1 + translateX) + "," + (y1 + translateY) + "L" + (x2 + translateX) + "," + (y2 + translateY) + "L" + (x3 + translateX) + "," + (y3 + translateY) + "L" + (x4 + translateX) + "," + (y4 + translateY) + "Z";
-        let el = this.#screen.path(path);
-        el.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor}); 
-        this.topLevelGroup.addElement(el);
-        el.toFront = () => this.topLevelGroup.addElement(el);
-        return el;
-    };
-
-    drawPoly(points, fillColor, strokeColor, thickness){
-        let path = ""
-        for(let p=0; p < points.length;p++){
-            if(p === 0){
-                path = "M";
-            }else {
-                path = path + "L";
-            }
-            let point = points[p];
-            path = path + point.x + "," + point.y;
-        }
-        path = path + "Z";
-        let result = this.#screen.path(path);
-        result.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor})
-        this.topLevelGroup.addElement(result);
-        result.toFront = () => this.topLevelGroup.addElement(result);
-        return result;
-    }
-
-    drawEllipse (x1,y1,r1,r2, translateX, translateY, fillColor, strokeColor, thickness){
-        let e = this.ellipse(x1+translateX, y1+translateY, r1, r2)
-        e.attr({"stroke-width": thickness, "stroke": strokeColor, "fill": fillColor});
-        //handled by the ellipse function below
-        //this.topLevelGroup.addElement(e);
-        //e.toFront = () => this.topLevelGroup.addElement(e);
-        return e;
-    };
-
-    drawAngleSegmentX(angle, startX, endX, translateX, translateY, color, thickness){
-        let startY = Math.round(VC.Trig.tangent(angle) * startX);
-        let endY = Math.round(VC.Trig.tangent(angle) * endX);
-        startX+=translateX; endX += translateX;
-        startY+=translateY; endY += translateY;
-        return this.drawLine(startX, startY, endX, endY, color, thickness);
-    };
-    
-    drawAngleSegmentY = function(angle, startY, endY, translateX, translateY, color, thickness){
-        let startX = Math.round(VC.Trig.cotangent(angle) * startY);
-        let endX = Math.round(VC.Trig.cotangent(angle) * endY);
-        startX+=translateX; endX += translateX;
-        startY+=translateY; endY += translateY;
-        return this.drawLine(startX, startY, endX, endY, color, thickness);
-    }
-
-    #clearListeners = [];
-    clear(){
-        this.#clearListeners.forEach((f)=>{
-            try{
-                f();
-            } catch(e){
-                console.log(e);
-            }
-        });
-        if(this.#topLevelGroup){
-            this.#topLevelGroup.remove();
-        }
-        if(this.#topLevelClipPath){
-            this.#topLevelClipPath.remove();
-        }
-        this.#topLevelClipPath = null;
-        this.#topLevelGroup = null;
-        this.#clearListeners.length = 0;
-        this.#screen.clear();
-    }
-
-    onClear(handler){
-        //register handler
-        this.#clearListeners.push(handler);
-    }
-
-    fadeTo(color, callback){
-        let rect = this.#screen.rect(0,0,this.#width, this.#width);
-        rect.toFront();
-        rect.attr({opacity: 0, fill: color});
-        rect.animate({opacity:1}, 350, null, ()=>{rect.remove(); callback()});
-    }
-    
-    fadeInFrom(color, callback){
-        let rect = this.#screen.rect(0,0,this.#width, this.#width);
-        rect.toFront();
-        rect.attr({opacity: 1, fill: color});
-        rect.animate({opacity:0}, 350, null, ()=>{rect.remove(); callback()});
-    }
-
-    get svgNS(){
-        return "http://www.w3.org/2000/svg";
-    }
-    
-    get defs(){
-        let dv = document.getElementById(this.#domElementId);
-        let svg = dv.getElementsByTagName("svg")[0];
-        let defsel = svg.getElementsByTagName("defs");
-        if(defsel.length!=1){
-            let def = document.createElementNS(this.svgNS, "defs")
-            svg.appendChild(def)
-            return def;
-        }
-        return defsel[0];
-    }
-
-    #createGroup(g) {
-		if(Raphael.svg == true) {
-			let dv = document.getElementById(this.#domElementId);
-			let defs = dv.getElementsByTagName("defs")[0];
-			let svgHead = this.svgNS;
-			let svgcanv = dv.getElementsByTagName("svg")[0];
-			svgcanv.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
-			let countGroups = svgcanv.getElementsByTagName("g").length;
-			let createUUID=function(b,a){return function(){return"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(b,a).toUpperCase()}}(/[xy]/g,function(b){var a=16*Math.random()|0;return("x"==b?a:a&3|8).toString(16)});		
-			let masterGroup = null;
-            if(countGroups == 0) {
-				masterGroup = document.createElementNS(this.svgNS, "g");
-				svgcanv.appendChild(masterGroup)
-			}else {
-				masterGroup = svgcanv.getElementsByTagName("g")[0]
-			}		
-			let group = document.createElementNS(this.svgNS, "g");
-			for(let i = 0;i < g.length;i++) {
-                if(g[i] instanceof Node){
-				    group.appendChild(g[i])
-                }else if(g[i].node instanceof Node){
-				    group.appendChild(g[i].node)
-                }else{
-                    //console.warn(g[i]);
-                }
-			}
-			masterGroup.appendChild(group);
-			group.set = [];
-			let _mg = masterGroup;
-			group.getMaster = function() {
-				return _mg
-			};
-			// group.remove = function() {
-			// 	masterGroup.removeChild(this)
-			// };
-			let thisTransform = {translate:{x:0, y:0}, scale:{x:1, y:1}, rotate:{x:0, y:0, z:0}};
-			let transformString = function() {
-				return"translate(" + thisTransform.translate.x + "," + thisTransform.translate.y + ") scale(" + thisTransform.scale.x + "," + thisTransform.scale.y + ") rotate(" + thisTransform.rotate.x + "," + thisTransform.rotate.y + "," + thisTransform.rotate.z + ")"
-			};
-			group.translate = function(c, a) {
-				thisTransform.translate.x = c;
-				thisTransform.translate.y = a;
-				this.setAttribute("transform", transformString())
-			};
-			group.rotate = function(c, a, e) {
-				thisTransform.rotate.x = c;
-				thisTransform.rotate.y = a;
-				thisTransform.rotate.z = e;
-				this.setAttribute("transform", transformString())
-			};
-			group.scale = function(c, a) {
-				thisTransform.scale.x = c;
-				thisTransform.scale.y = a;
-				this.setAttribute("transform", transformString())
-			};
-			group.push = function() {
-				for(let i = 0;i < arguments.length;i++) {
-					this.appendChild(arguments[i].node)
-				}
-			};
-			group.addElement = function() {
-                //console.log("adding")
-				for(let i = 0;i < arguments.length;i++) {
-                    if(arguments[i] instanceof Node){
-                        this.appendChild(arguments[i])
-                    }else if(arguments[i].node instanceof Node){
-                        this.appendChild(arguments[i].node)
-                    }else {
-                        console.log("nothing to add!")
-                    }
-				}
-			    //this.set = [];
-			};
-			group.getAttr = function(c) {
-				return thisTransform[c]
-			};
-			group.copy = function(el) {
-				this.copy = el.node.cloneNode(true);
-				this.appendChild(this.copy)
-			};
-			group.toFront = function(){
-				this.parentNode.appendChild(this);
-			};
-			group.clipPath = function(c){				
-				let cp = document.createElementNS(svgHead, "clipPath");
-				let cpID = createUUID();
-				cp.setAttribute("id",cpID);
-				cp.appendChild(c.node);
-				defs.appendChild(cp);
-				this.setAttribute("clip-path","url(#"+cpID+")")
-                return cp;
-			};
-
-	
-			return group
-		}
-    }
-
-    //RAPHAEL PASS-THRU
-
-    get bottom(){
-        return this.#screen.bottom;
-    }
-
-    circle(x, y, r){
-
-        let e = this.#screen.circle(x, y, r);
-        this.topLevelGroup.addElement(e);
-        e.toFront = () => this.topLevelGroup.addElement(e);
-        return e;
-    }
-
-    get canvas(){
-        return this.#screen.canvas;
-    }
-
-    get customAttributes(){
-        return this.#screen.customAttributes;
-    }
-
-    ellipse(x, y, rx, ry){
-        let e = this.#screen.ellipse(x, y, rx, ry);
-        this.topLevelGroup.addElement(e);
-        e.toFront = () => this.topLevelGroup.addElement(e);
-        return e
-    }
-
-    forEach(callback, thisArg){
-        return this.#screen.forEach(callback, thisArg);
-    }
-
-    getById(id){
-        return this.#screen.getById(id);
-    }
-
-    getElementByPoint(x, y){
-        return this.#screen.getElementByPoint(x, y);
-    }
-
-    getFont(family, weight, style, stretch){
-        return this.#screen.getFont(family, weight, style, stretch);
-    }
-
-    image(src, x, y, width, height){
-        let i = this.#screen.image(src, x, y, width, height);
-        this.topLevelGroup.addElement(i);
-        i.toFront = () => this.topLevelGroup.addElement(i);
-        return i;
-    }
-
-    path(pathString){
-        let p = this.#screen.path(pathString);
-        this.topLevelGroup.addElement(p);
-        p.toFront = () => this.topLevelGroup.addElement(p);
-        return p;
-    }
-    
-    print(x, y, text, font, size, origin, letter_spacing){
-        let p = this.#screen.print(x, y, text, font, size, origin, letter_spacing);
-        this.topLevelGroup.addElement(p);
-        p.toFront = () => this.topLevelGroup.addElement(p);
-        return p;
-    }
-
-    get raphael(){
-        return this.#screen.raphael
-    }
-
-    rect(x, y, width, height, r){
-        let rct = this.#screen.rect(x, y, width, height, r)
-        this.topLevelGroup.addElement(rct);
-        rct.toFront = () => this.topLevelGroup.addElement(rct);
-        return rct
-    }
-
-    remove(){
-        return this.#screen.remove();
-    }
-
-    renderfix(){
-        return this.#screen.renderfix();
-    }
-
-    safari(){
-        return this.#screen.safari();
-    }
-
-    set(){
-        return this.#screen.set();
-    }
-
-    setFinish(){
-        return this.
-        #screen.setFinish();
-    }
-
-    setSize(width, height){
-        return this.#screen.setSize(width, height);
-    }
-
-    setStart(){
-        return this.#screen.setStart();
-    }
-
-    setViewBox(x, y, w, h, fit){
-        //this.#width = w;
-        //this.#height = h;
-        return this.#screen.setViewBox(x, y, w, h, fit);
-    }
-
-    text(x, y, text){
-        let p = this.#screen.text(x, y, text);
-        this.topLevelGroup.addElement(p);
-        p.toFront = () => this.topLevelGroup.addElement(p);
-        return p;
-    }
-
-    get top(){
-        return this.#screen.top;
-    }
-
-
-}
-
 VC.Sprite = class {
     #scaleX = 1;
     #scaleY = 1;
@@ -1871,76 +1820,196 @@ VC.Triangle = class {
     }
 }
 
-VC.VisualEffects = class {
-    //Todo: refactor
-    static shaking = false
-    static shake(screen, intensity, ms){
-        var rate = 50;
-        var div =  document.getElementById(screen.domElementId);
-        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
-        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+VC.AudioChannel = class{
+    static howlPool = new Map();
+    static count = 0;
+    #player = null;    
+    #volume = 1;
+    #relativeVolume = 1;
+    #relativePan = 0;
+    #uri = "";
+    #fadeOutCancellationToken = null;
 
-        if(ms>0){
-            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
-            VC.VisualEffects.shaking=true;
-        }else{
-            div.style.top = 0;
-            div.style.left = 0;
-            VC.VisualEffects.shaking=false;
+    static cullPool(){
+        var now = Date.now()
+        for (const [key, value] of VC.AudioChannel.howlPool) {
+            var keepers = [];
+            value.forEach((h)=>{
+                if(now-h.pooledTime>10000){
+                    h.unload();
+                }else{
+                    keepers.push(h);
+                }
+            });
+            VC.AudioChannel.howlPool.set(key, keepers);
+        }
+    }
+
+    static poolSize(){
+        let size = 0;
+        for (const [key, value] of VC.AudioChannel.howlPool) {
+            size +=value.length;
+        }
+        return size;
+    }
+
+    static getHowl(uri){
+        if(uri){
+            if(VC.AudioChannel.howlPool.has(uri) && VC.AudioChannel.howlPool.get(uri).length>0){
+                return VC.AudioChannel.howlPool.get(uri).shift();
+            }
+            var howl = new Howl({src: [uri], autoplay:true, format: "webm"});
+            howl.html5PoolSize = 20;//todo: grow this value
+            return howl;
+        }
+    }
+
+    #setVolume(){
+        if(this.#player && this.#player instanceof Howl){
+            this.#player.volume(this.#volume * this.#relativeVolume);
+            this.#player.stereo(this.#relativePan);
+            //this.#player.mute(false);
+        }
+    }
+    get player(){
+        return this.#player;
+    }
+
+    get volume(){
+        return this.#volume;
+    }
+
+    set volume(value){
+        value = value < 0 ? 0 : (value > 1 ? 1 : value);
+        if(this.#volume !== value){
+            this.#volume = value;
+            this.#setVolume();
+        }
+    }
+
+    get relativeVolume(){
+        return this.#relativeVolume;
+    }
+
+    set relativeVolume(value){
+        value = value < 0 ? 0 : (value > 1 ? 1 : value);
+        if(this.#relativeVolume !== value){
+            this.#relativeVolume = value;
+            this.#setVolume();
+        }
+    }
+
+    get relativePan(){
+        return this.#relativePan;
+    }
+
+    set relativePan(value){
+        value = value < -1 ? -1 : (value > 1 ? 1 : value);
+        if(this.#relativePan !== value){
+            this.#relativePan = value;
+            this.#setVolume()
+        }
+    }
+
+    
+    play(uri, volume, loop, pos){
+
+        if(pos == null){
+            pos = 0;
+        }
+
+        if(this.#fadeOutCancellationToken){
+            window.clearTimeout(this.#fadeOutCancellationToken);
+            
+            if(this.#player && this.#player instanceof Howl && this.#player.playing()){
+                this.#player.stop();
+            } 
+            this.#fadeOutCancellationToken = null;
+        }
+
+        this.volume = volume;
+        
+        if(this.#player && this.#player instanceof Howl && this.#uri === uri && !this.#player.playing()){
+            this.#player.seek(pos);
+            this.#player.play();
+            return;
+        }
+
+        if(this.#player && this.#player instanceof Howl && (this.#uri !== uri)){
+            this.dispose();
+        }
+
+        if(!this.#player){
+            this.#player =  VC.AudioChannel.getHowl(uri);
+            this.#player.stereo(this.#relativePan);
+            this.#player.volume(this.#volume * this.relativeVolume);
+            this.#player.on("end",loop ? ()=>{
+                    if(this.#player){
+                        this.#player.stop().seek(0).play();         
+                    }
+                } : ()=>{this.dispose()});
+            this.#player.play();
+            this.#player.seek(pos);
+            VC.AudioChannel.count++;
+        }
+        this.#uri = uri;
+    }
+  
+    stop(uri){
+        if(uri && this.#uri !== uri){
+            //already playing something else. 
+            return;
+        } 
+        if(this.#player!=null && this.#player.playing()){
+            this.#player.stop(); 
+            this.dispose();
+        }
+    }
+  
+    fadeOut(callback){
+        if(this.#player){
+            if( this.volume > 0){
+                this.volume-=.1;
+                this.#fadeOutCancellationToken = setTimeout(()=>{this.fadeOut(callback)}, 75);
+            }else {
+                this.#player.stop();
+                if(callback){
+                    callback();
+                }
+            }
+        } else if (callback){
+            callback();
+        }
+    };
+    
+    dispose(){
+        if(this.#player && this.#player instanceof Howl){
+            if (this.#player.playing()) {
+                this.#player.stop();
+            }
+            //this.#player.unload();
+            //send to pool.
+            this.#player.pooledTime = Date.now();
+            if(VC.AudioChannel.howlPool.has(this.#uri)){
+                VC.AudioChannel.howlPool.get(this.#uri).push(this.#player);
+            }else {
+                VC.AudioChannel.howlPool.set(this.#uri,[this.#player]);
+            }
+            this.#player = null;
+            VC.AudioChannel.count--;
         }
     }
 }
 
-VC.Point = class {
-    #element = null;
-    x = 0;
-    y = 0;
-    constructor (x,y){
-        this.x = x;
-        this.y = y;
-    }
-    render(screen, color){
-        if(!color){
-            color = "#FFF";
-        }
-        if (this.#element){
-            this.remove();
-        }
-        this.#element = screen.drawRect(this.x-1,this.y-1, 3, 3, color,"#000",0);
-        screen.onClear(this.remove)
-    }
-    remove(){
-        if(this && this.#element){
-            this.#element.remove();
-            this.#element = null;
-        }
-    }
-    
-    toString(){
-        return `(${this.x}, ${this.y})`
-    }
+setInterval(()=>{VC.AudioChannel.cullPool()}, 5000);
 
-    diff(point){
-        return new VC.Point(this.x-point.x, this.y-point.y);
-    }
-    
-    distanceTo(point){
-        return VC.Trig.distance(this.x, this.y, point.x, point.y);
-    }
-
-    static vector(point1, point2){
-        return new VC.Point(point2.x - point1.x, point2.y - point1.y);
-    }
-
-    static normalizeDirection(point){
-        let gcd = VC.Math.greatestCommonDivisor(Math.abs(point.x), Math.abs(point.y));
-        return new VC.Point(point.x / gcd, point.y / gcd);
-    }
-    static normalizeToUnit(point){
-        let mag = Math.hypot(point.x, point.y);
-        if (mag === 0) return new VC.Point(0, 0);
-        return new VC.Point(point.x / mag, point.y / mag);
-    }
+VC.Scene = class {
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
 }
 
  VC.Box = class{
@@ -2241,73 +2310,4 @@ VC.Math = class {
     }
 
 
-}
-
-VC.LineSegment = class {
-    #element = null;
-    point1 = null;
-    point2 = null;
-    constructor (point1, point2){
-        if(point1 && point1 instanceof VC.Point){
-            this.point1 = point1;
-        }
-        if(point2 && point2 instanceof VC.Point){
-            this.point2 = point2;
-        }
-    }
-    get length() {
-        return this.point1.distanceTo(this.point2);
-    }
-    pointOfIntersection(lineSegment) {
-        if (!(lineSegment && lineSegment instanceof VC.LineSegment)){
-            console.warn("lineSegment argument is not an instance of VC.LineSegment")
-            return null;
-        }
-        let x1 = this.point1.x;
-        let y1 = this.point1.y;
-        let x2 = this.point2.x;
-        let y2 = this.point2.y;
-        let x3 = lineSegment.point1.x;
-        let y3 = lineSegment.point1.y;
-        let x4 = lineSegment.point2.x;
-        let y4 = lineSegment.point2.y;
-
-
-        let denom = ((x1-x2) * (y3-y4)) - ((y1-y2) * (x3-x4));
-        if(denom == 0){ // Parallel, return null
-            return null;
-        }
-        let t = (((x1-x3) * (y3-y4)) - ((y1-y3) * (x3-x4)))/ denom;
-        let u = -((((x1-x2) * (y1-y3)) - ((y1-y2) * (x1-x3)))/ denom);
-        if (0<=t && t<=1 && 0<=u && u<=1){
-            //return point of intersection
-            return new VC.Point(x1 + (t *(x2 - x1)), y1 + (t * (y2 - y1)));
-        }
-        //line segments do not intersect
-        return null;
-    }
-
-    pointOfReflection(point){
-        const dx = this.point2.x - this.point1.x;
-        const dy = this.point2.y - this.point1.y;
-
-        const apx = point.x - this.point1.x;
-        const apy = point.y - this.point1.y;
-
-        const dot = apx * dx + apy * dy;
-        const lenSq = dx * dx + dy * dy;
-
-        const t = dot / lenSq;
-
-        const qx = this.point1.x + t * dx;
-        const qy = this.point1.y + t * dy;
-
-        return new VC.Point (
-            2 * qx - point.x,
-            2 * qy - point.y
-        );
-    }
-    render(screen, color){
-        return screen.drawLine(this.point1.x, this.point1.y, this.point2.x, this.point2.y, color, 2);
-    }
 }
