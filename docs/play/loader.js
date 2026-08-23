@@ -125,11 +125,11 @@ class System {
             await s.print("\n\nLoading Audio Subsystem...")
             await s.loadScript("howler.min.js");
             await s.print("OK")
-            /*
+            
             await s.print("\n\nLoading Networking Subsystem...")
             await s.loadScript("peerjs.min.js");
             await s.print("OK")
-            */
+            
             await s.print("\n\nLoading VC Engine...")
             await s.loadScript("engine.js");
             await s.print("OK")
@@ -142,13 +142,14 @@ class System {
             await s.loadScript("raphael.min.js");
             await s.loadScript("clipper.js");
             await s.loadScript("howler.min.js");
+            await s.loadScript("peerjs.min.js");
             await s.loadScript("engine.js");
             await s.loadScript("goldruin.js");
         }
         
         s.setCookie("lm", lastModified.getTime().toString(), 365);
 
-        VC.Client.Start();
+        VC.System.Start();
     }
 }
  System.boot();
