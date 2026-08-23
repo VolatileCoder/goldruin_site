@@ -125,6 +125,11 @@ class System {
             await s.print("\n\nLoading Audio Subsystem...")
             await s.loadScript("howler.min.js");
             await s.print("OK")
+            /*
+            await s.print("\n\nLoading Networking Subsystem...")
+            await s.loadScript("peerjs.min.js");
+            await s.print("OK")
+            */
             await s.print("\n\nLoading VC Engine...")
             await s.loadScript("engine.js");
             await s.print("OK")
