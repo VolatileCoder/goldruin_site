@@ -1,5 +1,77 @@
 'use strict';
 const VC={};
+ 
+VC.LoopbackConnection = class {
+    #peer = null; // the other end of the pair
+    #handlers = { data: [], open: [], error: [] };
+    open = false;
+
+    static createPair() {
+        const a = new VC.LoopbackConnection();
+        const b = new VC.LoopbackConnection();
+        a.#peer = b;
+        b.#peer = a;
+        // defer "open" so callers can attach listeners first, same as real PeerJS
+        setTimeout(() => { a.#fireOpen(); b.#fireOpen(); }, 0);
+        return [a, b];
+    }
+
+    #fireOpen(){
+        this.open = true;
+        this.#handlers.open.forEach(cb => cb());
+    }
+
+    on(event, cb){
+        this.#handlers[event]?.push(cb);
+    }
+
+    send(data){
+        // async, like a real connection, so ordering bugs surface in testing too
+        if(this.open){
+            setTimeout(() => this.#peer.#handlers.data.forEach(cb => cb(data)), 0);
+        }
+    }
+
+    close(){
+        this.open = false;
+    }
+}
+
+VC.Math = class {
+    static constrain (min, val, max){
+        if (isNaN(val)) val = 0;
+        if (val===undefined) val = 0;
+        if (val===null) val = 0;
+        if (val<min) return min;
+        if (val>max) return max;
+        return val;
+    }
+
+    static percentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMin + (percentage * (rangeMax-rangeMin));
+    }
+
+    static inversePercentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMax - (percentage * (rangeMax-rangeMin));
+    }
+
+    static random(min, max){
+        return Math.floor(Math.random() * (max - min +1)) + min;
+    }
+
+    static greatestCommonDivisor(a, b) {
+        while (b !== 0) {
+            let t = b;
+            b = a % b;
+            a = t;
+        }
+        return a;
+    }
+
+
+}
 
 VC.Trig = class {
     static degreesToRadians(angle){
@@ -465,6 +537,436 @@ VC.Screen = class {
 
 }
 
+VC.Server = class {
+    #id = "MULTIPLAYER!";
+    #host = null;
+    #shuttingDown = false;
+    connections = [];
+    constructor(){
+        console.log("constructing host")
+        this.connections = [];
+        //register graceful shutdown.
+    }
+
+    get id() {
+        return this.#id;
+    }
+
+    #generateHostKey() {
+        let key = "";
+        let tokens = ['Z','X','W','Y','B','E','G','H','J','K','L','M','N','Q','T','V'];
+        for(var i = 0; i< 4; i++){
+            key = key + tokens[VC.Math.random(0,tokens.length-1)];
+        }
+        return key;
+    }
+
+    startHost(){
+        //TODO: check to see if peer is already open.
+        this.#id = this.#generateHostKey();
+        console.log("starting host: ", 'vc-'+this.#id.toLowerCase())
+        this.#host = new Peer('vc-'+this.#id.toLowerCase(), {debug: 3});//;this.#id;
+        this.#host.on('open', (id)=>{console.log ("Host Ready: ", id)})
+        this.#host.on('connection', (conn)=>{
+            this.addConnection(conn);
+        });
+        this.#host.on('error', (err)=>{this.onError(err)});
+        this.#host.on('disconnected', ()=>{
+            if(!this.#shuttingDown){
+                this.#host.reconnect();//TODO: test
+            }
+        });
+    }
+
+    addConnection(conn){
+        conn.on('error', (err)=>{this.onError(err)});
+        conn.on('data', (data)=>{this.received(data)});
+        conn.on('open', ()=>{console.log("connected to client")});
+        this.connections.push(conn);
+    }
+
+    stop(){
+        console.log("stopping host: ", this.#id)
+        this.#shuttingDown = true;
+        this.connections.forEach((conn)=>{conn.close()});
+        if(this.#host){
+            this.#host.destroy();
+        }
+    }
+
+    broadcast(data){
+        this.connections.forEach((conn)=>{if(conn.open){conn.send(data);}});
+    }
+
+    received(data){
+        console.warn('received should be overridden by derived classes');
+    }
+    
+    onError(err){
+        console.error("server", err);
+    }
+}
+
+VC.Orientation = class {
+    static get UNSET(){
+        return -1;
+    }
+    static get LANDSCAPE(){
+        return 0;
+    }
+    static get PORTRAIT(){
+        return 1;
+    }
+}
+
+VC.System = class {
+    static get screenHeight(){
+        return window.screen.height;
+    }
+    static get screenWidth(){
+        return window.screen.width;
+    }
+    static _orientation = VC.Orientation.UNSET;
+    static get orientation(){
+        return VC.System._orientation;
+    }
+    static _orientationChangeListeners=[];
+    static OnOrientationChange(func){
+        VC.System._orientationChangeListeners.push(func);
+    }
+    static _lastOrientation = VC.Orientation.UNSET;
+    static _onOrientationChange(e){
+        if((e && e.matches)||VC.System.screenWidth>=VC.System.screenHeight) {
+            VC.System._orientation = VC.Orientation.LANDSCAPE;
+        } else {
+            VC.System._orientation = VC.Orientation.PORTRAIT;
+        }
+    
+        if (VC.System.orientation!==VC.System._lastOrientation || VC.System._lastOrientation === VC.Orientation.UNSET){
+            VC.System._lastOrientation = VC.System.orientation;
+            VC.System._orientationChangeListeners.forEach((func)=>{func();})
+        }
+    }
+
+    static _readyListeners=[];
+    static _ready = false;
+    static OnReady(func){
+        if (VC.System._ready){
+            func();
+            return;
+        }
+        VC.System._readyListeners.push(func);
+    }
+    static Start(func){
+        if (VC.System._ready){
+            return
+        }
+        VC.System._ready = true;
+        VC.System._readyListeners.forEach((func)=>{func();})
+    }
+}
+
+//Call once to set
+VC.System._onOrientationChange(window.matchMedia("(orientation: landscape)"));
+
+//Bind for changes
+window.matchMedia("(orientation: landscape)").addEventListener("change", VC.System._onOrientationChange)
+
+VC.Client = class {
+    #id = crypto.randomUUID();
+    #peer = null;
+    #connection = null;
+    #shuttingDown = false;
+    constructor(){}
+    join(id){
+        this.#peer = new Peer(this.#id, {debug: 3});
+        this.#peer.on('open', (myid) => {
+            console.log('Peer opened (', myid, ')')
+            this.#id = myid;
+            console.log("connecting to ", 'vc-' + id.toLowerCase())
+            this.attach(this.#peer.connect('vc-' + id.toLowerCase()));
+        });
+        this.#peer.on('error', (err)=>{this.onError(err)});
+        this.#peer.on('disconnected', ()=>{
+            if(!this.#shuttingDown){
+                this.#peer.reconnect();//TODO: test
+            }
+        });
+    }
+    get id(){
+        return this.#id;
+    }
+    get isConnected(){
+        return this.#connection && this.#connection.open;
+    }
+    attach(conn){
+        this.#connection = conn;
+        conn.on('open', ()=>{this.connected()});
+        conn.on('data', (data)=>{this.received(data)});
+        conn.on('error', (err)=>{this.onError(err)});
+    }
+    disconnect(){
+        this.#shuttingDown = true;
+        if(this.#peer){
+            this.#peer.destroy();
+        }
+    }
+    connected(){
+        console.warn('connectionOpened should be overridden by derived classes')
+    }
+    send(data){
+        if(this.#connection.open){
+            this.#connection.send(data);
+        }
+    }
+    received(data){
+        console.warn('received should be overridden by derived classes');
+    }
+    onError(err){
+        console.error("client", err);
+    }
+}
+
+VC.Color = class {
+    static hexToRGB(hexColor){
+        if(hexColor.length===6 || hexColor.length == 3){
+            hexColor = "#" + hexColor
+        }
+        let red = "00";
+        let green = "00";
+        let blue = "00"
+        if(hexColor.length === 4){
+            red = hexColor.substring(1,2);
+            red += red;
+            green = hexColor.substring(2,3);
+            green += green;
+            blue = hexColor.substring(3,4);
+            blue += blue;
+        }
+        if(hexColor.length === 7){
+            red = hexColor.substring(1,3);
+            green = hexColor.substring(3,5);
+            blue = hexColor.substring(5,7);
+        }
+
+        return {
+            r: parseInt(red,16),
+            g: parseInt(green,16),
+            b: parseInt(blue,16)
+        }
+    }
+
+    static rgbToHex(rgb){
+        let hex="#"
+        hex += right("0" + rgb.r.toString(16),2);
+        hex += right("0" + rgb.g.toString(16),2);
+        hex += right("0" + rgb.b.toString(16),2);
+        return hex;
+    }
+
+    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
+        //alpha * new + (1 - alpha) * old
+        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
+        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
+        return VC.Color.rgbToHex({
+            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
+            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
+            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
+        });
+    }
+}
+VC.GameState = class {
+    static get HALTED(){
+        return -1;
+    }
+    static get PAUSED(){
+        return 0;
+    }
+    static get RUNNING(){
+        return 1;
+    }
+}
+
+VC.Game = class{    
+    #state = VC.GameState.PAUSED;
+    #looping = false;
+    #rafId = null;
+    #fps = 0;
+
+    onPreRender(deltaT){}
+    onRender(deltaT){}
+    onPostRender(deltaT){}
+    onPlay(){}
+    onPause(){}
+
+    get fps(){
+        return this.#fps;
+    }
+
+    _loop(lastTime){
+        if(!this.#looping) {
+            this.#looping = true;
+        }
+
+        let startTime = Date.now();
+        let deltaT = Math.round(startTime-lastTime);
+        
+        if(deltaT > 0){
+            this.#fps = Math.round(1000 / deltaT);
+        }
+
+        //if(deltaT>1000) deltaT === 1000;
+        if(this.#state === VC.GameState.RUNNING){
+            //this.#preRender(deltaT)
+            this.onPreRender(deltaT);
+            this.onRender(deltaT);
+            this.onPostRender(deltaT);
+        }else if(this.#state === VC.GameState.PAUSED){
+            this.onPause();
+        }
+        //window.setTimeout(()=>{this._loop(startTime);},0);
+        requestAnimationFrame(()=>{this._loop(startTime)})
+            
+    }
+    get state(){
+        return this.#state;
+    }
+    play(){
+        this.#state = VC.GameState.RUNNING;
+        this.onPlay();
+        if(!this.#looping){
+            this._loop(Date.now());
+        }
+    }
+
+    pause(){
+        if(this.#state==VC.GameState.RUNNING){
+            this.#state = VC.GameState.PAUSED;
+        }
+    }
+    halt(){
+        this.#state = VC.GameState.HALTED;
+    }
+}
+VC.Triangle = class {
+    #registered = false;
+    #p1 = new VC.Point(0,0);
+    #p2 = new VC.Point(0,0);
+    #p3 = new VC.Point(0,0);
+    #elements = []
+    constructor(p1, p2, p3){
+        this.p1 = p1;
+        this.p2 = p2;
+        this.p3 = p3;
+    }
+
+    get p1() {
+        return this.#p1;
+    }
+    set p1(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p1 = value;
+    }
+    
+    get p2() {
+        return this.#p2;
+    }
+    set p2(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p2 = value;
+    }
+    
+    get p3() {
+        return this.#p3;
+    }
+    set p3(value){
+        if(!(value instanceof VC.Point)){
+            throw ("VC.Point expected!")
+        }
+        this.#p3 = value;
+    }
+
+    get points() {
+        return[this.p1, this.p2, this.p3];
+    }
+
+    render(screen){
+        if(!this.#registered){
+            screen.onClear(this.remove);
+            this.#registered = true;
+        }
+        if(this.#elements.length>0){
+            this.remove();
+        }
+        this.p1.render(screen);
+        this.p2.render(screen);
+        this.p3.render(screen);
+        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
+        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
+        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
+    }
+
+    remove(){
+        if(this.#elements.length>0){
+            this.p1.remove();
+            this.p2.remove();
+            this.p3.remove();
+            this.#elements.forEach((element)=>element.remove());
+            this.#elements = [];
+        }
+    }
+
+    contains(obj){
+        if(obj instanceof VC.Point) {
+            let d1 = this.#sign(obj, this.p1, this.p2);
+            let d2 = this.#sign(obj, this.p2, this.p3);
+            let d3 = this.#sign(obj, this.p3, this.p1);
+        
+            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+        
+            return !(has_neg && has_pos);
+        }
+        if (obj instanceof VC.Box){
+            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
+        }
+        
+        if (obj instanceof VC.Triangle){
+            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
+        }
+        return false;
+    }
+
+    #sign (p1,p2,p3)
+    {
+        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    }
+}
+
+VC.VisualEffects = class {
+    //Todo: refactor
+    static shaking = false
+    static shake(screen, intensity, ms){
+        var rate = 50;
+        var div =  document.getElementById(screen.domElementId);
+        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
+        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+
+        if(ms>0){
+            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
+            VC.VisualEffects.shaking=true;
+        }else{
+            div.style.top = 0;
+            div.style.left = 0;
+            VC.VisualEffects.shaking=false;
+        }
+    }
+}
+
 VC.Point = class {
     #element = null;
     x = 0;
@@ -522,342 +1024,6 @@ VC.Point = class {
         let mag = Math.hypot(point.x, point.y);
         if (mag === 0) return new VC.Point(0, 0);
         return new VC.Point(point.x / mag, point.y / mag);
-    }
-}
-
- VC.Box = class{
-    #x=0;
-    #y=0;
-    #width=0;
-    #height=0;
-    #points = [];
-    #poly = null;
-    constructor(x,y,w,h){
-        this.#x = x;
-        this.#y = y;
-        this.#width = w;
-        this.#height = h;
-        this.#points = [];
-        this.#poly = null;
-    }
-    static fromData(data){
-        return new VC.Box(data.x, data.y, data.w, data.h);
-    }
-    getData(){
-        return {
-            x: this.#x, 
-            y: this.#y, 
-            w: this.#width, 
-            h: this.#height
-        };
-    }
-
-    reset(newX, newY, newW, newH){
-        this.x = newX;
-        this.y = newY;
-        this.width = newW;
-        this.height = newH;
-        this.#points = [];
-        this.poly = null;
-    }
-
-    clone(){
-        return new VC.Box(this.#x, this.#y, this.#width, this.#height);
-    }
-
-    set x(value){
-        if(value!=this.#x){
-            this.#x = value;
-            this.#points = [];
-        }
-    }
-    get x(){
-        return this.#x;
-    }
-    
-    set y(value){
-        if(value!=this.#y){
-            this.#y = value;
-            this.#points = [];
-        }
-    }
-    get y(){
-        return this.#y;
-    }
-
-    
-    set width(value){
-        if(value!=this.#width){
-            this.#width = value;
-            this.#points = [];
-        }
-    }
-    get width(){
-        return this.#width;
-    }
-
-    set height(value){
-        if(value!=this.#height){
-            this.#height = value;
-            this.#points = [];
-        }
-    }
-    get height(){
-        return this.#height;
-    }
-
-
-    #setPoints(){
-        this.#points = [new VC.Point(this.#x, this.#y), new VC.Point(this.#x + this.#width, this.#y), new VC.Point(this.#x + this.#width, this.#y + this.#height), new VC.Point(this.#x, this.#y + this.#height)];
-        this.#poly = null;
-    }
-    get points() {
-        if(this.#points.length===0){
-            this.#setPoints();
-        }
-        return this.#points
-    }
-    get polygon(){
-        if(!this.#points.length===0 || this.#poly==null){
-            this.#poly = new VC.Polygon(this.points, true);
-        }
-        return this.#poly;
-    }
-    
-    center(x,y) {
-        if(arguments.length === 1 && x!=null){
-            this.x = x.x - Math.round(this.width / 2);
-            this.y = x.y - Math.round(this.height / 2);
-            this.#points = [];
-        }
-        if(arguments.length === 2 && x!=null && y!=null){
-            this.x = x - Math.round(this.width / 2);
-            this.y = y - Math.round(this.height / 2);
-            this.#points = [];
-        }
-        return new VC.Point(
-            this.x + Math.round(this.width / 2),
-            this.y + Math.round(this.height / 2)
-        );
-    }
-    
-    area(){
-        return this.width * this.height;
-    }
-
-    inside(box){
-        if(
-            box && 
-            this.x > box.x && this.x < box.x + box.width &&
-            this.x + this.width > box.x && this.x + this.width < box.x + box.width &&
-            this.y > box.y && this.y < box.y + box.height &&
-            this.y + this.height > box.y && this.y + this.height < box.y + box.height
-        ){
-            return true;
-        }
-        return false;
-    }
-
-    containsPoint(point){
-        if (point instanceof VC.Point){
-            return(this.x<point.x && this.x+this.width>point.x && this.y<point.y && this.y+this.height>point.y)
-        }
-        return false;
-    }
-
-    collidesWith(box){
-
-            // Check for overlap along the X axis
-            if (this.x + this.width < box.x || this.x > box.x + box.width) {
-                return false;
-            }
-
-            // Check for overlap along the Y axis
-            if (this.y + this.height < box.y || this.y > box.y + box.height) {
-                return false;
-            }
-
-            // If there is overlap along all axes, collision has occurred
-            return true;
-    }
-    resolveCollision_centers(box, variant){
-
-        //we don't move. YOU move.
-        if(this.collidesWith(box)){
-            var tc = this.center();
-            var bc = box.center();
-            if(Math.abs(tc.x-bc.x)>Math.abs(tc.y-bc.y)){
-                if(tc.x>bc.x){
-                    box.x = this.x - box.width;
-                }else{
-                    box.x = this.x + this.width;
-                }
-            }else {
-                if(tc.y>bc.y){
-                    box.y = this.y - box.height;
-                }else{
-                    box.y = this.y + this.height;
-                }
-            }
-        }
-
-    }
-
-    resolveCollision(box){
-
-        var overlapX = Math.min(this.x + this.width, box.x + box.width) - Math.max(this.x, box.x);
-        var overlapY = Math.min(this.y + this.height, box.y + box.height) - Math.max(this.y, box.y);
-    
-        if (overlapX > 0 && overlapY > 0) {
-            let mtvX = 0;
-            let mtvY = 0;
-    
-            if (overlapX < overlapY) {
-                mtvX = this.center().x < box.center().x ? 1 : -1;
-            } else {
-                mtvY = this.center().y < box.center().y ? 1 : -1;
-            }
-            box.x += mtvX * overlapX;
-            box.y += mtvY * overlapY;
-        }
-    }
-
-
-
-    intersectRect(box) {
-        let left = Math.max(this.x, box.x);
-        let top = Math.max(this.y, box.y);
-        let right = Math.min(this.x + this.width, box.x + box.width);
-        let bottom = Math.min(this.y + this.height, box.y + box.height);
-        
-        // Check if there's an actual intersection
-        if (left < right && top < bottom) {
-            return new VC.Box(left, top, right-left, bottom-top);
-        } else {
-            // No intersection
-            return null;
-        }
-    }
-
-    pointOfIntersection(lineSegment){
-        if(this.containsPoint(lineSegment.point1) && this.containsPoint(lineSegment.point2)){
-            //return...? What should we expect?
-            return null; 
-        }
-        //check each wall. 
-        //North
-        let w = new VC.LineSegment(new VC.Point(this.x, this.y), new VC.Point(this.x+this.width, this.y))
-        let p = w.pointOfIntersection(lineSegment);
-        if(p){
-            return p;
-        }
-
-        //East
-        w = new VC.LineSegment(new VC.Point(this.x+this.width, this.y), new VC.Point(this.x+this.width, this.y+this.height))
-        p = w.pointOfIntersection(lineSegment);
-        if(p){
-            return p;
-        }
-
-        //South
-        w = new VC.LineSegment(new VC.Point(this.x, this.y+this.height), new VC.Point(this.x+this.width, this.y+this.height))
-        p = w.pointOfIntersection(lineSegment);
-        if(p){
-            return p;
-        }
-
-        //West
-        w = new VC.LineSegment(new VC.Point(this.x, this.y), new VC.Point(this.x, this.y+this.height))
-        p = w.pointOfIntersection(lineSegment);
-        if(p){
-            return p;
-        }
-
-        return null;
-
-    }
-    
-    distance(box){
-        let c1 = this.center();
-        let c2 = box.center();
-        let dx = c2.x - c1.x;
-        let dy = c2.y - c1.y;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-    render(screen, color){
-        if(!this.element){ 
-            this.element = screen.rect(this.x, this.y, this.width, this.height).attr("stroke", color);
-            screen.onClear(()=>{this.element = null});
-        };
-        this.element.attr({x:this.x, y:this.y, width: this.width, height: this.height});
-        this.element.toFront();
-    }
-    remove(){
-        if(this.element){
-            this.element.remove();
-            this.element = null;
-        }   
-    }
-}
-
-VC.Color = class {
-    static hexToRGB(hexColor){
-        if(hexColor.length===6 || hexColor.length == 3){
-            hexColor = "#" + hexColor
-        }
-        let red = "00";
-        let green = "00";
-        let blue = "00"
-        if(hexColor.length === 4){
-            red = hexColor.substring(1,2);
-            red += red;
-            green = hexColor.substring(2,3);
-            green += green;
-            blue = hexColor.substring(3,4);
-            blue += blue;
-        }
-        if(hexColor.length === 7){
-            red = hexColor.substring(1,3);
-            green = hexColor.substring(3,5);
-            blue = hexColor.substring(5,7);
-        }
-
-        return {
-            r: parseInt(red,16),
-            g: parseInt(green,16),
-            b: parseInt(blue,16)
-        }
-    }
-
-    static rgbToHex(rgb){
-        let hex="#"
-        hex += right("0" + rgb.r.toString(16),2);
-        hex += right("0" + rgb.g.toString(16),2);
-        hex += right("0" + rgb.b.toString(16),2);
-        return hex;
-    }
-
-    static calculateAlpha(backgroundHex, foregroundHex, foregroundOpacity){
-        //alpha * new + (1 - alpha) * old
-        let backgroundRGB = VC.Color.hexToRGB(backgroundHex);
-        let foregroundRGB = VC.Color.hexToRGB(foregroundHex);
-        return VC.Color.rgbToHex({
-            r: Math.round(foregroundRGB.r * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.r),
-            g: Math.round(foregroundRGB.g * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.g),
-            b: Math.round(foregroundRGB.b * foregroundOpacity + (1-foregroundOpacity) * backgroundRGB.b)
-        });
-    }
-}
-
-VC.Orientation = class {
-    static get UNSET(){
-        return -1;
-    }
-    static get LANDSCAPE(){
-        return 0;
-    }
-    static get PORTRAIT(){
-        return 1;
     }
 }
 VC.Polygon = class {
@@ -1428,367 +1594,290 @@ VC.Polygon = class {
     }
 }
 
-VC.System = class {
-    static get screenHeight(){
-        return window.screen.height;
+VC.Scene = class {
+    name = "UNSET";
+    getData(){}
+    setData(data){}
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
+}
+
+ VC.Box = class{
+    #x=0;
+    #y=0;
+    #width=0;
+    #height=0;
+    #points = [];
+    #poly = null;
+    constructor(x,y,w,h){
+        this.#x = x;
+        this.#y = y;
+        this.#width = w;
+        this.#height = h;
+        this.#points = [];
+        this.#poly = null;
     }
-    static get screenWidth(){
-        return window.screen.width;
+    static fromData(data){
+        return new VC.Box(data.x, data.y, data.w, data.h);
     }
-    static _orientation = VC.Orientation.UNSET;
-    static get orientation(){
-        return VC.System._orientation;
+    getData(){
+        return {
+            x: this.#x, 
+            y: this.#y, 
+            w: this.#width, 
+            h: this.#height
+        };
     }
-    static _orientationChangeListeners=[];
-    static OnOrientationChange(func){
-        VC.System._orientationChangeListeners.push(func);
+
+    reset(newX, newY, newW, newH){
+        this.x = newX;
+        this.y = newY;
+        this.width = newW;
+        this.height = newH;
+        this.#points = [];
+        this.poly = null;
     }
-    static _lastOrientation = VC.Orientation.UNSET;
-    static _onOrientationChange(e){
-        if((e && e.matches)||VC.System.screenWidth>=VC.System.screenHeight) {
-            VC.System._orientation = VC.Orientation.LANDSCAPE;
-        } else {
-            VC.System._orientation = VC.Orientation.PORTRAIT;
+
+    clone(){
+        return new VC.Box(this.#x, this.#y, this.#width, this.#height);
+    }
+
+    set x(value){
+        if(value!=this.#x){
+            this.#x = value;
+            this.#points = [];
         }
+    }
+    get x(){
+        return this.#x;
+    }
     
-        if (VC.System.orientation!==VC.System._lastOrientation || VC.System._lastOrientation === VC.Orientation.UNSET){
-            VC.System._lastOrientation = VC.System.orientation;
-            VC.System._orientationChangeListeners.forEach((func)=>{func();})
+    set y(value){
+        if(value!=this.#y){
+            this.#y = value;
+            this.#points = [];
         }
     }
-
-    static _readyListeners=[];
-    static _ready = false;
-    static OnReady(func){
-        if (VC.System._ready){
-            func();
-            return;
-        }
-        VC.System._readyListeners.push(func);
+    get y(){
+        return this.#y;
     }
-    static Start(func){
-        if (VC.System._ready){
-            return
-        }
-        VC.System._ready = true;
-        VC.System._readyListeners.forEach((func)=>{func();})
-    }
-}
 
-//Call once to set
-VC.System._onOrientationChange(window.matchMedia("(orientation: landscape)"));
-
-//Bind for changes
-window.matchMedia("(orientation: landscape)").addEventListener("change", VC.System._onOrientationChange)
-
-VC.VisualEffects = class {
-    //Todo: refactor
-    static shaking = false
-    static shake(screen, intensity, ms){
-        var rate = 50;
-        var div =  document.getElementById(screen.domElementId);
-        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
-        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
-
-        if(ms>0){
-            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
-            VC.VisualEffects.shaking=true;
-        }else{
-            div.style.top = 0;
-            div.style.left = 0;
-            VC.VisualEffects.shaking=false;
+    
+    set width(value){
+        if(value!=this.#width){
+            this.#width = value;
+            this.#points = [];
         }
     }
-}
+    get width(){
+        return this.#width;
+    }
 
-VC.AudioChannel = class{
-    static howlPool = new Map();
-    static count = 0;
-    #player = null;    
-    #volume = 1;
-    #relativeVolume = 1;
-    #relativePan = 0;
-    #uri = "";
-    #fadeOutCancellationToken = null;
+    set height(value){
+        if(value!=this.#height){
+            this.#height = value;
+            this.#points = [];
+        }
+    }
+    get height(){
+        return this.#height;
+    }
 
-    static cullPool(){
-        var now = Date.now()
-        for (const [key, value] of VC.AudioChannel.howlPool) {
-            var keepers = [];
-            value.forEach((h)=>{
-                if(now-h.pooledTime>10000){
-                    h.unload();
+
+    #setPoints(){
+        this.#points = [new VC.Point(this.#x, this.#y), new VC.Point(this.#x + this.#width, this.#y), new VC.Point(this.#x + this.#width, this.#y + this.#height), new VC.Point(this.#x, this.#y + this.#height)];
+        this.#poly = null;
+    }
+    get points() {
+        if(this.#points.length===0){
+            this.#setPoints();
+        }
+        return this.#points
+    }
+    get polygon(){
+        if(!this.#points.length===0 || this.#poly==null){
+            this.#poly = new VC.Polygon(this.points, true);
+        }
+        return this.#poly;
+    }
+    
+    center(x,y) {
+        if(arguments.length === 1 && x!=null){
+            this.x = x.x - Math.round(this.width / 2);
+            this.y = x.y - Math.round(this.height / 2);
+            this.#points = [];
+        }
+        if(arguments.length === 2 && x!=null && y!=null){
+            this.x = x - Math.round(this.width / 2);
+            this.y = y - Math.round(this.height / 2);
+            this.#points = [];
+        }
+        return new VC.Point(
+            this.x + Math.round(this.width / 2),
+            this.y + Math.round(this.height / 2)
+        );
+    }
+    
+    area(){
+        return this.width * this.height;
+    }
+
+    inside(box){
+        if(
+            box && 
+            this.x > box.x && this.x < box.x + box.width &&
+            this.x + this.width > box.x && this.x + this.width < box.x + box.width &&
+            this.y > box.y && this.y < box.y + box.height &&
+            this.y + this.height > box.y && this.y + this.height < box.y + box.height
+        ){
+            return true;
+        }
+        return false;
+    }
+
+    containsPoint(point){
+        if (point instanceof VC.Point){
+            return(this.x<point.x && this.x+this.width>point.x && this.y<point.y && this.y+this.height>point.y)
+        }
+        return false;
+    }
+
+    collidesWith(box){
+
+            // Check for overlap along the X axis
+            if (this.x + this.width < box.x || this.x > box.x + box.width) {
+                return false;
+            }
+
+            // Check for overlap along the Y axis
+            if (this.y + this.height < box.y || this.y > box.y + box.height) {
+                return false;
+            }
+
+            // If there is overlap along all axes, collision has occurred
+            return true;
+    }
+    resolveCollision_centers(box, variant){
+
+        //we don't move. YOU move.
+        if(this.collidesWith(box)){
+            var tc = this.center();
+            var bc = box.center();
+            if(Math.abs(tc.x-bc.x)>Math.abs(tc.y-bc.y)){
+                if(tc.x>bc.x){
+                    box.x = this.x - box.width;
                 }else{
-                    keepers.push(h);
+                    box.x = this.x + this.width;
                 }
-            });
-            VC.AudioChannel.howlPool.set(key, keepers);
-        }
-    }
-
-    static poolSize(){
-        let size = 0;
-        for (const [key, value] of VC.AudioChannel.howlPool) {
-            size +=value.length;
-        }
-        return size;
-    }
-
-    static getHowl(uri){
-        if(uri){
-            if(VC.AudioChannel.howlPool.has(uri) && VC.AudioChannel.howlPool.get(uri).length>0){
-                return VC.AudioChannel.howlPool.get(uri).shift();
-            }
-            var howl = new Howl({src: [uri], autoplay:true, format: "webm"});
-            howl.html5PoolSize = 20;//todo: grow this value
-            return howl;
-        }
-    }
-
-    #setVolume(){
-        if(this.#player && this.#player instanceof Howl){
-            this.#player.volume(this.#volume * this.#relativeVolume);
-            this.#player.stereo(this.#relativePan);
-            //this.#player.mute(false);
-        }
-    }
-    get player(){
-        return this.#player;
-    }
-
-    get volume(){
-        return this.#volume;
-    }
-
-    set volume(value){
-        value = value < 0 ? 0 : (value > 1 ? 1 : value);
-        if(this.#volume !== value){
-            this.#volume = value;
-            this.#setVolume();
-        }
-    }
-
-    get relativeVolume(){
-        return this.#relativeVolume;
-    }
-
-    set relativeVolume(value){
-        value = value < 0 ? 0 : (value > 1 ? 1 : value);
-        if(this.#relativeVolume !== value){
-            this.#relativeVolume = value;
-            this.#setVolume();
-        }
-    }
-
-    get relativePan(){
-        return this.#relativePan;
-    }
-
-    set relativePan(value){
-        value = value < -1 ? -1 : (value > 1 ? 1 : value);
-        if(this.#relativePan !== value){
-            this.#relativePan = value;
-            this.#setVolume()
-        }
-    }
-
-    
-    play(uri, volume, loop, pos){
-        if(pos == null){
-            pos = 0;
-        }
-
-        if(this.#fadeOutCancellationToken){
-            window.clearTimeout(this.#fadeOutCancellationToken);
-            
-            if(this.#player && this.#player instanceof Howl && this.#player.playing()){
-                this.#player.stop();
-            } 
-            this.#fadeOutCancellationToken = null;
-        }
-
-        this.volume = volume;
-        
-        if(this.#player && this.#player instanceof Howl && this.#uri === uri && !this.#player.playing()){
-            this.#player.seek(pos);
-            this.#player.play();
-            return;
-        }
-
-        if(this.#player && this.#player instanceof Howl && (this.#uri !== uri)){
-            this.dispose();
-        }
-
-        if(!this.#player){
-            this.#player =  VC.AudioChannel.getHowl(uri);
-            this.#player.stereo(this.#relativePan);
-            this.#player.volume(this.#volume * this.relativeVolume);
-            this.#player.on("end",loop ? ()=>{
-                    if(this.#player){
-                        this.#player.stop().seek(0).play();         
-                    }
-                } : ()=>{this.dispose()});
-            this.#player.play();
-            this.#player.seek(pos);
-            VC.AudioChannel.count++;
-        }
-        this.#uri = uri;
-    }
-  
-    stop(uri){
-        if(uri && this.#uri !== uri){
-            //already playing something else. 
-            return;
-        } 
-        if(this.#player!=null && this.#player.playing()){
-            this.#player.stop(); 
-            this.dispose();
-        }
-    }
-  
-    fadeOut(callback){
-        if(this.#player){
-            if( this.volume > 0){
-                this.volume-=.1;
-                this.#fadeOutCancellationToken = setTimeout(()=>{this.fadeOut(callback)}, 75);
             }else {
-                this.#player.stop();
-                if(callback){
-                    callback();
+                if(tc.y>bc.y){
+                    box.y = this.y - box.height;
+                }else{
+                    box.y = this.y + this.height;
                 }
             }
-        } else if (callback){
-            callback();
         }
-    };
+
+    }
+
+    resolveCollision(box){
+
+        var overlapX = Math.min(this.x + this.width, box.x + box.width) - Math.max(this.x, box.x);
+        var overlapY = Math.min(this.y + this.height, box.y + box.height) - Math.max(this.y, box.y);
     
-    dispose(){
-        if(this.#player && this.#player instanceof Howl){
-            if (this.#player.playing()) {
-                this.#player.stop();
+        if (overlapX > 0 && overlapY > 0) {
+            let mtvX = 0;
+            let mtvY = 0;
+    
+            if (overlapX < overlapY) {
+                mtvX = this.center().x < box.center().x ? 1 : -1;
+            } else {
+                mtvY = this.center().y < box.center().y ? 1 : -1;
             }
-            //this.#player.unload();
-            //send to pool.
-            this.#player.pooledTime = Date.now();
-            if(VC.AudioChannel.howlPool.has(this.#uri)){
-                VC.AudioChannel.howlPool.get(this.#uri).push(this.#player);
-            }else {
-                VC.AudioChannel.howlPool.set(this.#uri,[this.#player]);
-            }
-            this.#player = null;
-            VC.AudioChannel.count--;
+            box.x += mtvX * overlapX;
+            box.y += mtvY * overlapY;
         }
     }
-}
 
-setInterval(()=>{VC.AudioChannel.cullPool()}, 5000);
-VC.GameState = class {
-    static get HALTED(){
-        return -1;
-    }
-    static get PAUSED(){
-        return 0;
-    }
-    static get RUNNING(){
-        return 1;
-    }
-}
 
-VC.Game = class{    
-    #state = VC.GameState.PAUSED;
-    #looping = false;
-    #rafId = null;
-    #fps = 0;
 
-    onPreRender(deltaT){}
-    onRender(deltaT){}
-    onPostRender(deltaT){}
-    onPlay(){}
-    onPause(){}
-
-    get fps(){
-        return this.#fps;
-    }
-
-    _loop(lastTime){
-        if(!this.#looping) {
-            this.#looping = true;
-        }
-
-        let startTime = Date.now();
-        let deltaT = Math.round(startTime-lastTime);
+    intersectRect(box) {
+        let left = Math.max(this.x, box.x);
+        let top = Math.max(this.y, box.y);
+        let right = Math.min(this.x + this.width, box.x + box.width);
+        let bottom = Math.min(this.y + this.height, box.y + box.height);
         
-        if(deltaT > 0){
-            this.#fps = Math.round(1000 / deltaT);
-        }
-
-        //if(deltaT>1000) deltaT === 1000;
-        if(this.#state === VC.GameState.RUNNING){
-            //this.#preRender(deltaT)
-            this.onPreRender(deltaT);
-            this.onRender(deltaT);
-            this.onPostRender(deltaT);
-        }else if(this.#state === VC.GameState.PAUSED){
-            this.onPause();
-        }
-        //window.setTimeout(()=>{this._loop(startTime);},0);
-        requestAnimationFrame(()=>{this._loop(startTime)})
-            
-    }
-    get state(){
-        return this.#state;
-    }
-    play(){
-        this.#state = VC.GameState.RUNNING;
-        this.onPlay();
-        if(!this.#looping){
-            this._loop(Date.now());
+        // Check if there's an actual intersection
+        if (left < right && top < bottom) {
+            return new VC.Box(left, top, right-left, bottom-top);
+        } else {
+            // No intersection
+            return null;
         }
     }
 
-    pause(){
-        if(this.#state==VC.GameState.RUNNING){
-            this.#state = VC.GameState.PAUSED;
+    pointOfIntersection(lineSegment){
+        if(this.containsPoint(lineSegment.point1) && this.containsPoint(lineSegment.point2)){
+            //return...? What should we expect?
+            return null; 
         }
-    }
-    halt(){
-        this.#state = VC.GameState.HALTED;
-    }
-}
- 
-VC.LoopbackConnection = class {
-    #peer = null; // the other end of the pair
-    #handlers = { data: [], open: [], error: [] };
-    open = false;
-
-    static createPair() {
-        const a = new VC.LoopbackConnection();
-        const b = new VC.LoopbackConnection();
-        a.#peer = b;
-        b.#peer = a;
-        // defer "open" so callers can attach listeners first, same as real PeerJS
-        setTimeout(() => { a.#fireOpen(); b.#fireOpen(); }, 0);
-        return [a, b];
-    }
-
-    #fireOpen(){
-        this.open = true;
-        this.#handlers.open.forEach(cb => cb());
-    }
-
-    on(event, cb){
-        this.#handlers[event]?.push(cb);
-    }
-
-    send(data){
-        // async, like a real connection, so ordering bugs surface in testing too
-        if(this.open){
-            setTimeout(() => this.#peer.#handlers.data.forEach(cb => cb(data)), 0);
+        //check each wall. 
+        //North
+        let w = new VC.LineSegment(new VC.Point(this.x, this.y), new VC.Point(this.x+this.width, this.y))
+        let p = w.pointOfIntersection(lineSegment);
+        if(p){
+            return p;
         }
-    }
 
-    close(){
-        this.open = false;
+        //East
+        w = new VC.LineSegment(new VC.Point(this.x+this.width, this.y), new VC.Point(this.x+this.width, this.y+this.height))
+        p = w.pointOfIntersection(lineSegment);
+        if(p){
+            return p;
+        }
+
+        //South
+        w = new VC.LineSegment(new VC.Point(this.x, this.y+this.height), new VC.Point(this.x+this.width, this.y+this.height))
+        p = w.pointOfIntersection(lineSegment);
+        if(p){
+            return p;
+        }
+
+        //West
+        w = new VC.LineSegment(new VC.Point(this.x, this.y), new VC.Point(this.x, this.y+this.height))
+        p = w.pointOfIntersection(lineSegment);
+        if(p){
+            return p;
+        }
+
+        return null;
+
+    }
+    
+    distance(box){
+        let c1 = this.center();
+        let c2 = box.center();
+        let dx = c2.x - c1.x;
+        let dy = c2.y - c1.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    render(screen, color){
+        if(!this.element){ 
+            this.element = screen.rect(this.x, this.y, this.width, this.height).attr("stroke", color);
+            screen.onClear(()=>{this.element = null});
+        };
+        this.element.attr({x:this.x, y:this.y, width: this.width, height: this.height});
+        this.element.toFront();
+    }
+    remove(){
+        if(this.element){
+            this.element.remove();
+            this.element = null;
+        }   
     }
 }
 
@@ -1911,277 +2000,6 @@ VC.Paragraph =  class {
         return this.#element
     }
 
-}
-VC.Triangle = class {
-    #registered = false;
-    #p1 = new VC.Point(0,0);
-    #p2 = new VC.Point(0,0);
-    #p3 = new VC.Point(0,0);
-    #elements = []
-    constructor(p1, p2, p3){
-        this.p1 = p1;
-        this.p2 = p2;
-        this.p3 = p3;
-    }
-
-    get p1() {
-        return this.#p1;
-    }
-    set p1(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p1 = value;
-    }
-    
-    get p2() {
-        return this.#p2;
-    }
-    set p2(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p2 = value;
-    }
-    
-    get p3() {
-        return this.#p3;
-    }
-    set p3(value){
-        if(!(value instanceof VC.Point)){
-            throw ("VC.Point expected!")
-        }
-        this.#p3 = value;
-    }
-
-    get points() {
-        return[this.p1, this.p2, this.p3];
-    }
-
-    render(screen){
-        if(!this.#registered){
-            screen.onClear(this.remove);
-            this.#registered = true;
-        }
-        if(this.#elements.length>0){
-            this.remove();
-        }
-        this.p1.render(screen);
-        this.p2.render(screen);
-        this.p3.render(screen);
-        this.#elements.push(screen.drawLine(this.p1.x, this.p1.y, this.p2.x, this.p2.y, "#00F", 1));
-        this.#elements.push(screen.drawLine(this.p2.x, this.p2.y, this.p3.x, this.p3.y ,"#00F", 1));
-        this.#elements.push(screen.drawLine(this.p3.x, this.p3.y, this.p1.x, this.p1.y, "#00F", 1));
-    }
-
-    remove(){
-        if(this.#elements.length>0){
-            this.p1.remove();
-            this.p2.remove();
-            this.p3.remove();
-            this.#elements.forEach((element)=>element.remove());
-            this.#elements = [];
-        }
-    }
-
-    contains(obj){
-        if(obj instanceof VC.Point) {
-            let d1 = this.#sign(obj, this.p1, this.p2);
-            let d2 = this.#sign(obj, this.p2, this.p3);
-            let d3 = this.#sign(obj, this.p3, this.p1);
-        
-            let has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-            let has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-        
-            return !(has_neg && has_pos);
-        }
-        if (obj instanceof VC.Box){
-            return this.contains(new VC.Point(obj.x, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y)) && this.contains(new VC.Point(obj.x + obj.width, obj.y + obj.height)) && this.contains(new VC.Point(obj.x, obj.y + obj.height))
-        }
-        
-        if (obj instanceof VC.Triangle){
-            return this.contains(obj.p1) && this.contains(obj.p2) && this.contains(obj.p3)
-        }
-        return false;
-    }
-
-    #sign (p1,p2,p3)
-    {
-        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
-    }
-}
-
-VC.Client = class {
-    #id = crypto.randomUUID();
-    #peer = null;
-    #connection = null;
-    #shuttingDown = false;
-    constructor(){}
-    join(id){
-        this.#peer = new Peer(this.#id, {debug: 3});
-        this.#peer.on('open', (myid) => {
-            console.log('Peer opened (', myid, ')')
-            this.#id = myid;
-            console.log("connecting to ", 'vc-' + id.toLowerCase())
-            this.attach(this.#peer.connect('vc-' + id.toLowerCase()));
-        });
-        this.#peer.on('error', (err)=>{this.onError(err)});
-        this.#peer.on('disconnected', ()=>{
-            if(!this.#shuttingDown){
-                this.#peer.reconnect();//TODO: test
-            }
-        });
-    }
-    get id(){
-        return this.#id;
-    }
-    get isConnected(){
-        return this.#connection && this.#connection.open;
-    }
-    attach(conn){
-        this.#connection = conn;
-        conn.on('open', ()=>{this.connected()});
-        conn.on('data', (data)=>{this.received(data)});
-        conn.on('error', (err)=>{this.onError(err)});
-    }
-    disconnect(){
-        this.#shuttingDown = true;
-        if(this.#peer){
-            this.#peer.destroy();
-        }
-    }
-    connected(){
-        console.warn('connectionOpened should be overridden by derived classes')
-    }
-    send(data){
-        if(this.#connection.open){
-            this.#connection.send(data);
-        }
-    }
-    received(data){
-        console.warn('received should be overridden by derived classes');
-    }
-    onError(err){
-        console.error("client", err);
-    }
-}
-
-VC.Math = class {
-    static constrain (min, val, max){
-        if (isNaN(val)) val = 0;
-        if (val===undefined) val = 0;
-        if (val===null) val = 0;
-        if (val<min) return min;
-        if (val>max) return max;
-        return val;
-    }
-
-    static percentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMin + (percentage * (rangeMax-rangeMin));
-    }
-
-    static inversePercentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMax - (percentage * (rangeMax-rangeMin));
-    }
-
-    static random(min, max){
-        return Math.floor(Math.random() * (max - min +1)) + min;
-    }
-
-    static greatestCommonDivisor(a, b) {
-        while (b !== 0) {
-            let t = b;
-            b = a % b;
-            a = t;
-        }
-        return a;
-    }
-
-
-}
-
-VC.Scene = class {
-    name = "UNSET";
-    getData(){}
-    setData(data){}
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
-}
-
-VC.Server = class {
-    #id = "MULTIPLAYER!";
-    #host = null;
-    #shuttingDown = false;
-    connections = [];
-    constructor(){
-        console.log("constructing host")
-        this.connections = [];
-        //register graceful shutdown.
-    }
-
-    get id() {
-        return this.#id;
-    }
-
-    #generateHostKey() {
-        let key = "";
-        let tokens = ['Z','X','W','Y','B','E','G','H','J','K','L','M','N','Q','T','V'];
-        for(var i = 0; i< 4; i++){
-            key = key + tokens[VC.Math.random(0,tokens.length-1)];
-        }
-        return key;
-    }
-
-    startHost(){
-        //TODO: check to see if peer is already open.
-        this.#id = this.#generateHostKey();
-        console.log("starting host: ", 'vc-'+this.#id.toLowerCase())
-        this.#host = new Peer('vc-'+this.#id.toLowerCase(), {debug: 3});//;this.#id;
-        this.#host.on('open', (id)=>{console.log ("Host Ready: ", id)})
-        this.#host.on('connection', (conn)=>{
-            this.addConnection(conn);
-        });
-        this.#host.on('error', (err)=>{this.onError(err)});
-        this.#host.on('disconnected', ()=>{
-            if(!this.#shuttingDown){
-                this.#host.reconnect();//TODO: test
-            }
-        });
-    }
-
-    addConnection(conn){
-        conn.on('error', (err)=>{this.onError(err)});
-        conn.on('data', (data)=>{this.received(data)});
-        conn.on('open', ()=>{console.log("connected to client")});
-        this.connections.push(conn);
-    }
-
-    stop(){
-        console.log("stopping host: ", this.#id)
-        this.#shuttingDown = true;
-        this.connections.forEach((conn)=>{conn.close()});
-        if(this.#host){
-            this.#host.destroy();
-        }
-    }
-
-    broadcast(data){
-        this.connections.forEach((conn)=>{if(conn.open){conn.send(data);}});
-    }
-
-    received(data){
-        console.warn('received should be overridden by derived classes');
-    }
-    
-    onError(err){
-        console.error("server", err);
-    }
 }
 
 VC.Sprite = class {
@@ -2518,3 +2336,185 @@ VC.Sprite = class {
         return frame;
     }
 }
+
+VC.AudioChannel = class{
+    static howlPool = new Map();
+    static count = 0;
+    #player = null;    
+    #volume = 1;
+    #relativeVolume = 1;
+    #relativePan = 0;
+    #uri = "";
+    #fadeOutCancellationToken = null;
+
+    static cullPool(){
+        var now = Date.now()
+        for (const [key, value] of VC.AudioChannel.howlPool) {
+            var keepers = [];
+            value.forEach((h)=>{
+                if(now-h.pooledTime>10000){
+                    h.unload();
+                }else{
+                    keepers.push(h);
+                }
+            });
+            VC.AudioChannel.howlPool.set(key, keepers);
+        }
+    }
+
+    static poolSize(){
+        let size = 0;
+        for (const [key, value] of VC.AudioChannel.howlPool) {
+            size +=value.length;
+        }
+        return size;
+    }
+
+    static getHowl(uri){
+        if(uri){
+            if(VC.AudioChannel.howlPool.has(uri) && VC.AudioChannel.howlPool.get(uri).length>0){
+                return VC.AudioChannel.howlPool.get(uri).shift();
+            }
+            var howl = new Howl({src: [uri], autoplay:true, format: "webm"});
+            howl.html5PoolSize = 20;//todo: grow this value
+            return howl;
+        }
+    }
+
+    #setVolume(){
+        if(this.#player && this.#player instanceof Howl){
+            this.#player.volume(this.#volume * this.#relativeVolume);
+            this.#player.stereo(this.#relativePan);
+            //this.#player.mute(false);
+        }
+    }
+    get player(){
+        return this.#player;
+    }
+
+    get volume(){
+        return this.#volume;
+    }
+
+    set volume(value){
+        value = value < 0 ? 0 : (value > 1 ? 1 : value);
+        if(this.#volume !== value){
+            this.#volume = value;
+            this.#setVolume();
+        }
+    }
+
+    get relativeVolume(){
+        return this.#relativeVolume;
+    }
+
+    set relativeVolume(value){
+        value = value < 0 ? 0 : (value > 1 ? 1 : value);
+        if(this.#relativeVolume !== value){
+            this.#relativeVolume = value;
+            this.#setVolume();
+        }
+    }
+
+    get relativePan(){
+        return this.#relativePan;
+    }
+
+    set relativePan(value){
+        value = value < -1 ? -1 : (value > 1 ? 1 : value);
+        if(this.#relativePan !== value){
+            this.#relativePan = value;
+            this.#setVolume()
+        }
+    }
+
+    
+    play(uri, volume, loop, pos){
+        if(pos == null){
+            pos = 0;
+        }
+
+        if(this.#fadeOutCancellationToken){
+            window.clearTimeout(this.#fadeOutCancellationToken);
+            
+            if(this.#player && this.#player instanceof Howl && this.#player.playing()){
+                this.#player.stop();
+            } 
+            this.#fadeOutCancellationToken = null;
+        }
+
+        this.volume = volume;
+        
+        if(this.#player && this.#player instanceof Howl && this.#uri === uri && !this.#player.playing()){
+            this.#player.seek(pos);
+            this.#player.play();
+            return;
+        }
+
+        if(this.#player && this.#player instanceof Howl && (this.#uri !== uri)){
+            this.dispose();
+        }
+
+        if(!this.#player){
+            this.#player =  VC.AudioChannel.getHowl(uri);
+            this.#player.stereo(this.#relativePan);
+            this.#player.volume(this.#volume * this.relativeVolume);
+            this.#player.on("end",loop ? ()=>{
+                    if(this.#player){
+                        this.#player.stop().seek(0).play();         
+                    }
+                } : ()=>{this.dispose()});
+            this.#player.play();
+            this.#player.seek(pos);
+            VC.AudioChannel.count++;
+        }
+        this.#uri = uri;
+    }
+  
+    stop(uri){
+        if(uri && this.#uri !== uri){
+            //already playing something else. 
+            return;
+        } 
+        if(this.#player!=null && this.#player.playing()){
+            this.#player.stop(); 
+            this.dispose();
+        }
+    }
+  
+    fadeOut(callback){
+        if(this.#player){
+            if( this.volume > 0){
+                this.volume-=.1;
+                this.#fadeOutCancellationToken = setTimeout(()=>{this.fadeOut(callback)}, 75);
+            }else {
+                this.#player.stop();
+                if(callback){
+                    callback();
+                }
+            }
+        } else if (callback){
+            callback();
+        }
+    };
+    
+    dispose(){
+        if(this.#player && this.#player instanceof Howl){
+            if (this.#player.playing()) {
+                this.#player.stop();
+            }
+            //this.#player.unload();
+            //send to pool.
+            this.#player.pooledTime = Date.now();
+            if(VC.AudioChannel.howlPool.has(this.#uri)){
+                VC.AudioChannel.howlPool.get(this.#uri).push(this.#player);
+            }else {
+                VC.AudioChannel.howlPool.set(this.#uri,[this.#player]);
+            }
+            this.#player = null;
+            VC.AudioChannel.count--;
+        }
+    }
+}
+
+setInterval(()=>{VC.AudioChannel.cullPool()}, 5000);
