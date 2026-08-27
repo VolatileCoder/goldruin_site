@@ -104,11 +104,11 @@ class System {
         let lastLoaded = s.getCookie("lm");
         System.newClient = (lastLoaded != lastModified.getTime().toString())
         let isLocal = document.URL.includes("localhost");
+        let isSeven = document.URL.includes("index7");
         System.isLocal = isLocal;
         if(!isLocal){
             s.loadClickyScript();
         }else {
-
             await s.loadScript("colorpicker.iife.min.js")
         }
 
@@ -125,17 +125,21 @@ class System {
             await s.print("\n\nLoading Audio Subsystem...")
             await s.loadScript("howler.min.js");
             await s.print("OK")
-            
-            await s.print("\n\nLoading Networking Subsystem...")
-            await s.loadScript("peerjs.min.js");
-            await s.print("OK")
-            
+            if(isSeven){       
+                await s.print("\n\nLoading Networking Subsystem...")
+                await s.loadScript("peerjs.min.js");
+                await s.print("OK");
+            }
             await s.print("\n\nLoading VC Engine...")
             await s.loadScript("engine.js");
             await s.print("OK")
             await s.print("\n\nLoading Gold & Ruin...")
             s.spin();
-            await s.loadScript("goldruin.js");
+            if(isSeven){
+                await s.loadScript("goldruin7.js");
+            } else {
+                await s.loadScript("goldruin.js");    
+            }
             os.style.visibility = 'hidden';
             os.style.display = 'none';
         }else{
@@ -143,8 +147,12 @@ class System {
             await s.loadScript("clipper.js");
             await s.loadScript("howler.min.js");
             await s.loadScript("peerjs.min.js");
-            await s.loadScript("engine.js");
-            await s.loadScript("goldruin.js");
+            await s.loadScript("engine.js");            
+            if(isSeven){
+                await s.loadScript("goldruin7.js");
+            } else {
+                await s.loadScript("goldruin.js");    
+            }
         }
         
         s.setCookie("lm", lastModified.getTime().toString(), 365);
@@ -152,4 +160,4 @@ class System {
         VC.System.Start();
     }
 }
- System.boot();
+System.boot();
