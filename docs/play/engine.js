@@ -1,63 +1,5 @@
 'use strict';
 const VC={};
-
-VC.Client = class {
-    #id = crypto.randomUUID();
-    #peer = null;
-    #connection = null;
-    #shuttingDown = false;
-    constructor(){}
-    join(id){
-        this.#peer = new Peer(this.#id);
-        this.#peer.on('open', (myid) => {
-            console.log('Peer opened (', myid, ')')
-            this.#id = myid;
-            console.log("connecting to ", 'vc-' + id.toLowerCase())
-            this.attach(this.#peer.connect('vc-' + id.toLowerCase()));
-        });
-        this.#peer.on('error', (err)=>{this.onError(err)});
-        this.#peer.on('disconnected', ()=>{
-            if(!this.#shuttingDown){
-                this.#peer.reconnect();//TODO: test
-            }
-        });
-    }
-    get id(){
-        return this.#id;
-    }
-    get isConnected(){
-        return this.#connection && this.#connection.open;
-    }
-    attach(conn){
-        this.#connection = conn;
-        conn.on('open', ()=>{this.connected()});
-        conn.on('data', (data)=>{this.received(data)});
-        conn.on('error', (err)=>{this.onError(err)});
-    }
-    disconnect(){
-        this.#shuttingDown = true;
-        if(this.#connection && this.#connection.close){
-            this.#connection.close();
-        }
-        if(this.#peer){
-            this.#peer.destroy();
-        }
-    }
-    connected(){
-        console.warn('connectionOpened should be overridden by derived classes')
-    }
-    send(data){
-        if(this.#connection.open){
-            this.#connection.send(data);
-        }
-    }
-    received(data){
-        console.warn('received should be overridden by derived classes');
-    }
-    onError(err){
-        console.error("client", err);
-    }
-}
 VC.GameState = class {
     static get HALTED(){
         return -1;
@@ -141,6 +83,18 @@ VC.Game = class{
     halt(){
         this.#state = VC.GameState.HALTED;
     }
+}
+
+VC.Scene = class {
+    name = "UNSET";
+    getData(){}
+    setData(data){}
+    transitionTo = null;
+    preDisplay(){}
+    preRender(deltaT){}
+    render(deltaT, screen){}
+    postRender(deltaT){}
+    postDisplay(){}
 }
 
 VC.Trig = class {
@@ -607,423 +561,61 @@ VC.Screen = class {
 
 }
 
-VC.Sprite = class {
-    #scaleX = 1;
-    #scaleY = 1;
-    #screen = null;
-    #forceRender = false;
-    #image = {
-        frameset: null, 
-        width: 0,
-        height: 0
-    };
-    #size = {
-        width: 0,
-        height: 0
-    };
-    #location = {
-        x: 0,
-        y: 0,
-        z: 0,
-        r: 0
-    };
-    #lastLocation = {
-        x: 0,
-        y: 0, 
-        z: 0,
-        r: 0
-    };
-
-    #animation = {
-        index: 0,
-        series: 0,
-        frame: 0,
-        startTime: Date.now()
-    };
-    #lastAnimation = {
-        index: -1,
-        series: -1,
-        frame: -1
-    };
-    #opacity = 1;
-    #ready = 1;
-    #element = null;
-    #lastIndex = -1;
-    #framesPerSecond = 10;
-
-    #fadeDirection = 0;
-    #fadeStartTime = Date.now();
-    #fadeCompleteTime = Date.now();
-
-    get opacity(){
-        return this.#opacity
+VC.Client = class {
+    #id = crypto.randomUUID();
+    #peer = null;
+    #connection = null;
+    #shuttingDown = false;
+    constructor(){}
+    join(id){
+        this.#peer = new Peer(this.#id);
+        this.#peer.on('open', (myid) => {
+            console.log('Peer opened (', myid, ')')
+            this.#id = myid;
+            console.log("connecting to ", 'vc-' + id.toLowerCase())
+            this.attach(this.#peer.connect('vc-' + id.toLowerCase()));
+        });
+        this.#peer.on('error', (err)=>{this.onError(err)});
+        this.#peer.on('disconnected', ()=>{
+            if(!this.#shuttingDown){
+                this.#peer.reconnect();//TODO: test
+            }
+        });
     }
-
-    fadeIn(ms){
-        this.#fadeDirection = 1;
-        this.#fadeStartTime = Date.now();
-        this.#fadeCompleteTime = Date.now() + ms;
-    }
-    fadeOut(ms){
-        this.#fadeDirection = -1; 
-        this.#fadeStartTime = Date.now();
-        this.#fadeCompleteTime = Date.now() + ms;
-    }
-
-    set opacity(value){
-        if(this.#opacity!=value){
-            this.#opacity = value;
-            this.#forceRender = true;
-        }
-    }
-    
-    get animation(){
-        return this.#animation;
-    }
-
-    get location(){
-        return this.#location;
-    }
-
-    get element(){
-        return this.#element;
-    }
-    
-    get lastLocation(){
-        return this.#lastLocation;
-    }
-    
     get id(){
-        if(this.#element){
-            return this.#element.id;
+        return this.#id;
+    }
+    get isConnected(){
+        return this.#connection && this.#connection.open;
+    }
+    attach(conn){
+        this.#connection = conn;
+        conn.on('open', ()=>{this.connected()});
+        conn.on('data', (data)=>{this.received(data)});
+        conn.on('error', (err)=>{this.onError(err)});
+    }
+    disconnect(){
+        this.#shuttingDown = true;
+        if(this.#connection && this.#connection.close){
+            this.#connection.close();
         }
-        return null;
-    }
-
-    get size(){
-        return this.#size;
-    }
-
-    get scaleX(){
-        return this.#scaleX;
-    }
-
-    get scaleY(){
-        return this.#scaleY;
-    }
-    
-    set scale(value){
-        this.#scaleX = value;
-        this.#scaleY = value;
-    }
-    set scaleX(value){
-        this.#scaleX = value;
-    }
-    set scaleY(value){
-        this.#scaleY = value;
-    }
-
-    get framesPerSecond(){
-        return this.#framesPerSecond;
-    }
-    set framesPerSecond(value){
-        if(typeof(value)==='number'){
-            this.#framesPerSecond = value;         
+        if(this.#peer){
+            this.#peer.destroy();
         }
     }
-
-    constructor(screen, frameset, imageWidth, imageHeight, spriteWidth, spriteHeight, x, y, framesPerSecond){
-        this.#screen = screen;
-        this.#image.frameset = frameset;
-        this.#image.width = imageWidth;
-        this.#image.height = imageHeight;
-        this.#size.width = spriteWidth;
-        this.#size.height = spriteHeight;
-        this.#location.x = x;
-        this.#location.y = y;
-        this.#lastLocation.x = x;
-        this.#lastLocation.y = y;
-        this.#framesPerSecond = framesPerSecond && typeof(framesPerSecond) === 'number' ? framesPerSecond : 10;
-        this.#forceRender = false;
+    connected(){
+        console.warn('connectionOpened should be overridden by derived classes')
     }
-
-    clone(){
-        return new VC.Sprite(
-            this.#screen, 
-            this.#image.frameset,
-            this.#image.width,
-            this.#image.height,
-            this.#size.width,
-            this.#size.height,
-            this.#location.x,
-            this.#location.y,
-            this.#framesPerSecond
-        );
-    }
-
-    setAnimation(index,series){
-
-        if(!(index!==this.#animation.index&&series==this.#animation.series)){
-            this.#animation.frame = 0;
-        }
-
-        if (index!==this.#animation.index||series!==this.#animation.series){
-            
-            this.#animation.index = index;
-            this.#animation.series = series;
-            this.#animation.startTime = Date.now();
-        }
-        if (this.#animation.startTime === 0){
-            this.#animation.startTime = Date.now();
+    send(data){
+        if(this.#connection.open){
+            this.#connection.send(data);
         }
     }
-    setFrame (index, series, frame){
-            this.#animation.index = index;
-            this.#animation.series = series;
-            this.#animation.frame = frame;
-            this.#animation.startTime = 0;
+    received(data){
+        console.warn('received should be overridden by derived classes');
     }
-    render(deltaT){
-
-        if(this.#fadeDirection!=0){
-            let fadePercent = VC.Math.constrain((Date.now()-this.#fadeStartTime) / (this.#fadeCompleteTime-this.#fadeStartTime), 0, 1);
-            if(this.#fadeDirection==1){
-                this.opacity = fadePercent;
-            } else if (this.#fadeDirection == -1) {
-                this.opacity = 1-fadePercent;
-            }
-            if(fadePercent==1){
-                this.#fadeDirection = 0;
-            }
-        }
-
-        let forceRender = this.#forceRender;
-        this.#animation.frame = this.#calculateCurrentFrame(deltaT);
-        if(this.#animation.startTime===0)
-        {
-            forceRender = true
-        }
-        let trans0 = this.#buildTranslation(this.#lastLocation.x, this.#lastLocation.y, this.#lastLocation.r);
-        let trans1 = this.#buildTranslation(this.#location.x, this.#location.y, this.#location.r);
-
-        let rect = this.#buildClipRect(); 
-
-        if(!this.#element){
-            this.#element = this.#screen.image(this.#image.frameset[this.#animation.index], 0, 0, this.#image.width, this.#image.height);//.attr({opacity:0, "clip-rect": rect, transform:trans1});
-            trans0 = trans1;
-            this.#lastLocation.x = this.#location.x;
-            this.#lastLocation.y = this.#location.y;
-            this.#lastLocation.z = this.#location.z;
-            this.#lastLocation.r = this.#location.r;
-            //this.#screen.onClear(()=>{this.#element = null});
-            this.#ready = 1  
-            this.#lastIndex = this.#animation.index;
-            forceRender = true
-        } 
-
-        if(this.#lastIndex !== this.#animation.index){
-            this.#element.attr("src",this.#image.frameset[this.#animation.index]);
-            this.#lastIndex = this.#animation.index;
-        }
-
-        let frameChanged = (this.#lastAnimation.frame !== this.#animation.frame || this.#lastAnimation.index !== this.#animation.index || this.#lastAnimation.series !== this.#animation.series)
-        let positionChanged = (this.#location.x!==this.#lastLocation.x || this.#location.y !== this.#lastLocation.y || this.#location.r !== this.#lastLocation.r || this.#lastLocation.z !== this.#location.z);
-
-        if ((frameChanged || positionChanged || forceRender) && this.#element ){//&& this.#ready===1){
-            //this.#ready = 0;
-            
-            //OLD VERSION:
-            // this.#element.attr({opacity:this.#opacity}).animate({transform:trans0, "clip-rect": rect},0, 'linear',()=>{
-            //     if (this.#element){
-            //         this.#element.animate({transform:trans1, "clip-rect": rect}, 0, 'linear',()=>{
-            //             //this.#ready = 1
-            //         });
-            //     }
-            // });
-
-            //NEW VERSION:
-            this.#element.attr({opacity:this.#opacity, transform: trans1, "clip-rect": rect});
-        }
-
-        this.#lastAnimation.frame = this.#animation.frame;
-        this.#lastAnimation.index = this.#animation.index;
-        this.#lastAnimation.series = this.#animation.series;
-        this.#lastLocation.x = this.#location.x;
-        this.#lastLocation.y = this.#location.y;
-        this.#lastLocation.r = this.#location.r;
-        this.#lastLocation.z = this.#location.z;
-        this.#element.toFront();
-        this.#forceRender = false;
-        return this.#element;
-    }
-    
-    remove (){
-        if (this.#element){
-            this.#element.stop();
-            this.#element.remove();
-            this.#element = null;
-        }
-    }
-
-    #buildTranslation (x, y, r){
-        if(this.location.z!=0){
-            y -= this.location.z;
-        }
-        if(this.#scaleX!==1 || this.#scaleY!==1){
-            x = x + VC.Math.inversePercentToRange(this.#scaleX, 0, this.#size.width/2);
-            y = y + VC.Math.inversePercentToRange(this.#scaleY, 0, this.#size.height/2); 
-        }
-        let tx = Math.round(x * (1/this.#scaleX) - this.#animation.frame * this.#size.width);
-        let ty = Math.round(y * (1/this.#scaleY) - this.#animation.series *  this.#size.height) ;
-        let t = "t" + tx + "," + ty;
-        var rs = "";
-        var s = "";
-
-        if(this.#scaleX!==1||this.#scaleY!==1){
-            s= "s" + this.#scaleX + "," + this.#scaleY + ",0,0";
-        }
-
-        if(r != 0){
-            let rx = Math.round(this.#animation.frame * this.#size.width + this.#size.width/2);
-            let ry = Math.round(this.#animation.series *  this.#size.height + this.#size.height/2);
-
-            rs = "r" + r + "," + rx + "," + ry;
-        }
-        return s + t + rs;
-       
-    }
-
-    /*
-    #buildTranslation (x, y, r){
-        if(this.location.z<0){
-            y -= this.location.z;
-        }
-        if(this.#scaleX!==1 || this.#scaleY!==1){
-            x = x + VC.Math.inversePercentToRange(this.#scaleX, 0, this.#size.width/2);
-            y = y + VC.Math.inversePercentToRange(this.#scaleY, 0, this.#size.height/2); 
-        }
-        let tx = Math.round(x * (1/this.#scaleX) - this.#animation.frame * this.#size.width);
-        let ty = Math.round(y * (1/this.#scaleY) - this.#animation.series *  this.#size.height);
-        let t = "t" + tx + "," + ty;
-        let r = "";
-        if(r != 0){
-            let rx = Math.round(this.#animation.frame * this.#size.width + this.#size.width/2);
-            let ry = Math.round(this.#animation.series *  this.#size.height + this.#size.height/2);
-            r = "r" + r + "," + rx + "," + ry;
-        }
-        let s = "";
-        if(this.#scaleX !== 1 || this.#scaleY !== 1){
-            s = "s" + this.#scaleX +"," + this.#scaleY + ",0,0";
-        }
-        return r + s + t;
-    }
-        */
-
-    #buildClipRect(){
-        let x = Math.round(this.#animation.frame * this.#size.width)+1
-        let y = Math.round(this.#animation.series * this.#size.height)+1
-        let w = this.#size.width-2;
-        let h = this.#size.height-2;
-        if(this.location.z<0){
-            h = h+this.location.z;
-        }
-        return "" + x + "," + y +"," + w + "," + h;
-    }
-
-
-
-    #calculateCurrentFrame(deltaT) {
-        if (this.#animation.startTime === 0){
-            return this.#animation.frame;
-        }
-        let animdelta = Date.now() - this.#animation.startTime;
-        let frame = Math.round((animdelta / 1000) * this.framesPerSecond) % Math.round(this.#image.width/this.#size.width);
-        return frame;
-    }
-}
-
-VC.Orientation = class {
-    static get UNSET(){
-        return -1;
-    }
-    static get LANDSCAPE(){
-        return 0;
-    }
-    static get PORTRAIT(){
-        return 1;
-    }
-}
-
-VC.System = class {
-    static get screenHeight(){
-        return window.screen.height;
-    }
-    static get screenWidth(){
-        return window.screen.width;
-    }
-    static _orientation = VC.Orientation.UNSET;
-    static get orientation(){
-        return VC.System._orientation;
-    }
-    static _orientationChangeListeners=[];
-    static OnOrientationChange(func){
-        VC.System._orientationChangeListeners.push(func);
-    }
-    static _lastOrientation = VC.Orientation.UNSET;
-    static _onOrientationChange(e){
-        if((e && e.matches)||VC.System.screenWidth>=VC.System.screenHeight) {
-            VC.System._orientation = VC.Orientation.LANDSCAPE;
-        } else {
-            VC.System._orientation = VC.Orientation.PORTRAIT;
-        }
-    
-        if (VC.System.orientation!==VC.System._lastOrientation || VC.System._lastOrientation === VC.Orientation.UNSET){
-            VC.System._lastOrientation = VC.System.orientation;
-            VC.System._orientationChangeListeners.forEach((func)=>{func();})
-        }
-    }
-
-    static _readyListeners=[];
-    static _ready = false;
-    static OnReady(func){
-        if (VC.System._ready){
-            func();
-            return;
-        }
-        VC.System._readyListeners.push(func);
-    }
-    static Start(func){
-        if (VC.System._ready){
-            return
-        }
-        VC.System._ready = true;
-        VC.System._readyListeners.forEach((func)=>{func();})
-    }
-}
-
-//Call once to set
-VC.System._onOrientationChange(window.matchMedia("(orientation: landscape)"));
-
-//Bind for changes
-window.matchMedia("(orientation: landscape)").addEventListener("change", VC.System._onOrientationChange)
-
-VC.VisualEffects = class {
-    //Todo: refactor
-    static shaking = false
-    static shake(screen, intensity, ms){
-        var rate = 50;
-        var div =  document.getElementById(screen.domElementId);
-        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
-        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
-
-        if(ms>0){
-            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
-            VC.VisualEffects.shaking=true;
-        }else{
-            div.style.top = 0;
-            div.style.left = 0;
-            VC.VisualEffects.shaking=false;
-        }
+    onError(err){
+        console.error("client", err);
     }
 }
 
@@ -1076,39 +668,136 @@ VC.Color = class {
     }
 }
 
-VC.Math = class {
-    static constrain (min, val, max){
-        if (isNaN(val)) val = 0;
-        if (val===undefined) val = 0;
-        if (val===null) val = 0;
-        if (val<min) return min;
-        if (val>max) return max;
-        return val;
-    }
-
-    static percentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMin + (percentage * (rangeMax-rangeMin));
-    }
-
-    static inversePercentToRange (percentage, rangeMin, rangeMax){
-        percentage = VC.Math.constrain(0, percentage, 1);
-        return rangeMax - (percentage * (rangeMax-rangeMin));
-    }
-
-    static random(min, max){
-        return Math.floor(Math.random() * (max - min +1)) + min;
-    }
-
-    static greatestCommonDivisor(a, b) {
-        while (b !== 0) {
-            let t = b;
-            b = a % b;
-            a = t;
+VC.LineSegment = class {
+    #element = null;
+    point1 = null;
+    point2 = null;
+    constructor (point1, point2){
+        if(point1 && point1 instanceof VC.Point){
+            this.point1 = point1;
         }
-        return a;
+        if(point2 && point2 instanceof VC.Point){
+            this.point2 = point2;
+        }
+    }
+    get length() {
+        return this.point1.distanceTo(this.point2);
+    }
+    pointOfIntersection(lineSegment) {
+        if (!(lineSegment && lineSegment instanceof VC.LineSegment)){
+            console.warn("lineSegment argument is not an instance of VC.LineSegment")
+            return null;
+        }
+        let x1 = this.point1.x;
+        let y1 = this.point1.y;
+        let x2 = this.point2.x;
+        let y2 = this.point2.y;
+        let x3 = lineSegment.point1.x;
+        let y3 = lineSegment.point1.y;
+        let x4 = lineSegment.point2.x;
+        let y4 = lineSegment.point2.y;
+
+
+        let denom = ((x1-x2) * (y3-y4)) - ((y1-y2) * (x3-x4));
+        if(denom == 0){ // Parallel, return null
+            return null;
+        }
+        let t = (((x1-x3) * (y3-y4)) - ((y1-y3) * (x3-x4)))/ denom;
+        let u = -((((x1-x2) * (y1-y3)) - ((y1-y2) * (x1-x3)))/ denom);
+        if (0<=t && t<=1 && 0<=u && u<=1){
+            //return point of intersection
+            return new VC.Point(x1 + (t *(x2 - x1)), y1 + (t * (y2 - y1)));
+        }
+        //line segments do not intersect
+        return null;
     }
 
+    pointOfReflection(point){
+        const dx = this.point2.x - this.point1.x;
+        const dy = this.point2.y - this.point1.y;
+
+        const apx = point.x - this.point1.x;
+        const apy = point.y - this.point1.y;
+
+        const dot = apx * dx + apy * dy;
+        const lenSq = dx * dx + dy * dy;
+
+        const t = dot / lenSq;
+
+        const qx = this.point1.x + t * dx;
+        const qy = this.point1.y + t * dy;
+
+        return new VC.Point (
+            2 * qx - point.x,
+            2 * qy - point.y
+        );
+    }
+    render(screen, color){
+        return screen.drawLine(this.point1.x, this.point1.y, this.point2.x, this.point2.y, color, 2);
+    }
+}
+
+VC.Orientation = class {
+    static get UNSET(){
+        return -1;
+    }
+    static get LANDSCAPE(){
+        return 0;
+    }
+    static get PORTRAIT(){
+        return 1;
+    }
+}
+
+VC.Paragraph =  class {
+    #text = "";
+    #fontFamily = "monospace";
+    #fontSize = "12px";
+    #fontWeight = "normal";
+    #wrapWidth = 400;
+    #element = null;
+    #fill = "#FFF";
+
+    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
+        this.#text = text;
+        this.#fontFamily = fontFamily;
+        this.#fontSize = fontSize;
+        this.#fontWeight = fontWeight
+        this.#wrapWidth = wrapWidth;
+        this.#fill = fill;
+    }
+
+    render(screen){
+        if(!this.#element){
+                
+            let words = this.#text.split(" ");
+            let composite = "";
+            this.#element = screen.text(-10000, -10000, composite);
+            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
+
+            for(let w = 0; w < words.length; w++){
+                this.#element.attr("text", composite + " " + words[w]);
+                let width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += " " + words[w];
+                    continue;
+                }
+                this.#element.attr("text", composite + "\n" + words[w]);
+                width = this.#element.getBBox().width;
+                if(width <= this.#wrapWidth){
+                    composite += "\n" + words[w];
+                    continue;
+                }
+                composite += "%" + w + "%\n" //handle words too long for line (poorly)
+            }
+            for(let w = 0; w < words.length; w++){
+                composite = composite.replace("%" + w + "%",words[w]);
+            }
+            
+            this.#element.attr("text", composite);
+        }
+        return this.#element
+    }
 
 }
 VC.Polygon = class {
@@ -1679,18 +1368,6 @@ VC.Polygon = class {
     }
 }
 
-VC.Scene = class {
-    name = "UNSET";
-    getData(){}
-    setData(data){}
-    transitionTo = null;
-    preDisplay(){}
-    preRender(deltaT){}
-    render(deltaT, screen){}
-    postRender(deltaT){}
-    postDisplay(){}
-}
-
 VC.Server = class {
     #id = "MULTIPLAYER!";
     #host = null;
@@ -1760,6 +1437,59 @@ VC.Server = class {
         console.error("server", err);
     }
 }
+
+VC.System = class {
+    static get screenHeight(){
+        return window.screen.height;
+    }
+    static get screenWidth(){
+        return window.screen.width;
+    }
+    static _orientation = VC.Orientation.UNSET;
+    static get orientation(){
+        return VC.System._orientation;
+    }
+    static _orientationChangeListeners=[];
+    static OnOrientationChange(func){
+        VC.System._orientationChangeListeners.push(func);
+    }
+    static _lastOrientation = VC.Orientation.UNSET;
+    static _onOrientationChange(e){
+        if((e && e.matches)||VC.System.screenWidth>=VC.System.screenHeight) {
+            VC.System._orientation = VC.Orientation.LANDSCAPE;
+        } else {
+            VC.System._orientation = VC.Orientation.PORTRAIT;
+        }
+    
+        if (VC.System.orientation!==VC.System._lastOrientation || VC.System._lastOrientation === VC.Orientation.UNSET){
+            VC.System._lastOrientation = VC.System.orientation;
+            VC.System._orientationChangeListeners.forEach((func)=>{func();})
+        }
+    }
+
+    static _readyListeners=[];
+    static _ready = false;
+    static OnReady(func){
+        if (VC.System._ready){
+            func();
+            return;
+        }
+        VC.System._readyListeners.push(func);
+    }
+    static Start(func){
+        if (VC.System._ready){
+            return
+        }
+        VC.System._ready = true;
+        VC.System._readyListeners.forEach((func)=>{func();})
+    }
+}
+
+//Call once to set
+VC.System._onOrientationChange(window.matchMedia("(orientation: landscape)"));
+
+//Bind for changes
+window.matchMedia("(orientation: landscape)").addEventListener("change", VC.System._onOrientationChange)
 
 VC.Point = class {
     #element = null;
@@ -2131,127 +1861,6 @@ VC.LoopbackConnection = class {
         this.open = false;
     }
 }
-
-VC.Paragraph =  class {
-    #text = "";
-    #fontFamily = "monospace";
-    #fontSize = "12px";
-    #fontWeight = "normal";
-    #wrapWidth = 400;
-    #element = null;
-    #fill = "#FFF";
-
-    constructor(text, fontFamily, fontSize, fontWeight, fill, wrapWidth){
-        this.#text = text;
-        this.#fontFamily = fontFamily;
-        this.#fontSize = fontSize;
-        this.#fontWeight = fontWeight
-        this.#wrapWidth = wrapWidth;
-        this.#fill = fill;
-    }
-
-    render(screen){
-        if(!this.#element){
-                
-            let words = this.#text.split(" ");
-            let composite = "";
-            this.#element = screen.text(-10000, -10000, composite);
-            this.#element.attr({"font-size": this.#fontSize, "font-family": this.#fontFamily, "font-weight": this.#fontWeight, "fill": this.#fill})
-
-            for(let w = 0; w < words.length; w++){
-                this.#element.attr("text", composite + " " + words[w]);
-                let width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += " " + words[w];
-                    continue;
-                }
-                this.#element.attr("text", composite + "\n" + words[w]);
-                width = this.#element.getBBox().width;
-                if(width <= this.#wrapWidth){
-                    composite += "\n" + words[w];
-                    continue;
-                }
-                composite += "%" + w + "%\n" //handle words too long for line (poorly)
-            }
-            for(let w = 0; w < words.length; w++){
-                composite = composite.replace("%" + w + "%",words[w]);
-            }
-            
-            this.#element.attr("text", composite);
-        }
-        return this.#element
-    }
-
-}
-
-VC.LineSegment = class {
-    #element = null;
-    point1 = null;
-    point2 = null;
-    constructor (point1, point2){
-        if(point1 && point1 instanceof VC.Point){
-            this.point1 = point1;
-        }
-        if(point2 && point2 instanceof VC.Point){
-            this.point2 = point2;
-        }
-    }
-    get length() {
-        return this.point1.distanceTo(this.point2);
-    }
-    pointOfIntersection(lineSegment) {
-        if (!(lineSegment && lineSegment instanceof VC.LineSegment)){
-            console.warn("lineSegment argument is not an instance of VC.LineSegment")
-            return null;
-        }
-        let x1 = this.point1.x;
-        let y1 = this.point1.y;
-        let x2 = this.point2.x;
-        let y2 = this.point2.y;
-        let x3 = lineSegment.point1.x;
-        let y3 = lineSegment.point1.y;
-        let x4 = lineSegment.point2.x;
-        let y4 = lineSegment.point2.y;
-
-
-        let denom = ((x1-x2) * (y3-y4)) - ((y1-y2) * (x3-x4));
-        if(denom == 0){ // Parallel, return null
-            return null;
-        }
-        let t = (((x1-x3) * (y3-y4)) - ((y1-y3) * (x3-x4)))/ denom;
-        let u = -((((x1-x2) * (y1-y3)) - ((y1-y2) * (x1-x3)))/ denom);
-        if (0<=t && t<=1 && 0<=u && u<=1){
-            //return point of intersection
-            return new VC.Point(x1 + (t *(x2 - x1)), y1 + (t * (y2 - y1)));
-        }
-        //line segments do not intersect
-        return null;
-    }
-
-    pointOfReflection(point){
-        const dx = this.point2.x - this.point1.x;
-        const dy = this.point2.y - this.point1.y;
-
-        const apx = point.x - this.point1.x;
-        const apy = point.y - this.point1.y;
-
-        const dot = apx * dx + apy * dy;
-        const lenSq = dx * dx + dy * dy;
-
-        const t = dot / lenSq;
-
-        const qx = this.point1.x + t * dx;
-        const qy = this.point1.y + t * dy;
-
-        return new VC.Point (
-            2 * qx - point.x,
-            2 * qy - point.y
-        );
-    }
-    render(screen, color){
-        return screen.drawLine(this.point1.x, this.point1.y, this.point2.x, this.point2.y, color, 2);
-    }
-}
 VC.Triangle = class {
     #registered = false;
     #p1 = new VC.Point(0,0);
@@ -2359,6 +1968,26 @@ VC.Triangle = class {
     #sign (p1,p2,p3)
     {
         return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    }
+}
+
+VC.VisualEffects = class {
+    //Todo: refactor
+    static shaking = false
+    static shake(screen, intensity, ms){
+        var rate = 50;
+        var div =  document.getElementById(screen.domElementId);
+        div.style.top = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) +'px';
+        div.style.left = Math.round(Math.random() * intensity * (Math.random()>.5 ? 1 : -1)) + 'px';
+
+        if(ms>0){
+            setTimeout(()=>{VC.VisualEffects.shake(screen, intensity, ms-rate);},rate)
+            VC.VisualEffects.shaking=true;
+        }else{
+            div.style.top = 0;
+            div.style.left = 0;
+            VC.VisualEffects.shaking=false;
+        }
     }
 }
 
@@ -2543,3 +2172,374 @@ VC.AudioChannel = class{
 }
 
 setInterval(()=>{VC.AudioChannel.cullPool()}, 5000);
+
+VC.Math = class {
+    static constrain (min, val, max){
+        if (isNaN(val)) val = 0;
+        if (val===undefined) val = 0;
+        if (val===null) val = 0;
+        if (val<min) return min;
+        if (val>max) return max;
+        return val;
+    }
+
+    static percentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMin + (percentage * (rangeMax-rangeMin));
+    }
+
+    static inversePercentToRange (percentage, rangeMin, rangeMax){
+        percentage = VC.Math.constrain(0, percentage, 1);
+        return rangeMax - (percentage * (rangeMax-rangeMin));
+    }
+
+    static random(min, max){
+        return Math.floor(Math.random() * (max - min +1)) + min;
+    }
+
+    static greatestCommonDivisor(a, b) {
+        while (b !== 0) {
+            let t = b;
+            b = a % b;
+            a = t;
+        }
+        return a;
+    }
+
+
+}
+
+VC.Sprite = class {
+    #scaleX = 1;
+    #scaleY = 1;
+    #screen = null;
+    #forceRender = false;
+    #image = {
+        frameset: null, 
+        width: 0,
+        height: 0
+    };
+    #size = {
+        width: 0,
+        height: 0
+    };
+    #location = {
+        x: 0,
+        y: 0,
+        z: 0,
+        r: 0
+    };
+    #lastLocation = {
+        x: 0,
+        y: 0, 
+        z: 0,
+        r: 0
+    };
+
+    #animation = {
+        index: 0,
+        series: 0,
+        frame: 0,
+        startTime: Date.now()
+    };
+    #lastAnimation = {
+        index: -1,
+        series: -1,
+        frame: -1
+    };
+    #opacity = 1;
+    #ready = 1;
+    #element = null;
+    #lastIndex = -1;
+    #framesPerSecond = 10;
+
+    #fadeDirection = 0;
+    #fadeStartTime = Date.now();
+    #fadeCompleteTime = Date.now();
+
+    get opacity(){
+        return this.#opacity
+    }
+
+    fadeIn(ms){
+        this.#fadeDirection = 1;
+        this.#fadeStartTime = Date.now();
+        this.#fadeCompleteTime = Date.now() + ms;
+    }
+    fadeOut(ms){
+        this.#fadeDirection = -1; 
+        this.#fadeStartTime = Date.now();
+        this.#fadeCompleteTime = Date.now() + ms;
+    }
+
+    set opacity(value){
+        if(this.#opacity!=value){
+            this.#opacity = value;
+            this.#forceRender = true;
+        }
+    }
+    
+    get animation(){
+        return this.#animation;
+    }
+
+    get location(){
+        return this.#location;
+    }
+
+    get element(){
+        return this.#element;
+    }
+    
+    get lastLocation(){
+        return this.#lastLocation;
+    }
+    
+    get id(){
+        if(this.#element){
+            return this.#element.id;
+        }
+        return null;
+    }
+
+    get size(){
+        return this.#size;
+    }
+
+    get scaleX(){
+        return this.#scaleX;
+    }
+
+    get scaleY(){
+        return this.#scaleY;
+    }
+    
+    set scale(value){
+        this.#scaleX = value;
+        this.#scaleY = value;
+    }
+    set scaleX(value){
+        this.#scaleX = value;
+    }
+    set scaleY(value){
+        this.#scaleY = value;
+    }
+
+    get framesPerSecond(){
+        return this.#framesPerSecond;
+    }
+    set framesPerSecond(value){
+        if(typeof(value)==='number'){
+            this.#framesPerSecond = value;         
+        }
+    }
+
+    constructor(screen, frameset, imageWidth, imageHeight, spriteWidth, spriteHeight, x, y, framesPerSecond){
+        this.#screen = screen;
+        this.#image.frameset = frameset;
+        this.#image.width = imageWidth;
+        this.#image.height = imageHeight;
+        this.#size.width = spriteWidth;
+        this.#size.height = spriteHeight;
+        this.#location.x = x;
+        this.#location.y = y;
+        this.#lastLocation.x = x;
+        this.#lastLocation.y = y;
+        this.#framesPerSecond = framesPerSecond && typeof(framesPerSecond) === 'number' ? framesPerSecond : 10;
+        this.#forceRender = false;
+    }
+
+    clone(){
+        return new VC.Sprite(
+            this.#screen, 
+            this.#image.frameset,
+            this.#image.width,
+            this.#image.height,
+            this.#size.width,
+            this.#size.height,
+            this.#location.x,
+            this.#location.y,
+            this.#framesPerSecond
+        );
+    }
+
+    setAnimation(index,series){
+
+        if(!(index!==this.#animation.index&&series==this.#animation.series)){
+            this.#animation.frame = 0;
+        }
+
+        if (index!==this.#animation.index||series!==this.#animation.series){
+            
+            this.#animation.index = index;
+            this.#animation.series = series;
+            this.#animation.startTime = Date.now();
+        }
+        if (this.#animation.startTime === 0){
+            this.#animation.startTime = Date.now();
+        }
+    }
+    setFrame (index, series, frame){
+            this.#animation.index = index;
+            this.#animation.series = series;
+            this.#animation.frame = frame;
+            this.#animation.startTime = 0;
+    }
+    render(deltaT){
+
+        if(this.#fadeDirection!=0){
+            let fadePercent = VC.Math.constrain((Date.now()-this.#fadeStartTime) / (this.#fadeCompleteTime-this.#fadeStartTime), 0, 1);
+            if(this.#fadeDirection==1){
+                this.opacity = fadePercent;
+            } else if (this.#fadeDirection == -1) {
+                this.opacity = 1-fadePercent;
+            }
+            if(fadePercent==1){
+                this.#fadeDirection = 0;
+            }
+        }
+
+        let forceRender = this.#forceRender;
+        this.#animation.frame = this.#calculateCurrentFrame(deltaT);
+        if(this.#animation.startTime===0)
+        {
+            forceRender = true
+        }
+        let trans0 = this.#buildTranslation(this.#lastLocation.x, this.#lastLocation.y, this.#lastLocation.r);
+        let trans1 = this.#buildTranslation(this.#location.x, this.#location.y, this.#location.r);
+
+        let rect = this.#buildClipRect(); 
+
+        if(!this.#element){
+            this.#element = this.#screen.image(this.#image.frameset[this.#animation.index], 0, 0, this.#image.width, this.#image.height);//.attr({opacity:0, "clip-rect": rect, transform:trans1});
+            trans0 = trans1;
+            this.#lastLocation.x = this.#location.x;
+            this.#lastLocation.y = this.#location.y;
+            this.#lastLocation.z = this.#location.z;
+            this.#lastLocation.r = this.#location.r;
+            //this.#screen.onClear(()=>{this.#element = null});
+            this.#ready = 1  
+            this.#lastIndex = this.#animation.index;
+            forceRender = true
+        } 
+
+        if(this.#lastIndex !== this.#animation.index){
+            this.#element.attr("src",this.#image.frameset[this.#animation.index]);
+            this.#lastIndex = this.#animation.index;
+        }
+
+        let frameChanged = (this.#lastAnimation.frame !== this.#animation.frame || this.#lastAnimation.index !== this.#animation.index || this.#lastAnimation.series !== this.#animation.series)
+        let positionChanged = (this.#location.x!==this.#lastLocation.x || this.#location.y !== this.#lastLocation.y || this.#location.r !== this.#lastLocation.r || this.#lastLocation.z !== this.#location.z);
+
+        if ((frameChanged || positionChanged || forceRender) && this.#element ){//&& this.#ready===1){
+            //this.#ready = 0;
+            
+            //OLD VERSION:
+            // this.#element.attr({opacity:this.#opacity}).animate({transform:trans0, "clip-rect": rect},0, 'linear',()=>{
+            //     if (this.#element){
+            //         this.#element.animate({transform:trans1, "clip-rect": rect}, 0, 'linear',()=>{
+            //             //this.#ready = 1
+            //         });
+            //     }
+            // });
+
+            //NEW VERSION:
+            this.#element.attr({opacity:this.#opacity, transform: trans1, "clip-rect": rect});
+        }
+
+        this.#lastAnimation.frame = this.#animation.frame;
+        this.#lastAnimation.index = this.#animation.index;
+        this.#lastAnimation.series = this.#animation.series;
+        this.#lastLocation.x = this.#location.x;
+        this.#lastLocation.y = this.#location.y;
+        this.#lastLocation.r = this.#location.r;
+        this.#lastLocation.z = this.#location.z;
+        this.#element.toFront();
+        this.#forceRender = false;
+        return this.#element;
+    }
+    
+    remove (){
+        if (this.#element){
+            this.#element.stop();
+            this.#element.remove();
+            this.#element = null;
+        }
+    }
+
+    #buildTranslation (x, y, r){
+        if(this.location.z!=0){
+            y -= this.location.z;
+        }
+        if(this.#scaleX!==1 || this.#scaleY!==1){
+            x = x + VC.Math.inversePercentToRange(this.#scaleX, 0, this.#size.width/2);
+            y = y + VC.Math.inversePercentToRange(this.#scaleY, 0, this.#size.height/2); 
+        }
+        let tx = Math.round(x * (1/this.#scaleX) - this.#animation.frame * this.#size.width);
+        let ty = Math.round(y * (1/this.#scaleY) - this.#animation.series *  this.#size.height) ;
+        let t = "t" + tx + "," + ty;
+        var rs = "";
+        var s = "";
+
+        if(this.#scaleX!==1||this.#scaleY!==1){
+            s= "s" + this.#scaleX + "," + this.#scaleY + ",0,0";
+        }
+
+        if(r != 0){
+            let rx = Math.round(this.#animation.frame * this.#size.width + this.#size.width/2);
+            let ry = Math.round(this.#animation.series *  this.#size.height + this.#size.height/2);
+
+            rs = "r" + r + "," + rx + "," + ry;
+        }
+        return s + t + rs;
+       
+    }
+
+    /*
+    #buildTranslation (x, y, r){
+        if(this.location.z<0){
+            y -= this.location.z;
+        }
+        if(this.#scaleX!==1 || this.#scaleY!==1){
+            x = x + VC.Math.inversePercentToRange(this.#scaleX, 0, this.#size.width/2);
+            y = y + VC.Math.inversePercentToRange(this.#scaleY, 0, this.#size.height/2); 
+        }
+        let tx = Math.round(x * (1/this.#scaleX) - this.#animation.frame * this.#size.width);
+        let ty = Math.round(y * (1/this.#scaleY) - this.#animation.series *  this.#size.height);
+        let t = "t" + tx + "," + ty;
+        let r = "";
+        if(r != 0){
+            let rx = Math.round(this.#animation.frame * this.#size.width + this.#size.width/2);
+            let ry = Math.round(this.#animation.series *  this.#size.height + this.#size.height/2);
+            r = "r" + r + "," + rx + "," + ry;
+        }
+        let s = "";
+        if(this.#scaleX !== 1 || this.#scaleY !== 1){
+            s = "s" + this.#scaleX +"," + this.#scaleY + ",0,0";
+        }
+        return r + s + t;
+    }
+        */
+
+    #buildClipRect(){
+        let x = Math.round(this.#animation.frame * this.#size.width)+1
+        let y = Math.round(this.#animation.series * this.#size.height)+1
+        let w = this.#size.width-2;
+        let h = this.#size.height-2;
+        if(this.location.z<0){
+            h = h+this.location.z;
+        }
+        return "" + x + "," + y +"," + w + "," + h;
+    }
+
+
+
+    #calculateCurrentFrame(deltaT) {
+        if (this.#animation.startTime === 0){
+            return this.#animation.frame;
+        }
+        let animdelta = Date.now() - this.#animation.startTime;
+        let frame = Math.round((animdelta / 1000) * this.framesPerSecond) % Math.round(this.#image.width/this.#size.width);
+        return frame;
+    }
+}
