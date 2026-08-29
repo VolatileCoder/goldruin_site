@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.102 BETA"
+const VERSION = "v7.26.8.29.113 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -5699,6 +5699,46 @@ class Level extends VC.Scene {
         return this.#rooms;
     }
 
+        get currentRoom(){
+        return this.#currentRoom;
+    }
+    
+    set currentRoom(nextRoom){
+        if(this.#currentRoom !== nextRoom){
+            if(this.#currentRoom != null && (this.#currentRoom instanceof Room || this.#currentRoom instanceof PolygonalRoom)){
+                this.#currentRoom.doors.forEach((d)=>{
+                    let n = this.findNeighbor(this.#currentRoom, d.wall);
+                    if(n && (n instanceof Room || n instanceof PolygonalRoom)){
+                        n.volume = 0;
+                    }
+                })
+                this.currentRoom.postDisplay();
+            }
+            this.#currentRoom = nextRoom;
+            if(this.#currentRoom != null && (this.#currentRoom instanceof Room || this.#currentRoom instanceof PolygonalRoom)){
+                this.currentRoom.preDisplay();
+                this.#currentRoom.doors.forEach((d)=>{
+                    let n = this.findNeighbor(this.#currentRoom, d.wall);
+                    if(n && (n instanceof Room || n instanceof PolygonalRoom)){
+                        n.volume = .75;
+                        switch(d.wall){
+                            case Direction.EAST: 
+                                n.pan = 1;
+                                break;
+                            case Direction.WEST: 
+                                n.pan = -1;
+                                break;
+                            default:
+                                n.pan = 0;
+                                break;
+                        }
+                    }
+                })
+                this.#currentRoom.volume = 1;
+            }
+        }
+    }
+
     getData(){
         let obj =  {
             sceneName: this.sceneName,
@@ -6019,12 +6059,10 @@ class Level extends VC.Scene {
 
     getPlayersInRoom(room){
         let result=[];
-        server.players.forEach((player, playerid)=>{
-            room.objects.forEach((o)=>{
-                if(o.id == playerid){
-                    result.push(o);
-                }
-            })
+        this.players.forEach((p)=>{
+            if(p && p.gameObject && p.gameObject.room == room){
+                result.push(p);
+            }
         });
         return result;
     }
@@ -9626,7 +9664,8 @@ class Exit extends GameObject {
 
         let players = game.currentScene.getPlayersInRoom(this.room);
 
-        players.forEach((player)=>{
+        players.forEach((p)=>{
+            let player = p.gameObject;
             if(player.box.inside(this.tripBox) && !this.#hasBeenTripped){
                 this.#hasBeenTripped = true;
                 this.onTrip();
@@ -11741,7 +11780,8 @@ class Pickup extends GameObject{
 
         let players = game.currentScene.getPlayersInRoom(this.room);
 
-        players.forEach((player)=>{
+        players.forEach((p)=>{
+            let player = p.gameObject;
             this.plane = Plane.ETHEREAL;
             if(this.#content === Treasure.RANDOM){
                 if ((player.health/player.maxHealth) < Math.random()){
@@ -14419,7 +14459,8 @@ class TreasureChest extends GameObject{
 
         let players = game.currentScene.getPlayersInRoom(this.room);
 
-        players.forEach((player)=>{
+        players.forEach((p)=>{
+            let player = p.gameObject;
             if(!this.#opened && (
                 (player.box.inside(this.#tripFront) && player.direction===Direction.NORTH) || 
                 (player.box.inside(this.#tripWest) && player.direction===Direction.EAST) ||
