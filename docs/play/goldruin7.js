@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.113 BETA"
+const VERSION = "v7.26.8.29.150 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -135,7 +135,21 @@ class Door {
         return data;
     }
 
+    init(){
+        if(this.initialized){
+            return;
+        }
+        if(!this.isExit && this.level){
+            this.portalTo = this.level.findNeighbor(this.room, this.wall);
+        }else{
+            console.log("wtf", this.level, this.isExit)
+        }
+
+        this.initialized = true;
+
+    }
     render(screen){
+        this.init();
         focus={};
         focus.x =  (this.wall === Direction.NORTH || this.wall === Direction.SOUTH ? this.room.box.width : this.room.box.height) / 2
         //focus.x = this.room.box.width /2
@@ -167,14 +181,14 @@ class Door {
         let dy3 = y4 - constants.doorHeight;
         let dx3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * dy3;
         
-        if(!this.isExit && this.level){
-            let portalTo = this.level.findNeighbor(this.room, this.wall);
-            if(portalTo){
-                this.opened = portalTo.opened;
-                if(!this.opened){
-                    this.lock = portalTo.lock;
-                    this.color = regionColor(portalTo.region);
-                }
+        if(this.portalTo){
+            this.opened = this.portalTo.opened;
+            if(!this.opened){
+                console.log("not opened!")
+            }
+            if(!this.opened){
+                this.lock = this.portalTo.region;
+                this.color = regionColor(this.portalTo.region);
             }
         }
         
@@ -355,6 +369,10 @@ class Door {
     }
 
     contains(box){
+        this.init();
+        if(this.portalTo){
+            this.opened = this.portalTo.opened;
+        }
         if(box && box instanceof VC.Box && this.opened && !this.forceBars && !this.room.barred){
             return box.inside(this.box);
         }
@@ -1916,7 +1934,6 @@ class AutoController extends Controller {
 }
 class GameObject{
     static idCounter = 0;
-    id = crypto.randomUUID();
     code = "ERROR";
     box = new VC.Box(0,0,50,50);
     z = 0;
@@ -2105,7 +2122,7 @@ class GameObject{
        
         this.#room = nextRoom;
         if(!nextRoom){
-            console.warn("next room is null!!!!")
+            console.warn(this.code, "next room is null!!!!")
         }
         if(nextRoom){
             if(this.#room && (this.#room instanceof Room || this.#room instanceof PolygonalRoom)){
@@ -2213,8 +2230,7 @@ class GameObject{
     }
 
     remove(){
-
-        log("removing", this.code, this.id)
+        //log("removing", this.code, this.id)
         this.#removed = true;
         this.disposeAudio();
         this.box.remove();
@@ -4549,11 +4565,12 @@ class Client extends VC.Client {
     }
     #lastTimeStamp = null;
     received(data){
+        //console.log(data);
         if(this.ignore){
             return;
         }
         let message = MessageDecoder.deserialize(data);
-        if(this.#lastTimeStamp!=null && message.timestamp<this.#lastTimeStamp){
+        if(this.#lastTimeStamp!=null && message.timestamp<this.#lastTimeStamp || Date.now()-message.timestamp>500){
             return;
         }
         this.#lastTimeStamp = message.timestamp;
@@ -5699,7 +5716,7 @@ class Level extends VC.Scene {
         return this.#rooms;
     }
 
-        get currentRoom(){
+    get currentRoom(){
         return this.#currentRoom;
     }
     
@@ -6300,7 +6317,7 @@ class Level extends VC.Scene {
 }
 
 class Room extends VC.Scene {
-    id = crypto.randomUUID();
+    static idCounter = 0;
     type = "OVERRIDE ME";   
     doors = [];
     floor = null;
@@ -6326,8 +6343,12 @@ class Room extends VC.Scene {
     doorsRendered = false;
     audioChannel = null;
 
+    static roomIds
+
     constructor (x, y, w, h, wallHeight, floor){
         super();
+        this.id = Room.idCounter;
+        Room.idCounter++;
 
         this.offset = new VC.Point(0,0);
         this.floor = floor;
@@ -6368,6 +6389,7 @@ class Room extends VC.Scene {
             let removable = [];
             this.objects.forEach((o)=>{
                 if(o.sync==true && o.immovable == false && !any(data.o, (p)=>{return  p.id == o.id; })){
+                    if(o.code=='tx') console.log("removing torch..?")
                     removable.push(o);
                 }
             });
@@ -6381,6 +6403,7 @@ class Room extends VC.Scene {
                 }   */
             });
         }
+        this.opened = data.p;
         this.barred = data.br;
     }
     findObjectById(id){
@@ -7160,6 +7183,7 @@ class Starburst extends GameObject{
 }
 class Torch extends GameObject{
     code = "tx";
+    immovable = true;
     sprite = null;
     #particles=[];
     #releaseSpark = false;
@@ -7836,6 +7860,8 @@ class Adventurer extends Character{
         this.hidden = false;
         this.hiddenUntil = Date.now();
         this.color = null;
+        this.gold = 0;
+        this.keys = [];
     }
 
     getData(){
@@ -7846,6 +7872,11 @@ class Adventurer extends Character{
         if(this.color){
             data.cl = this.color;
         }
+        if(this.gold){
+            data.g = this.gold;
+        }
+        data.k = this.keys;
+        
         data.tn = this.tntCount;
         return data;
     }
@@ -7860,6 +7891,12 @@ class Adventurer extends Character{
             }
             if(data.cl){
                 this.color = data.cl;
+            }
+            if(data.g){
+                this.gold = data.g;
+            }
+            if(data.k){
+                this.keys = data.k;
             }
         }
     }
@@ -8029,6 +8066,14 @@ class Adventurer extends Character{
 
     clear(){
         super.clear();
+        if(this.#colorElement1){
+            this.#colorElement1.remove();
+            this.#colorElement1 = null;
+        }
+        if(this.#colorElement2){
+            this.#colorElement2.remove();
+            this.#colorElement2 = null;
+        }
         if(this.sprite){
             this.sprite.remove();
             this.sprite = null;
@@ -8662,7 +8707,7 @@ constants.thresholds = Math.round((constants.maxArea-constants.minArea) / 4);
 
 
 const SCREENBLACK = "#080808";
-let DEBUG = true;
+let DEBUG = false;
 
 let game
 let renderer
@@ -11927,7 +11972,8 @@ class PolygonalRoom extends Room {
             t: this.type,
             d: [], 
             o: [],
-            br: this.barred
+            br: this.barred,
+            p: this.opened
         };
         if(this.sendStructure){
             data.s = {}
@@ -11943,17 +11989,16 @@ class PolygonalRoom extends Room {
             this.#triangles.forEach((t)=>{
                 data.s.t.push(t.getData());
             })
-            this.sendStructure = false;
+            this.doors.forEach((d)=>{
+                data.d.push(d.getData())
+            });
         }
-
-        this.doors.forEach((d)=>{
-            data.d.push(d.getData())
-        });
         this.objects.forEach((o)=>{
-            if(o.sync){
+            if(o.sync && (this.sendStructure || !o.immovable)){
                 data.o.push(o.getData());
             }
         })
+        this.sendStructure = false;   
         return data;
     }
 
@@ -11967,6 +12012,8 @@ class PolygonalRoom extends Room {
         data.s.t.forEach((t)=>{room.#triangles.push(VC.Triangle.fromData(t))});
         room.#centerPoint = VC.Point.fromData(data.s.c);
         data.d.forEach((d)=>{room.doors.push(Door.fromData(level, room, d))});
+        room.opened = data.p;  
+        room.barred = data.br;
         return room;
     }
 
@@ -12643,13 +12690,14 @@ class RectangularRoom extends Room {
     constructor(x, y, w, h, wallHeight, floor){
         super(x, y, w, h, wallHeight, floor);
     }
-getData(){
+    getData(){
         let data = {
             id: this.id,
             t: this.type,
             d: [], 
             o: [], 
-            br: this.barred
+            br: this.barred,
+            p: this.opened, 
         };
         if(this.sendStructure){
             data.s = {}
@@ -12659,21 +12707,18 @@ getData(){
             data.s.w = this.wallHeight,
             data.s.f = this.floor.getData(),
             data.s.p = this.palette;
-            data.s.r = this.region
-            this.sendStructure = false;
+            data.s.r = this.region;
+            this.doors.forEach((d)=>{
+                data.d.push(d.getData())
+            });
         }
 
-        this.doors.forEach((d)=>{
-            data.d.push(d.getData())
-        });
         this.objects.forEach((o)=>{
-            if(o.sync){
-                if(o.code=='adv'){
-                    console.log("sending adv room:", o.room.id)
-                }
+            if(o.sync && (!o.immovable || this.sendStructure)){
                 data.o.push(o.getData());
             }
         })
+        this.sendStructure = false;
         return data;
     }
     
@@ -12683,6 +12728,7 @@ getData(){
         room.box.y = data.s.b.y;
         room.bounds = VC.Polygon.fromData(data.s.n);
         room.id = data.id;
+        room.opened = data.p;   
         data.d.forEach((d)=>{room.doors.push(Door.fromData(level, room, d))});
         room.palette = data.s.p;
         return room;
@@ -13817,7 +13863,7 @@ class SpikeTrap extends GameObject{
         this.plane = Plane.ETHEREAL;
         this.state = State.IDLE;    
         this._stateStart += offsetT % 3000;
-        this.immovable = true;
+        //this.immovable = true;
 
         switch (this.direction){
             case Direction.NORTH:
@@ -14402,7 +14448,6 @@ class TorchLightEffect extends GameObject{
 class TreasureChest extends GameObject{
     code="tc";
     #content = Treasure.RANDOM
-    #opened = false;
     #tripFront = null;
     #tripWest = null;
     #tripEast = null;
@@ -14412,14 +14457,14 @@ class TreasureChest extends GameObject{
     sprite = null;
     #treasureOffset = 0;
     #initialized = false;
+    #lastOpened = false;
     constructor(room, content){
         super(room);
         this.team = Team.UNALIGNED;
         this.box.width=64+50*2 + 4;//player width
         this.box.height=32+50*2 + 4;//player height
-        this.#opened = false;
         this.#content = content;
-        this.immovable = true;
+        this.state = 0;
         this.z = 0
     }
     initialize(){       
@@ -14451,6 +14496,18 @@ class TreasureChest extends GameObject{
         }
     }
 
+    getData(){
+        let data = super.getData();
+        data.x = this.#content;
+        return data;
+    }
+    setData(data) {
+        if(data && this.id == data.id){
+            super.setData(data)
+            this.#content = data.x;
+        }
+    }
+
     move (deltaT){
         if(!this.#initialized){
             this.initialize();
@@ -14461,16 +14518,14 @@ class TreasureChest extends GameObject{
 
         players.forEach((p)=>{
             let player = p.gameObject;
-            if(!this.#opened && (
+            if(this.state == 0 && (
                 (player.box.inside(this.#tripFront) && player.direction===Direction.NORTH) || 
                 (player.box.inside(this.#tripWest) && player.direction===Direction.EAST) ||
                 (player.box.inside(this.#tripEast) && player.direction===Direction.WEST) ||
                 (player.box.inside(this.#tripBack) && player.direction===Direction.SOUTH)
             )){
-                this.#opened = true;
-                this.playSound(0,SoundEffects.CHEST, .7, false)
-                //game.level.statistics.chestsOpened++;
-
+                this.state = 1;
+                
                 if(this.#content===Treasure.NONE){
                     //game.level.message = "It is Empty.";
                     return;
@@ -14563,6 +14618,12 @@ class TreasureChest extends GameObject{
     }    
 
     render(deltaT, screen){
+        if(this.state==1 && !this.#lastOpened){
+            this.playSound(0,SoundEffects.CHEST, .7, false)
+            this.#lastOpened = true;
+                //game.level.statistics.chestsOpened++;
+        }
+
         screen.onClear(()=>this.clear());
         if (this.#backgroundSprite == null){
             this.#backgroundSprite = new VC.Sprite(screen,Images.CHEST,64,288,64,72,this.box.x,this.box.y-32);
@@ -14576,15 +14637,9 @@ class TreasureChest extends GameObject{
 
         if(DEBUG){
             this.box.render(screen, "#FF0")
-            if (this.#tripFront) this.#tripFront.render(screen, "#0F0");
-            if (this.#tripWest) this.#tripWest.render(screen, "#0F0");
-            if (this.#tripEast) this.#tripEast.render(screen, "#0F0");
-            if (this.#tripBack) this.#tripBack.render(screen, "#0F0");
-            if (this.spawnBox) this.spawnBox.render(screen,"#F88");
-       
         }
         
-        if(this.#opened){
+        if(this.state==1){
 
             this.sprite.setAnimation(0,3);
             
@@ -15067,6 +15122,7 @@ class ForestTemple extends Temple{
     
     themeRoom(room, index, level){
         super.themeRoom(room, index);
+        //return;
         if (index !== 0 && !room.exit && level && level.number % 5 != 4 && !room.secret){
             
             var enemyRange = level.number + 1 ;
