@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.62 BETA"
+const VERSION = "v7.26.8.29.102 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1010,7 +1010,7 @@ class Player {
     setData(data){
         if(data.i == this.clientId){
             this.playerName = data.n;
-            if(data.o && (!this.gameObject || data.o!=this.gameObject.id)){
+            if(data.o && (!this.gameObject || data.o!=this.gameObject.id || this.gameObject.room==null)){
                 if(renderer.currentScene instanceof Level){
                     log("finding game object")
                     this.gameObject = renderer.currentScene.findObjectById(data.o);
@@ -1939,6 +1939,9 @@ class GameObject{
 
     getData(){
         //log(this.tag, this.id);
+        if(this.code == 'adv'){
+            //log(this.code, "room is", this.room ? this.room.id : "")
+        }
         return {
             id: this.id, 
             c: this.code,
@@ -1948,6 +1951,7 @@ class GameObject{
             r: this.room ? this.room.id : "",
             z: this.z
         }
+        
     }
     setData(data) {
         if(data && this.id == data.id){
@@ -1955,7 +1959,12 @@ class GameObject{
             this.box.reset(data.b.x, data.b.y, data.b.w, data.b.h);
             //log(this.tag, this.id, this.box);
             this.state = data.s;
-            this.room = renderer.currentScene instanceof Level ? renderer.currentScene.findRoomById(data.r) : null;
+            if(!this.room || this.room.id != data.r){
+                log("setting room")
+                this.room = renderer.currentScene instanceof Level ? renderer.currentScene.findRoomById(data.r) : null;
+                console.warn(this.code, "room not found:", data.r)
+            }
+            
             this.z = data.z;
             this.direction = data.d;
         }
@@ -1963,6 +1972,7 @@ class GameObject{
     static fromData(data){
         let go;
         let room = renderer.currentScene instanceof Level ? renderer.currentScene.findRoomById(data.r) : null
+
         if(room){
             switch(data.c){
                 case "adv":
@@ -2054,6 +2064,7 @@ class GameObject{
             }
             if(go){
                 go.id = data.id;
+                go.room = room;
                 go.setData(data);
             }
         }else{
@@ -2090,12 +2101,12 @@ class GameObject{
             if (currentIndex>-1){
                 this.#room.objects.splice(currentIndex, 1);
             }
-            currentIndex = this.#room.objects.indexOf(this);
-            if (currentIndex!=-1){
-            }
         }
        
         this.#room = nextRoom;
+        if(!nextRoom){
+            console.warn("next room is null!!!!")
+        }
         if(nextRoom){
             if(this.#room && (this.#room instanceof Room || this.#room instanceof PolygonalRoom)){
                 this.#room.objects.push(this);
@@ -2202,6 +2213,8 @@ class GameObject{
     }
 
     remove(){
+
+        log("removing", this.code, this.id)
         this.#removed = true;
         this.disposeAudio();
         this.box.remove();
@@ -5681,9 +5694,6 @@ class Level extends VC.Scene {
         return Math.floor(this.number / 5) + 1;
     }
 
-    get currentRoom(){
-        return this.#currentRoom;
-    }
 
     get rooms(){
         return this.#rooms;
@@ -5699,6 +5709,7 @@ class Level extends VC.Scene {
         this.lastScope.forEach((r)=>{
             obj.r.push(r.getData());
         });
+        //log('sending ', obj.r.length, "rooms")
         this.#players.forEach((p)=>{obj.p.push(p.getData())});
         return obj;
     }
@@ -5716,6 +5727,7 @@ class Level extends VC.Scene {
                         existingRoom.setData(r)
                     } else if (r.s){
                         let room = Room.fromData(this, r);
+                        console.warn("creating", r.id)
                         this.#rooms.push(room);
                         room.setData(r);
                     } else {
@@ -5728,7 +5740,7 @@ class Level extends VC.Scene {
                 });
             }
             if (data.p){
-                console.log(this.#players.length);
+                //console.log(this.#players.length);
                 let updated = [];
                 data.p.forEach((player)=>{
                     let filteredPlayers = filter(this.#players, (p)=>{return p.clientId == player.i});
@@ -5749,42 +5761,6 @@ class Level extends VC.Scene {
             }
         } else {
             console.warn (this.name, "ignored unexpected data:", JSON.stringify(data))
-        }
-    }
-    
-    set currentRoom(nextRoom){
-        if(this.#currentRoom !== nextRoom){
-            if(this.#currentRoom != null && (this.#currentRoom instanceof Room || this.#currentRoom instanceof PolygonalRoom)){
-                this.#currentRoom.doors.forEach((d)=>{
-                    let n = this.findNeighbor(this.#currentRoom, d.wall);
-                    if(n && (n instanceof Room || n instanceof PolygonalRoom)){
-                        n.volume = 0;
-                    }
-                })
-                this.currentRoom.postDisplay();
-            }
-            this.#currentRoom = nextRoom;
-            if(this.#currentRoom != null && (this.#currentRoom instanceof Room || this.#currentRoom instanceof PolygonalRoom)){
-                this.currentRoom.preDisplay();
-                this.#currentRoom.doors.forEach((d)=>{
-                    let n = this.findNeighbor(this.#currentRoom, d.wall);
-                    if(n && (n instanceof Room || n instanceof PolygonalRoom)){
-                        n.volume = .75;
-                        switch(d.wall){
-                            case Direction.EAST: 
-                                n.pan = 1;
-                                break;
-                            case Direction.WEST: 
-                                n.pan = -1;
-                                break;
-                            default:
-                                n.pan = 0;
-                                break;
-                        }
-                    }
-                })
-                this.#currentRoom.volume = 1;
-            }
         }
     }
     
@@ -5948,6 +5924,7 @@ class Level extends VC.Scene {
         let player = null;
         for(let i=0; i<this.#players.length; i++){
             player = this.#players[i];
+            //console.log(player.clientId, player.gameObject ? player.gameObject.room ? player.gameObject.room.id : "no room" : "no gameObject");
             if(player.clientId == client.id && player.gameObject && player.gameObject.room){
                 return player;
             }
@@ -6112,7 +6089,7 @@ class Level extends VC.Scene {
     getAllNeighbors(room){
         let result = [];
         room.doors.forEach((d)=>{
-            let n = this.findNeighbor(room, d.direction);
+            let n = this.findNeighbor(room, d.wall);
             if(n){
                 result.push(n);
             }
@@ -6199,37 +6176,20 @@ class Level extends VC.Scene {
         return extents;
     }
 
-    //TODO: Combine OpenNextRoom and MoveToNextRoom
-    openNextRoom(direction){
-        let nextRoom = game.level.findNeighbor(game.player.room, direction);
-        if(nextRoom.opened){
-            nextRoom.visited = 1;
-            game.player.room = nextRoom;
-            this.currentRoom = nextRoom;
-            let loc = this.getEntranceLocation(nextRoom,(direction + 2) % 4, game.player)
-        }
-    }
-
     moveToNextRoom(gameObject, direction){
         if(gameObject && gameObject.room && gameObject.room.findDoor(direction)){
             let nextRoom = this.findNeighbor(gameObject.room, direction);  
+            console.log("moveToNextRoom", nextRoom.id);
             //gameObject.remove();
             if(!nextRoom.barred || gameObject instanceof Adventurer ){
                 let loc = this.getEntranceLocation(nextRoom,(direction + 2) % 4, gameObject)
-                if(gameObject.room === this.currentRoom){
-                    gameObject.clear();
+                //if(gameObject.room === this.currentRoom){
+                //gameObject.clear();
                     //return;
-                }
+                //}
                 gameObject.room = nextRoom;
                 gameObject.box.x = loc.x;
                 gameObject.box.y = loc.y;
-
-                if(gameObject.room === this.currentRoom){   
-                    //gameObject.render(0,game.screen)
-                    if(gameObject instanceof Character && gameObject.sprite){
-                        //gameObject.sprite.fadeIn(250);
-                    }
-                }
             }
         } 
     }
@@ -6361,16 +6321,27 @@ class Room extends VC.Scene {
                 if(currentObject){
                     currentObject.setData(obj);
                 }else {
-                    GameObject.fromData(obj);
+                    let value = GameObject.fromData(obj);
+                    if(value.code=='adv'){
+                        console.log('adv from data:', obj)
+                    }
                 }
             });
             let removable = [];
             this.objects.forEach((o)=>{
-                if(o.sync==true && o.immovable == false && !any(data.o, (p)=>{return  p.id == o.id;})){
+                if(o.sync==true && o.immovable == false && !any(data.o, (p)=>{return  p.id == o.id; })){
                     removable.push(o);
                 }
             });
-            removable.forEach((o)=>{o.remove(); log("removing", o.code, o.id)});
+            
+            removable.forEach((o)=>{
+                o.remove();
+                /*
+                let currentIndex = this.objects.indexOf(this);
+                if (currentIndex>-1){
+                    this.objects.splice(currentIndex, 1);
+                }   */
+            });
         }
         this.barred = data.br;
     }
@@ -6508,7 +6479,7 @@ class Room extends VC.Scene {
         if(!this.structureRendered){
             this.renderStructure(screen);
             this.structureRendered = true;
-            //screen.onClear(()=>{this.structureRendered = false;})
+            screen.onClear(()=>{this.structureRendered = false;})
             this.doorsRendered = true;
             //Room.renderHeatTiles(this, screen);
         }
@@ -8031,7 +8002,7 @@ class Adventurer extends Character{
         }
     }
     remove(){
-        //if(this.state==State.DEAD){
+        //if(this.state==State.DEAD || this.tag != "Server"){
             super.remove();
         //}
         this.clear();
@@ -11742,6 +11713,7 @@ class OverworldRoom extends Room {
 }
 
 class Pickup extends GameObject{
+    code = "pu"
     #content = Treasure.RANDOM
     sprite = null;
     #shadow = null;
@@ -12656,6 +12628,9 @@ getData(){
         });
         this.objects.forEach((o)=>{
             if(o.sync){
+                if(o.code=='adv'){
+                    console.log("sending adv room:", o.room.id)
+                }
                 data.o.push(o.getData());
             }
         })
@@ -16399,7 +16374,7 @@ class LevelFactory {
         server.players.forEach((player, playerid)=>{
             //log("playerId", playerid);
             var a = new Adventurer(level.rooms[0], player.controller);
-            //a.tag = "Server";
+            a.tag = "Server";
             //a.id = playerid;
             player.gameObject = a;
             if (server.players.size>1){
