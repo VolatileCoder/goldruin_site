@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.150 BETA"
+const VERSION = "v7.26.8.29.196 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -80,6 +80,7 @@ class Door {
     isEntrance = false;
     isExit = false;
     opened = true;
+    lock = null;
 
     constructor(level, room, wall, offset){
         this.level = level;
@@ -95,16 +96,21 @@ class Door {
         }else{
             door = new Door(level, room, data.w, data.f);
         }
-        door.offset = data.o;
-        door.isEntrance = data.n != null ? data.n : false;
-        door.isExit = data.x != null ? data.x : false;
-        door.opened = data.p != null ? data.p : true;
-        door.forceBars = data.f != null ? data.f : false;
-        door.atmosphere = data.a != null ? data.a : "#000";
-        door.color = data.c != null ? data.c : "#4d3737";
-        door.box = data.b != null ? VC.Box.fromData(data.b) : null;
+        door.setData(data);
         return door;
     }
+    setData(data){
+        this.offset = data.o;
+        this.isEntrance = data.n != null ? data.n : false;
+        this.isExit = data.x != null ? data.x : false;
+        this.forceBars = data.f != null ? data.f : false;
+        this.atmosphere = data.a != null ? data.a : "#000";
+        this.color = data.c != null ? data.c : "#4d3737";
+        this.box = data.b != null ? VC.Box.fromData(data.b) : null;
+        this.opened = data.p;
+        this.lock = data.l;
+    }
+
     getData(){
         let data = {
             t: this.type,
@@ -120,9 +126,7 @@ class Door {
         if(this.isExit){
             data.x = this.isExit;
         }
-        if(this.opened == false){
-            data.p = this.opened;
-        }
+
         if(this.forceBars){
             data.f = this.forceBars;
         }
@@ -132,24 +136,20 @@ class Door {
         if(this.color!="#4d3737"){
             data.c = this.color
         }
+        data.p = this.opened;
+        data.l = this.lock;
+        if(data.l){
+            console.log(data);
+        }
         return data;
     }
 
-    init(){
-        if(this.initialized){
-            return;
-        }
-        if(!this.isExit && this.level){
-            this.portalTo = this.level.findNeighbor(this.room, this.wall);
-        }else{
-            console.log("wtf", this.level, this.isExit)
-        }
-
-        this.initialized = true;
-
-    }
     render(screen){
-        this.init();
+        if(this.wasOpen && this.wasOpen != this.opened && this.opened){
+            console.log("trying really hard to play audio")
+            this.room.audioChannel.play(SoundEffects.ROOM_OPENED, 1, false)
+        }
+        this.wasOpen = this.opened
         focus={};
         focus.x =  (this.wall === Direction.NORTH || this.wall === Direction.SOUTH ? this.room.box.width : this.room.box.height) / 2
         //focus.x = this.room.box.width /2
@@ -180,18 +180,7 @@ class Door {
         let dx2 = VC.Trig.cotangent(VC.Trig.pointToAngle(y1,x1)) * dy2;
         let dy3 = y4 - constants.doorHeight;
         let dx3 = VC.Trig.cotangent(VC.Trig.pointToAngle(y4,x4)) * dy3;
-        
-        if(this.portalTo){
-            this.opened = this.portalTo.opened;
-            if(!this.opened){
-                console.log("not opened!")
-            }
-            if(!this.opened){
-                this.lock = this.portalTo.region;
-                this.color = regionColor(this.portalTo.region);
-            }
-        }
-        
+
         this.#elements.push(screen.drawQuad(x1,y1,dx2,dy2,dx3,dy3,x4,y4,offset.x,offset.y,"#000",0));
         if(this.isEntrance || this.isExit){
             this.#elements.push(screen.drawQuad(x1+10,y1,dx2+10,dy2,dx3-10,dy3,x4-10,y4,offset.x,offset.y,this.atmosphere,0));
@@ -5686,6 +5675,7 @@ class Level extends VC.Scene {
     #players = [];
     #currentRoom = null;
     #backDropElement = null;
+    #message = "";
     music = null;
     
     statistics =  null;
@@ -5761,7 +5751,8 @@ class Level extends VC.Scene {
             sceneName: this.sceneName,
             n: this.number,
             r: [],
-            p: []
+            p: [],
+            m: this.#message
         }
         this.lastScope.forEach((r)=>{
             obj.r.push(r.getData());
@@ -5815,6 +5806,9 @@ class Level extends VC.Scene {
                     }
                 });
                 remove(this.#players, (p)=>{return updated.indexOf(p)==-1});
+            }
+            if(this.message != data.m){
+                this.message = data.m
             }
         } else {
             console.warn (this.name, "ignored unexpected data:", JSON.stringify(data))
@@ -5944,7 +5938,6 @@ class Level extends VC.Scene {
     }
 
 
-    #message = "";
     #lastMessage = "";
     #messageStart = 0;
     #messageDuration = 2000;
@@ -5952,6 +5945,9 @@ class Level extends VC.Scene {
     #messageBox = null;
     #messageText = null;
     
+    get message(){
+        return this.#message;
+    }
     set message(text){
         this.#message = text;
         this.#messageStart = Date.now();
@@ -6334,7 +6330,6 @@ class Room extends VC.Scene {
     box = null;
     wallHeight = 0;
     region = 0;
-    opened = 1; //Todo: rename to isOpened?
     barred = 0; //Todo: reanme to isBarred
     isBossRoom = 0;//HACK: Relevance?   
     spawnDensity = 0; 
@@ -6396,15 +6391,12 @@ class Room extends VC.Scene {
             
             removable.forEach((o)=>{
                 o.remove();
-                /*
-                let currentIndex = this.objects.indexOf(this);
-                if (currentIndex>-1){
-                    this.objects.splice(currentIndex, 1);
-                }   */
             });
         }
-        this.opened = data.p;
+
+        data.d.forEach((d, i)=>{this.doors[i].setData(d);   });
         this.barred = data.br;
+        this.opened = data.p;
     }
     findObjectById(id){
         for(var i = 0; i<this.objects.length; i++){
@@ -6436,7 +6428,6 @@ class Room extends VC.Scene {
             room.region = data.s.r;
         }
 
-        
         return room;
     }
 
@@ -6545,8 +6536,8 @@ class Room extends VC.Scene {
             //Room.renderHeatTiles(this, screen);
         }
         
-        if(!this.doorsRendered || this.barred != this.lastBarred){
-            log("redrawing doors:", this.barred)
+        if(!this.doorsRendered || this.barred != this.lastBarred || this.opened != this.lastOpened){
+            log("redrawing doors:", this.barred, this.opened)
             this.doors.forEach((d)=>{d.render(screen);});
             this.doorsRendered = true;
 
@@ -6556,6 +6547,7 @@ class Room extends VC.Scene {
                 this.audioChannel.play(SoundEffects.ROOM_OPENED, 1, false);
             }
             this.lastBarred = this.barred; 
+            this.lastOpened = this.opened;
         }
        
         this.shadowGroup.toFront();
@@ -6736,10 +6728,11 @@ class Room extends VC.Scene {
             //unlock door.
             if(isPlayer(gameObject) && gameObject.room === door.room && !(door instanceof SecretDoor) && !door.opened && !room.barred &&  gameObject.keys && gameObject.keys.indexOf(door.lock)>-1 && gameObject.box.inside(door.box)){
                     door.opened = 1;
-                    game.level.findNeighbor(room, door.wall).opened=1;
-                    game.level.statistics.doorsUnlocked++;
-                    room.audioChannel.play(SoundEffects.ROOM_OPENED, game.slot.sfxVolume, false)
-                    room.doorsRendered = false;
+                    room.opened = 1;
+                    game.currentScene.findNeighbor(room, door.wall).opened=1;
+                    //game.level.statistics.doorsUnlocked++;
+                    //room.audioChannel.play(SoundEffects.ROOM_OPENED, game.slot.sfxVolume, false)
+                    room.sendStructure = true;
             }
 
             if(
@@ -14527,7 +14520,7 @@ class TreasureChest extends GameObject{
                 this.state = 1;
                 
                 if(this.#content===Treasure.NONE){
-                    //game.level.message = "It is Empty.";
+                    game.currentScene.message = "It is Empty.";
                     return;
                 }
 
@@ -14540,18 +14533,12 @@ class TreasureChest extends GameObject{
                 }
                 if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
                     player.keys.push(this.#content);
-                    //game.level.statistics.keysCollected++;
-                    setTimeout(()=>{this.playSound(1,SoundEffects.KEY, .7, false);},400);
                 } else if (this.#content === Treasure.HEART){
                     player.health = VC.Math.constrain(0, player.health + 10, player.maxHealth);
-                    //game.level.statistics.heartsCollected++;
-                    if(player.health>10){
-                        setTimeout(()=>{this.playSound(1,SoundEffects.HEART, .7, false);},400);
-                    }
+                    
                 } else if (this.#content === Treasure.TNT){
                     player.tntCount++;
                     //game.level.statistics.tntCollected += 1;
-                    setTimeout(()=>{this.playSound(1,SoundEffects.TNT, .7, false);},400);
                 } else if (this.#content === Treasure.HEARTCONTAINER){
                     player.maxHealth += 10;
                     player.health = player.maxHealth;
@@ -14559,14 +14546,15 @@ class TreasureChest extends GameObject{
                     //game.slot.levelState[game.level.world-1] = 0;
                     //game.slot.save();
 
-                    //if(game.player.health>10){
-                    //    setTimeout(()=>{this.playSound(1,SoundEffects.HEART_CONTAINER, .7, false);},400);
-                    //}
+
                 } else {
                     let goldValue = (this.#content - Treasure.TNT ) * 100;
                     player.gold += goldValue;
                     //game.level.statistics.goldCollected += goldValue;
-                    //setTimeout(()=>{this.playSound(1,SoundEffects.GOLD, .7, false);},400);
+                }
+                let playerName = ""
+                if(player.length>1){
+                    playerName = player.playerName + " "
                 }
                 let prefixes = ["Found", "Got", "Discovered", "Yes! It's", "Grabbed", "Nabbed", "Picked up"]
                 let prefix = prefixes[VC.Math.random(0,prefixes.length-1)];
@@ -14612,7 +14600,7 @@ class TreasureChest extends GameObject{
                         suffix = "a Gold Scarab! (500g)"
                         break;
                 }
-                //game.level.message = prefix + " " + suffix;
+                game.currentScene.message = playerName + prefix + " " + suffix;
             }
         })
     }    
@@ -14620,6 +14608,29 @@ class TreasureChest extends GameObject{
     render(deltaT, screen){
         if(this.state==1 && !this.#lastOpened){
             this.playSound(0,SoundEffects.CHEST, .7, false)
+            switch(this.#content){
+                case Treasure.SILVERKEY:
+                case Treasure.GOLDKEY:
+                case Treasure.REDKEY:
+                case Treasure.GREENKEY:
+                case Treasure.BLUEKEY:
+                    setTimeout(()=>{this.playSound(1,SoundEffects.KEY, .7, false);},400);
+                    break;
+                case Treasure.HEART:
+                    //if(player.health>10){
+                    setTimeout(()=>{this.playSound(1,SoundEffects.HEART, .7, false);},400);
+                    break;
+                    //}
+                case Treasure.HEARTCONTAINER:
+                    setTimeout(()=>{this.playSound(1,SoundEffects.HEART_CONTAINER, .7, false);},400);
+                    break;
+                case Treasure.TNT:
+                    setTimeout(()=>{this.playSound(1,SoundEffects.TNT, .7, false);},400);
+                    break;
+                default:
+                    setTimeout(()=>{this.playSound(1,SoundEffects.GOLD, .7, false);},400);
+                    break; 
+            }
             this.#lastOpened = true;
                 //game.level.statistics.chestsOpened++;
         }
@@ -14646,6 +14657,7 @@ class TreasureChest extends GameObject{
             if (this.#contentSprite == null){
                 this.#contentSprite = new VC.Sprite(screen, Images.TREASURE, 36, 504, 36, 36, this.box.x+14,this.box.y-18)
                 this.#contentSprite.setAnimation(0, this.#content);
+                
             }
 
             this.#backgroundSprite.setAnimation(0,1);
@@ -15122,7 +15134,7 @@ class ForestTemple extends Temple{
     
     themeRoom(room, index, level){
         super.themeRoom(room, index);
-        //return;
+        return;
         if (index !== 0 && !room.exit && level && level.number % 5 != 4 && !room.secret){
             
             var enemyRange = level.number + 1 ;
@@ -16046,11 +16058,19 @@ class LevelFactory {
                 //regionRooms.push(entrance);
 
                 // Lock entrance if not starting position.
+
+                let lockedDoor = new Door(level,extent,direction, 0)
+                lockedDoor.lock = region;
+                lockedDoor.opened = false;
+                lockedDoor.color = regionColor(lockedDoor.lock + Treasure.SILVERKEY - 1);
+                
+                // Lock entrance if not starting position.
                 entrance.opened = false;
                 entrance.lock = region;
                 entrance.region = region;
-                
-                extent.doors.push(new Door(level,extent,direction, 0));
+
+            console.log("Lock 1")
+                extent.doors.push(lockedDoor);
                 entrance.doors.push(new Door(level,entrance,(direction + 2) % 4, 0));
                 level.statistics.doorsSpawned++;
             }
@@ -16102,7 +16122,7 @@ class LevelFactory {
         }
         
         let exitRoom;
-        let maxKey;
+        let maxKey = Treasure.SILVERKEY;
         if(level.number <= 19){
             let extents = level.extents();
                 
@@ -16126,12 +16146,21 @@ class LevelFactory {
             }
             //regionRooms.push(entrance);
 
-            //Lock entrance if not starting position.
+ 
+            console.log("Lock 2")
+
             exitRoom.opened = false;
             maxKey = maxRegion + 1;
             exitRoom.lock = maxKey;
             exitRoom.region = maxKey;
-            extent.doors.push(new Door(level,extent,direction, 0));
+
+           //Lock entrance if not starting position.
+            let lockedDoor = new Door(level,extent,direction, 0)
+            lockedDoor.lock = maxKey;
+            lockedDoor.opened = false;
+            lockedDoor.color = regionColor(maxKey + Treasure.SILVERKEY - 1);
+
+            extent.doors.push(lockedDoor);
             exitRoom.doors.push(new Door(level,exitRoom,(direction + 2) % 4, 0));
             level.statistics.doorsSpawned++;
           
