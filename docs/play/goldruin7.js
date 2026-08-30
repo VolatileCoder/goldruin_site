@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.200 BETA"
+const VERSION = "v7.26.8.29.208 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -4226,7 +4226,7 @@ class StatusOverlay extends VC.Scene {
             }
 
             this.#keys.forEach((k, i)=>{
-                if(player.keys.length>i){
+                if(player && player.keys && player.keys.length>i){
                     k.setAnimation(0,player.keys[i]);
                 }else{
                     k.setAnimation(0,Treasure.NONE);
@@ -5816,16 +5816,18 @@ class Level extends VC.Scene {
     }
     
     preDisplay(){
+        if (this.music){
+            renderer.playMusic(this.music);
+        } else if(this.number % 5 === 4){
+            renderer.playMusic(Music.MYSTERY);
+        } else {
+            renderer.playMusic(LevelFactory.getTemple(this.world).music);
+        }
+        /*
         if(this.currentRoom == null && this.#rooms.length>0){
             this.currentRoom = this.#rooms[0];
+            //renderer.stopMusic();
 
-            if (this.music){
-                renderer.playMusic(this.music);
-            } else if(this.number % 5 === 4){
-                renderer.playMusic(Music.MYSTERY);
-            } else {
-                renderer.playMusic(LevelFactory.getTemple(this.world).music);
-            }
             
             let startingRoom = this.#rooms[0];
             startingRoom.visited = 1;
@@ -5870,9 +5872,10 @@ class Level extends VC.Scene {
 
             game.player.move(0); //?
             game.player.direction = direction;
-            */
+            
 
         }
+            */
     }
 
     lastScope = []
@@ -5882,17 +5885,19 @@ class Level extends VC.Scene {
         let scope=[];
 
         this.players.forEach((player)=>{
-            let playerRoom = player.gameObject.room;
-            if(playerRoom){
-                if(scope.indexOf(playerRoom)==-1){
-                    scope.push(playerRoom);
-                }
-                let neighbors = this.getAllNeighbors(playerRoom);
-                neighbors.forEach((n)=>{
-                    if(scope.indexOf(n)==-1){
-                        scope.push(n);
+            if(player.gameObject){
+                let playerRoom = player.gameObject.room;
+                if(playerRoom){
+                    if(scope.indexOf(playerRoom)==-1){
+                        scope.push(playerRoom);
                     }
-                });    
+                    let neighbors = this.getAllNeighbors(playerRoom);
+                    neighbors.forEach((n)=>{
+                        if(scope.indexOf(n)==-1){
+                            scope.push(n);
+                        }
+                    });    
+                }
             }
         });
 
@@ -14555,7 +14560,7 @@ class TreasureChest extends GameObject{
                     //game.level.statistics.goldCollected += goldValue;
                 }
                 let playerName = ""
-                if(players.length>1){
+                if(server.players.size>1){
                     playerName = player.playerName + " "
                 }
                 let prefixes = ["Found", "Got", "Discovered", "Yes! It's", "Grabbed", "Nabbed", "Picked up"]
@@ -14653,27 +14658,28 @@ class TreasureChest extends GameObject{
         }
         
         if(this.state==1){
-
-            this.sprite.setAnimation(0,3);
-            
-            if (this.#contentSprite == null){
-                this.#contentSprite = new VC.Sprite(screen, Images.TREASURE, 36, 504, 36, 36, this.box.x+14,this.box.y-18)
-                this.#contentSprite.setAnimation(0, this.#content);
+            if(Date.now()-this._stateStart<1000){
+                this.sprite.setAnimation(0,3);
                 
-            }
+                if (this.#contentSprite == null){
+                    this.#contentSprite = new VC.Sprite(screen, Images.TREASURE, 36, 504, 36, 36, this.box.x+14,this.box.y-18)
+                    this.#contentSprite.setAnimation(0, this.#content);
+                    
+                }
 
-            this.#backgroundSprite.setAnimation(0,1);
-            
-            let offset = (100/1000) * deltaT;
-            this.#treasureOffset += offset;
-            let opacity = VC.Math.constrain(0,1-(this.#treasureOffset/100), 1);
-            this.#contentSprite.opacity = opacity;    
-            if(opacity>0){
-                this.#contentSprite.location.y -= offset;
-            }else{
-                this.#content = Treasure.NONE 
-                this.#contentSprite.remove();
-                this.#contentSprite = null;
+                this.#backgroundSprite.setAnimation(0,1);
+                
+                let offset = (100/1000) * deltaT;
+                this.#treasureOffset += offset;
+                let opacity = VC.Math.constrain(0,1-(this.#treasureOffset/100), 1);
+                this.#contentSprite.opacity = opacity;    
+                if(opacity>0){
+                    this.#contentSprite.location.y -= offset;
+                }else{
+                    this.#content = Treasure.NONE 
+                    this.#contentSprite.remove();
+                    this.#contentSprite = null;
+                }
             }
         } else {
             this.sprite.setAnimation(0,2);
