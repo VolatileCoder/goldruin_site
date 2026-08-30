@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.213 BETA"
+const VERSION = "v7.26.8.30.2 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1215,6 +1215,9 @@ class Renderer extends VC.Game {
     }
     
     #lastMusic = "";
+    get lastMusic(){
+        return this.#lastMusic
+    }
     playMusic(uri){
         if(uri!=this.#lastMusic ){
             this.#musicChannel.fadeOut(()=>{this.#musicChannel.play(uri, (this.slot ? this.slot.musicVolume : 0.15) *  (uri == Music.INFERNUS ? 2 : 1), true)});
@@ -1645,6 +1648,20 @@ function regionColor(region){
             return "#000070";
     }
     return "#864";
+}
+
+function playMusic(url){
+    if(url==renderer.lastMusic){
+        return;
+    }
+    //to keep music in sync, start at the exact same moment.
+    //assumes clocks are in sync across devices... 
+    var now = DateTime.Now()
+    var roundDown = now.addSeconds();
+    if(roundDown<now){
+        roundDown += 1500;//add about two seconds
+        setTimeout(renderer.playMusic(url), roundDown-DateTime.now());
+    }
 }
 
 
@@ -3722,7 +3739,7 @@ class SlotStatsScreen extends VC.Scene{
         this.#statistics = slot.statistics;
     }
     preDisplay(){
-            renderer.playMusic(Music.CHARGE);
+        playMusic(Music.CHARGE);
     }
 
     render(deltaT, screen){
@@ -5817,11 +5834,11 @@ class Level extends VC.Scene {
     
     preDisplay(){
         if (this.music){
-            renderer.playMusic(this.music);
+            playMusic(this.music);
         } else if(this.number % 5 === 4){
-            renderer.playMusic(Music.MYSTERY);
+            playMusic(Music.MYSTERY);
         } else {
-            renderer.playMusic(LevelFactory.getTemple(this.world).music);
+            playMusic(LevelFactory.getTemple(this.world).music);
         }
         /*
         if(this.currentRoom == null && this.#rooms.length>0){
@@ -10650,7 +10667,7 @@ class LevelSelectScreen extends VC.Scene {
 
     preDisplay(){
         renderer.infoScreen.clear(); //TOOD: display total money
-        renderer.playMusic(Music.CHARGE);
+        playMusic(Music.CHARGE);
         this.audioChannels = [
             new VC.AudioChannel(),
             new VC.AudioChannel(),
@@ -13065,7 +13082,7 @@ class SlotRenameScreen extends VC.Scene {
 
     preDisplay(){
         //TODO: Game selection music
-        renderer.playMusic(Music.CHARGE);
+        playMusic(Music.CHARGE);
     }
     lastRead = Date.now();
     
@@ -13389,7 +13406,7 @@ class SlotSelectScreen extends VC.Scene {
 
     preDisplay(){
         //TODO: Game selection music
-        renderer.playMusic(Music.CHARGE); 
+        playMusic(Music.CHARGE); 
         this.audioChannel.play(SoundEffects.TNT, .4, false);
     }
     
