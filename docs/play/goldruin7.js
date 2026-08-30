@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.164 BETA"
+const VERSION = "v7.26.8.30.167 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -8140,16 +8140,25 @@ class Adventurer extends Character{
             //game.slot.save();
             game.level.statistics.levelNumber = game.level.number; 
             
+
+
             let deadPlayerCount = 0;
             server.players.forEach((player)=>{
                 if(!player.gameObject || player.gameObject.state==State.DEAD){
                     deadPlayerCount++;
                 }
             });
+            
             if(deadPlayerCount>=server.players.size){
                 if(!(game.currentScene instanceof GameOverScreen)){
                     game.currentScene = new GameOverScreen(game.level.statistics, game.level.world);
                 }
+            }else {
+                this.keys.forEach((k, i)=>{
+                    var pu = new Pickup(this.room, k, true);
+                    pu.box.center(this.box.center());
+                    pu._stateStart =  Date.now() - VC.Math.random(0, 100) * 1000;
+                });
             }
 
         }
@@ -8242,8 +8251,7 @@ class Adventurer extends Character{
         //render player sprite
         if(this.state === State.DEAD ){
             this.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
-            
-       
+
         } else if (this.state === State.THROWING){
             this.sprite.setFrame(this.direction, State.THROWING, 0)
         } else {
@@ -12017,7 +12025,6 @@ class Pickup extends GameObject{
     sprite = null;
     #shadow = null;
     #offset = 0;
-    #spawnTime = Date.now();
     #permanent = false;
 
     constructor(room, content, permanent){
@@ -12031,9 +12038,17 @@ class Pickup extends GameObject{
         this.#permanent = permanent
         this.waterOffset = 35;
     }
-
-    set spawnTime(t){
-        this.#spawnTime = t;
+    
+    getData(){
+        let data = super.getData();
+        data.x = this.#content;
+        return data;
+    }
+    setData(data) {
+        if(data && this.id == data.id){
+            super.setData(data)
+            this.#content = data.x;
+        }
     }
 
     move (deltaT){
@@ -12059,33 +12074,25 @@ class Pickup extends GameObject{
             if((this.state === State.IDLE || this.state === State.DYING) && player.box.collidesWith (this.box)){
                 this.state = State.HURT;
                 super.move();
-                
+
                 if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
                     player.keys.push(this.#content);
-                    //game.level.statistics.keysCollected++;
-                    setTimeout(()=>{this.playSound(1,SoundEffects.KEY, .7, false);},400);
-                    
+                    game.level.statistics.keysCollected++;
                 } else if (this.#content === Treasure.HEART){
                     player.health = VC.Math.constrain(0, player.health + 10, player.maxHealth);
-                    //game.level.statistics.heartsCollected++;
-                    setTimeout(()=>{this.playSound(1,SoundEffects.HEART, .7, false);},400);
-
+                    game.level.statistics.heartsCollected++;
                 } else if (this.#content === Treasure.TNT){
                     player.tntCount++;
-                    //game.level.statistics.tntCollected += 1;
-                    setTimeout(()=>{this.playSound(1,SoundEffects.TNT, .7, false);},400);
+                    game.level.statistics.tntCollected += 1;
                 } else if (this.#content === Treasure.HEARTCONTAINER){
                     player.maxHealth += 10;
                     player.health = player.maxHealth;//TODO: add slowly
-                    setTimeout(()=>{this.playSound(1,SoundEffects.HEART_CONTAINER, .7, false);},400);
                 } else {
                     let goldValue = (this.#content - Treasure.TNT ) * 100;
                     player.gold += goldValue;
-                    //game.level.statistics.goldCollected += goldValue;
-                    setTimeout(()=>{this.playSound(1,SoundEffects.GOLD, .7, false);},400);
-                } 
+                    game.level.statistics.goldCollected += goldValue;
+                }
             }
-
             if(!this.#permanent && this.state === State.IDLE && this._stateStart + 2000 < Date.now()){
                 this.state = State.DYING;
             }
@@ -12137,8 +12144,28 @@ class Pickup extends GameObject{
             }else{ 
                 this.state = State.DEAD;
             }
+
+
+            if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
+                //game.level.statistics.keysCollected++;
+                setTimeout(()=>{this.playSound(1,SoundEffects.KEY, .7, false);},400);
+                
+            } else if (this.#content === Treasure.HEART){
+                //game.level.statistics.heartsCollected++;
+                setTimeout(()=>{this.playSound(1,SoundEffects.HEART, .7, false);},400);
+
+            } else if (this.#content === Treasure.TNT){
+                //game.level.statistics.tntCollected += 1;
+                setTimeout(()=>{this.playSound(1,SoundEffects.TNT, .7, false);},400);
+            } else if (this.#content === Treasure.HEARTCONTAINER){
+                setTimeout(()=>{this.playSound(1,SoundEffects.HEART_CONTAINER, .7, false);},400);
+            } else {
+                //game.level.statistics.goldCollected += goldValue;
+                setTimeout(()=>{this.playSound(1,SoundEffects.GOLD, .7, false);},400);
+            } 
+
         } else {
-            let msPassed = new Date() - this.#spawnTime;
+            let msPassed = new Date() - this._stateStart;
             let perc = 1-(msPassed/750);
             let factor = Math.PI - ((Math.PI-1)*(perc));
             let offset = VC.Math.constrain(-10, 10 * Math.sin(factor*1.5), 10) - 20;
