@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.103 BETA"
+const VERSION = "v7.26.8.30.107 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -3807,6 +3807,7 @@ class Server extends VC.Server {
     }
 
     received(data){
+        console.log(data);
         let message = MessageDecoder.deserialize(data);
         if(message instanceof ReadyPlayer){
 
@@ -4687,6 +4688,8 @@ class Client extends VC.Client {
     }
     #lastTimeStamp = null;
     received(data){
+        //console.log(data);
+        //console.log(JSON.stringify(data));
         if(this.ignore){
             return;
         }
@@ -13593,7 +13596,7 @@ class SlotSelectScreen extends VC.Scene {
         msg.levelState = slot.levelState;
         client.ignore = false;
         client.ignore = false;
-        client.send(JSON.stringify(msg));
+        client.send(msg);
     }
 
     #showStats(){
