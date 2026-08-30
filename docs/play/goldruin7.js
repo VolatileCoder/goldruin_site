@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.168 BETA"
+const VERSION = "v7.26.8.30.174 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -5935,7 +5935,7 @@ class Level extends VC.Scene {
                 playerData.r = [player.gameObject.room.getData()];
             }
             if(!player.gameObject || player.gameObject.state == State.DEAD){
-                var p2 = getFocusedPlayer(player.clientId);
+                let p2 = this.getFocusedPlayer(player.clientId);
                 if(p2.gameObject && p2.gameObject.room){
                     playerData.r.push(p2.gameObject.room)
                 }
@@ -6195,9 +6195,8 @@ class Level extends VC.Scene {
             this.currentRoom = focusedPlayer.gameObject.room;
         }else{
             //console.log(focusedPlayer)
-            //console.error("can't focuse on", focusedPlayer.gameObject)
+            console.error("can't focus !", focusedPlayer.gameObject)
             //console.log(focusedPlayer.gameObject.room)
-        
         }
         
         if(this.#lastRenderedRoom !== this.currentRoom){
@@ -8163,7 +8162,6 @@ class Adventurer extends Character{
                 this.keys.forEach((k, i)=>{
                     var pu = new Pickup(this.room, k, true);
                     pu.box.center(this.box.center());
-                    pu._stateStart =  Date.now() - VC.Math.random(0, 100) * 1000;
                 });
             }
 
@@ -11202,7 +11200,10 @@ class LevelSelectScreen extends VC.Scene {
                 this.nextMessage = Date.now() + VC.Math.random(250,750);
                 this.#progressBar = screen.drawLine(106,500,502,500,sepia, 8);
             }
-            this.#previewSprite.render(deltaT)
+            if(this.#previewSprite){
+                this.#previewSprite.render(deltaT)
+            }
+
             let val = VC.Math.percentToRange((Date.now()-this.#loadStart)/3000, 106, 502);
             this.#progressBar.attr("path", "M106,500L" + val + ",500");
             
@@ -12041,6 +12042,7 @@ class Pickup extends GameObject{
         this.box.height=36;
         this.#content = content;
         this.state = State.IDLE;
+        this._stateStart = this._stateStart- VC.Math.random(0, 100) * 1000;
         this.#permanent = permanent
         this.waterOffset = 35;
     }
@@ -12070,7 +12072,6 @@ class Pickup extends GameObject{
                 } else {
                     this.#content = Math.round(Math.random() * 6) + Treasure.HEART;
                 }
-                
             }
             
             if((this.state === State.IDLE || this.state === State.DYING) && player.box.collidesWith (this.box)){
@@ -12095,15 +12096,15 @@ class Pickup extends GameObject{
                     game.level.statistics.goldCollected += goldValue;
                 }
             }
-            if(!this.#permanent && this.state === State.IDLE && this._stateStart + 2000 < Date.now()){
-                this.state = State.DYING;
-            }
 
-            if(!this.#permanent && this.state === State.DYING && this._stateStart + 2000 < Date.now()){
-                this.state = State.DEAD;
-            }
         });
+        if(!this.#permanent && this.state === State.IDLE && this._stateStart + 2000 < Date.now()){
+            this.state = State.DYING;
+        }
 
+        if(!this.#permanent && this.state === State.DYING && this._stateStart + 2000 < Date.now()){
+            this.state = State.DEAD;
+        }
     }
 
     render(deltaT, screen){
@@ -12135,7 +12136,7 @@ class Pickup extends GameObject{
             //this.box.render(game.screen, "#FFF");
         }
         
-        if(this.state === State.HURT){
+        if(this.state == State.HURT ){
             let offset = (100/1000) * deltaT;
             this.#offset += offset;
             let opacity = VC.Math.constrain(0,1-(this.#offset/100), 1);
@@ -12146,27 +12147,28 @@ class Pickup extends GameObject{
             }else{ 
                 this.state = State.DEAD;
             }
-
-
-            if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
-                //game.level.statistics.keysCollected++;
-                setTimeout(()=>{this.playSound(1,SoundEffects.KEY, .7, false);},400);
+            if(this.lastState != State.HURT && this.state != State.DEAD){
                 
-            } else if (this.#content === Treasure.HEART){
-                //game.level.statistics.heartsCollected++;
-                setTimeout(()=>{this.playSound(1,SoundEffects.HEART, .7, false);},400);
+                if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
+                    //game.level.statistics.keysCollected++;
+                    this.playSound(1,SoundEffects.KEY, .7, false);
+                    
+                } else if (this.#content === Treasure.HEART){
+                    //game.level.statistics.heartsCollected++;
+                    this.playSound(1,SoundEffects.HEART, .7, false);
 
-            } else if (this.#content === Treasure.TNT){
-                //game.level.statistics.tntCollected += 1;
-                setTimeout(()=>{this.playSound(1,SoundEffects.TNT, .7, false);},400);
-            } else if (this.#content === Treasure.HEARTCONTAINER){
-                setTimeout(()=>{this.playSound(1,SoundEffects.HEART_CONTAINER, .7, false);},400);
-            } else {
-                //game.level.statistics.goldCollected += goldValue;
-                setTimeout(()=>{this.playSound(1,SoundEffects.GOLD, .7, false);},400);
-            } 
+                } else if (this.#content === Treasure.TNT){
+                    //game.level.statistics.tntCollected += 1;
+                    this.playSound(1,SoundEffects.TNT, .7, false);
+                } else if (this.#content === Treasure.HEARTCONTAINER){
+                    this.playSound(1,SoundEffects.HEART_CONTAINER, .7, false);
+                } else {
+                    //game.level.statistics.goldCollected += goldValue;
+                    this.playSound(1,SoundEffects.GOLD, .7, false);
+                } 
+            }
 
-        } else {
+        } else if (this.state == State.IDLE) {
             let msPassed = new Date() - this._stateStart;
             let perc = 1-(msPassed/750);
             let factor = Math.PI - ((Math.PI-1)*(perc));
@@ -12181,6 +12183,7 @@ class Pickup extends GameObject{
             }
         }
         this.sprite.render(deltaT);
+        this.lastState = this.state;
     }
 
     clear(){
@@ -16681,7 +16684,6 @@ class LevelFactory {
                 do {
                     count++; 
                     let p = new Pickup(r, VC.Math.random(Treasure.HEART, Treasure.BEETLE), true);
-                    p.spawnTime = Date.now() + VC.Math.random(0, 100) * 1000;
                     failed = !r.spawn(p);
                 }
                 while(!failed && count<30);
