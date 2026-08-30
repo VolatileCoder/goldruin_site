@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.2 BETA"
+const VERSION = "v7.26.8.30.37 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -480,6 +480,7 @@ class Game extends VC.Game {
     get currentScene(){
         return this.#currentScene;
     }
+
     set currentScene(value){
         //log(value)
         if(value!=this.#currentScene){
@@ -490,6 +491,13 @@ class Game extends VC.Game {
             this.#currentScene.players = this.#server.players;
             this.#currentScene.preDisplay();//setup initial data;
         }
+    }
+
+    get level(){
+        if(this.#currentScene instanceof Level){
+            return this.#currentScene;
+        }
+        return null;
     }
     
     onPreRender(deltaT){
@@ -1238,7 +1246,8 @@ class SceneManager {
                 return new SlotSelectScreen();
             case "LevelSelectScreen":
                 return new LevelSelectScreen();
-
+            case "GameOverScreen":
+                return new GameOverScreen();
             case "Level":
                 return new Level();
             default:
@@ -1656,11 +1665,11 @@ function playMusic(url){
     }
     //to keep music in sync, start at the exact same moment.
     //assumes clocks are in sync across devices... 
-    var now = DateTime.Now()
-    var roundDown = now.addSeconds();
+    let now = Date.now();
+    let roundDown = Math.round(now/1000)*1000;
     if(roundDown<now){
         roundDown += 1500;//add about two seconds
-        setTimeout(renderer.playMusic(url), roundDown-DateTime.now());
+        setTimeout(renderer.playMusic(url), roundDown-Date.now());
     }
 }
 
@@ -2271,6 +2280,96 @@ class GameObject{
     
     stopSound(channel, uri){
         this.getAudioChannel(channel).stop(uri);
+    }
+}
+class GameOverScreen extends VC.Scene{
+    #sceneName = "GameOverScreen"
+    #statistics = null;
+    #rendered = false;
+    #lastWorld = -1;
+    #background = null;
+    stats = null;
+    constructor(statistics, world){
+        super();
+        this.#statistics = statistics; 
+        this.#lastWorld = world;
+    }
+    get sceneName(){
+        return this.#sceneName;
+    }
+    setData(data){
+        if(this.sceneName == data.sceneName){
+            this.#statistics = data.s;
+            this.#lastWorld = data.w;
+        }
+    }
+    getData(){
+        return {
+            sceneName: this.sceneName,
+            w: this.#lastWorld,
+            s: this.#statistics
+        }
+    }
+    preDisplay(){
+        playMusic(Music.DEATH);
+        //game.player.state = State.DEAD;
+        game.boss = null;
+    }
+    preRender(deltaT){}
+
+    render(deltaT, screen){
+        if(this.#statistics && !this.#rendered){
+            this.stats = new Statistics()
+            this.stats.add(this.#statistics);
+            this.#background = screen.drawRect(0, 0, Renderer.dimensions.width, Renderer.dimensions.width, SCREENBLACK, SCREENBLACK, 0);
+            this.advSprite = new Adventurer();
+            this.advSprite.box.x = -2000;
+            this.advSprite.render(0, screen);
+            this.advSprite.sprite.location.x = 245;
+            this.advSprite.sprite.location.y = -14;        
+            this.advSprite.sprite.location.z = 0;
+            this.advSprite.sprite.lastLocation.z = 0;
+            this.advSprite.sprite.lastLocation.x = this.advSprite.sprite.location.x
+            this.advSprite.sprite.lastLocation.y = this.advSprite.sprite.location.y;
+            this.advSprite.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
+            this.advSprite.sprite.render(0);
+            this.group = this.stats.render(screen, "YOU DIED!", new VC.Box(50,0,Renderer.dimensions.width-100,Renderer.dimensions.width));
+            this.#rendered = true;
+        }
+    }
+    postRender(deltaT){
+
+        server.players.forEach((player)=>{
+            if (!this.exiting){
+                let c = player.controller.read();
+                if(c.a===1){
+                    this.exiting == true;
+                    game.currentScene = new LevelSelectScreen(this.#lastWorld - 1);
+                }
+            }
+        })
+
+    }
+    postDisplay(){
+        if(this.#background){
+            this.#background.remove();
+            this.#background = null;
+        }
+        if(this.group){
+            log("GameOverScreen postdisplay called")
+            this.group.remove();
+            this.group = null;
+        }
+        if(this.stats){
+            this.stats.remove();
+            this.stats = null;
+        }
+        this.#statistics = null;
+        this.#lastWorld = null;
+        if(this.advSprite){
+            this.advSprite.remove();
+        }
+        this.advSprite = null;
     }
 }
 
@@ -5723,6 +5822,7 @@ class Level extends VC.Scene {
         return this.#rooms;
     }
 
+    /*
     get currentRoom(){
         return this.#currentRoom;
     }
@@ -5762,6 +5862,7 @@ class Level extends VC.Scene {
             }
         }
     }
+        */
 
     getData(){
         let obj =  {
@@ -5833,13 +5934,7 @@ class Level extends VC.Scene {
     }
     
     preDisplay(){
-        if (this.music){
-            playMusic(this.music);
-        } else if(this.number % 5 === 4){
-            playMusic(Music.MYSTERY);
-        } else {
-            playMusic(LevelFactory.getTemple(this.world).music);
-        }
+
         /*
         if(this.currentRoom == null && this.#rooms.length>0){
             this.currentRoom = this.#rooms[0];
@@ -5898,8 +5993,18 @@ class Level extends VC.Scene {
     lastScope = []
     lastRoom = null;
     preRender(deltaT){
+
+        this.statistics.timeSpent+=deltaT;
         //log("test", deltaT);
         let scope=[];
+
+        if (this.music){
+            playMusic(this.music);
+        } else if(this.number % 5 === 4){
+            playMusic(Music.MYSTERY);
+        } else {
+            playMusic(LevelFactory.getTemple(this.world).music);
+        }
 
         this.players.forEach((player)=>{
             if(player.gameObject){
@@ -5923,7 +6028,7 @@ class Level extends VC.Scene {
             room.preRender(deltaT);
         })
         this.lastScope = scope;
-        /*
+        
         if (this.currentRoom){
             scope.push(this.currentRoom);
             this.currentRoom.preRender(deltaT);
@@ -5956,7 +6061,7 @@ class Level extends VC.Scene {
             this.lastScope = scope;
             this.lastRoom = this.currentRoom;
         }
-            */
+            
     }
 
 
@@ -6023,8 +6128,12 @@ class Level extends VC.Scene {
         }
         
         if(this.#lastRenderedRoom !== this.currentRoom){
+            if(this.#lastRenderedRoom){
+                this.#lastRenderedRoom.postDisplay();
+            }
             screen.clear();
             this.#lastRenderedRoom = this.currentRoom;
+            this.currentRoom.preDisplay();
         }
         /*
         if(!this.#backDropElement){
@@ -6034,7 +6143,6 @@ class Level extends VC.Scene {
         if (this.currentRoom){
             this.currentRoom.render(deltaT, screen); 
         }
-        this.statistics.timeSpent+=deltaT;
         let frameTime = Date.now()
         if(frameTime < this.#messageStart + this.#messageDuration + this.#messageFade){
 
@@ -6125,7 +6233,10 @@ class Level extends VC.Scene {
         for(let r = 0; r<this.#rooms.length; r++){
             this.#rooms[r].remove();
         }
-        this.#currentRoom.postDisplay();
+        if(this.#lastRenderedRoom){
+            this.#lastRenderedRoom.postDisplay();
+        }
+        
         /*
         this.#backDropElement.remove();
         this.#backDropElement = null;
@@ -6255,6 +6366,9 @@ class Level extends VC.Scene {
             console.log("moveToNextRoom", nextRoom.id);
             //gameObject.remove();
             if(!nextRoom.barred || gameObject instanceof Adventurer ){
+                if(gameObject instanceof Adventurer){
+                    nextRoom.visited = 1;
+                }
                 let loc = this.getEntranceLocation(nextRoom,(direction + 2) % 4, gameObject)
                 //if(gameObject.room === this.currentRoom){
                 //gameObject.clear();
@@ -6525,7 +6639,7 @@ class Room extends VC.Scene {
         let barred = 0;
         let objectInDoorway = false;
 
-        if (game && game.currentScene && game.currentScene.getPlayersInRoom(this).length>0){
+        if (game && game.level && game.level.getPlayersInRoom(this).length>0){
             this.objects.forEach((o)=>{
                 if(o.team == Team.DUNGEON && o.state != State.DEAD && !this.secret){
                     barred = 1;
@@ -7948,6 +8062,28 @@ class Adventurer extends Character{
         }
         this.waterBox.center(this.box.center());
         this.waterBox.y += this.waterBox.height * 1.5;
+        if(this.state1!=State.DEAD && this.state == State.DEAD){
+            game.level.statistics.roomsSpawned = game.level.rooms.length;
+            game.level.statistics.roomsVisited = filter(game.level.rooms,(r)=>{return r.visited}).length
+            //game.statistics.add(game.level.statistics);
+            //game.slot.statistics.add(game.level.statistics);   
+            //game.slot.save();
+            game.level.statistics.levelNumber = game.level.number; 
+            
+            let deadPlayerCount = 0;
+            server.players.forEach((player)=>{
+                if(!player.gameObject || player.gameObject.state==State.DEAD){
+                    deadPlayerCount++;
+                }
+            });
+            if(deadPlayerCount>=server.players.size){
+                if(!(game.currentScene instanceof GameOverScreen)){
+                    game.currentScene = new GameOverScreen(game.level.statistics, game.level.world);
+                }
+            }
+
+        }
+
     }
 
     render(deltaT, screen){
@@ -8037,16 +8173,7 @@ class Adventurer extends Character{
         if(this.state === State.DEAD ){
             this.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
             
-            //game.level.statistics.roomsVisited = filter(game.level.rooms,(r)=>{return r.visited}).length
-            //game.level.statistics.roomsSpawned = game.level.rooms.length
-            //game.statistics.add(game.level.statistics);
-            //game.slot.statistics.add(game.level.statistics);   
-            //game.slot.save();
-            //game.statistics.levelNumber = game.level.number; 
-            //if(!(game.currentScene instanceof GameOverScreen)){
-                //game.currentScene.transitionTo = new GameOverScreen(game.statistics, game.level.world);
-            //}
-
+       
         } else if (this.state === State.THROWING){
             this.sprite.setFrame(this.direction, State.THROWING, 0)
         } else {
@@ -14542,6 +14669,8 @@ class TreasureChest extends GameObject{
                 (player.box.inside(this.#tripBack) && player.direction===Direction.SOUTH)
             )){
                 this.state = 1;
+
+                game.level.statistics.chestsOpened += 1 
                 
                 if(this.#content===Treasure.NONE){
                     game.currentScene.message = "It is Empty.";
@@ -14557,28 +14686,31 @@ class TreasureChest extends GameObject{
                 }
                 if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
                     player.keys.push(this.#content);
+                    game.level.statistics.keysCollected += 1;
                 } else if (this.#content === Treasure.HEART){
                     player.health = VC.Math.constrain(0, player.health + 10, player.maxHealth);
                     
                 } else if (this.#content === Treasure.TNT){
                     player.tntCount++;
-                    //game.level.statistics.tntCollected += 1;
+                    game.level.statistics.tntCollected += 1;
                 } else if (this.#content === Treasure.HEARTCONTAINER){
+                    
                     player.maxHealth += 10;
                     player.health = player.maxHealth;
                     //game.slot.hearts += 1;
                     //game.slot.levelState[game.level.world-1] = 0;
                     //game.slot.save();
-
-
                 } else {
                     let goldValue = (this.#content - Treasure.TNT ) * 100;
-                    player.gold += goldValue;
-                    //game.level.statistics.goldCollected += goldValue;
+
+                    players.forEach((p)=>{
+                        p.gameObject.gold += goldValue;
+                    });
+                    game.level.statistics.goldCollected += goldValue;
                 }
                 let playerName = ""
-                if(server.players.size>1 && player.playerName){
-                    playerName = player.playerName + " "
+                if(server.players.size>1 && p.playerName){
+                    playerName = p.playerName + " "
                 }
                 let prefixes = ["Found", "Got", "Discovered", "Grabbed", "Nabbed", "Picked up"]
                 let prefix = prefixes[VC.Math.random(0,prefixes.length-1)];
@@ -14624,7 +14756,7 @@ class TreasureChest extends GameObject{
                         suffix = "a Gold Scarab! (500g)"
                         break;
                 }
-                game.currentScene.message = playerName + prefix + " " + suffix;
+                game.level.message = playerName + prefix + " " + suffix;
             }
         })
     }    
@@ -14656,7 +14788,6 @@ class TreasureChest extends GameObject{
                     break; 
             }
             this.#lastOpened = true;
-                //game.level.statistics.chestsOpened++;
         }
 
         screen.onClear(()=>this.clear());
@@ -16535,6 +16666,7 @@ class LevelFactory {
             }
             level.players.push(player)
             level.rooms[0].spawn(a);//todo: spawn near entrance. Especially if single player.
+            level.rooms[0].visited = 1;
         });
         return level;
     }
