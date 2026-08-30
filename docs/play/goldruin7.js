@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.196 BETA"
+const VERSION = "v7.26.8.29.200 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -13897,7 +13897,6 @@ class SpikeTrap extends GameObject{
         
         this.state = State.ATTACKING;
         
-        this.playSound(0, SoundEffects.FLOOR_SPIKES, .25, false);
 
         let attackBox = this.box;
         this.room.objects.forEach((o)=>{
@@ -13947,11 +13946,14 @@ class SpikeTrap extends GameObject{
             this.#sprite1.setFrame(0, State.WALKING, 0);
             this.#sprite2.setFrame(0, State.WALKING, 0);
         } else if (this.state === State.ATTACKING) {
+            if(this.lastState!=State.ATTACKING){
+                this.playSound(0, SoundEffects.FLOOR_SPIKES, .25, false);
+            }
             let frame = VC.Math.constrain(0, Math.floor((Date.now()-this._stateStart)/100), 8);
             this.#sprite1.setFrame(0, State.ATTACKING, frame);
             this.#sprite2.setFrame(0, State.ATTACKING, frame);
         }
-
+        this.lastState = this.state;
         this.#sprite1.render();
         this.#sprite2.render();
         if(DEBUG){
@@ -14553,7 +14555,7 @@ class TreasureChest extends GameObject{
                     //game.level.statistics.goldCollected += goldValue;
                 }
                 let playerName = ""
-                if(player.length>1){
+                if(players.length>1){
                     playerName = player.playerName + " "
                 }
                 let prefixes = ["Found", "Got", "Discovered", "Yes! It's", "Grabbed", "Nabbed", "Picked up"]
