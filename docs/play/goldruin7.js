@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.167 BETA"
+const VERSION = "v7.26.8.30.168 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -5934,6 +5934,12 @@ class Level extends VC.Scene {
             if(player.gameObject && player.gameObject.room){
                 playerData.r = [player.gameObject.room.getData()];
             }
+            if(!player.gameObject || player.gameObject.state == State.DEAD){
+                var p2 = getFocusedPlayer(player.clientId);
+                if(p2.gameObject && p2.gameObject.room){
+                    playerData.r.push(p2.gameObject.room)
+                }
+            }
             data.set(player.clientId, playerData);
         });
 
@@ -6155,18 +6161,18 @@ class Level extends VC.Scene {
         return null;
     }
 
-    getFocusedPlayer(){
+    getFocusedPlayer(forId){
         let player = null;
         for(let i=0; i<this.#players.length; i++){
             player = this.#players[i];
             //console.log(player.clientId, player.gameObject ? player.gameObject.room ? player.gameObject.room.id : "no room" : "no gameObject");
-            if(player.clientId == client.id && player.gameObject && player.gameObject.room){
+            if(player.clientId == forId && player.gameObject && player.gameObject.room){
                 return player;
             }
         }
         for(let i=0; i<this.#players.length; i++){
             player = this.#players[i];
-            if(player.gameObject && player.gameObject.room){ //todo: modify for observing
+            if(player.gameObject && player.gameObject.room && player.gameObject.state!==State.DEAD){ //todo: modify for observing
                 return player;
             }
         }
@@ -6183,7 +6189,7 @@ class Level extends VC.Scene {
         } else {
             playMusic(LevelFactory.getMusic(this.world));
         }
-        let focusedPlayer = this.getFocusedPlayer();
+        let focusedPlayer = this.getFocusedPlayer(client.id);
         this.currentRoom = this.#lastRenderedRoom;
         if(focusedPlayer && focusedPlayer.gameObject && focusedPlayer.gameObject.room){
             this.currentRoom = focusedPlayer.gameObject.room;
@@ -12066,11 +12072,7 @@ class Pickup extends GameObject{
                 }
                 
             }
-
-            if(game.level && this.room !== game.level.currentRoom){
-                return;
-            }
-
+            
             if((this.state === State.IDLE || this.state === State.DYING) && player.box.collidesWith (this.box)){
                 this.state = State.HURT;
                 super.move();
