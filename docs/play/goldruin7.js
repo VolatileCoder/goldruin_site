@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.44 BETA"
+const VERSION = "v7.26.8.30.56 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -4670,12 +4670,11 @@ class Client extends VC.Client {
     }
     #lastTimeStamp = null;
     received(data){
-        //console.log(data);
         if(this.ignore){
             return;
         }
         let message = MessageDecoder.deserialize(data);
-        if(this.#lastTimeStamp!=null && message.timestamp<this.#lastTimeStamp || Date.now()-message.timestamp>500){
+        if(this.#lastTimeStamp!=null && message.timestamp<this.#lastTimeStamp ){
             return;
         }
         this.#lastTimeStamp = message.timestamp;
@@ -5872,9 +5871,16 @@ class Level extends VC.Scene {
             p: [],
             m: this.#message
         }
-        this.lastScope.forEach((r)=>{
-            obj.r.push(r.getData());
+        let roomsToSend = []
+        this.players.forEach((player)=>{
+            if(player.gameObject && player.gameObject.room && roomsToSend.indexOf(player.gameObject.room)==-1){
+                roomsToSend.push(player.gameObject.room)
+            }
         });
+        roomsToSend.forEach((r)=>{
+                obj.r.push(r.getData());
+            }
+        );
         //log('sending ', obj.r.length, "rooms")
         this.#players.forEach((p)=>{obj.p.push(p.getData())});
         return obj;
@@ -6202,7 +6208,7 @@ class Level extends VC.Scene {
 
     getPlayersInRoom(room){
         let result=[];
-        this.players.forEach((p)=>{
+        server.players.forEach((p)=>{
             if(p && p.gameObject && p.gameObject.room == room){
                 result.push(p);
             }
@@ -6512,7 +6518,7 @@ class Room extends VC.Scene {
                     currentObject.setData(obj);
                 }else {
                     let value = GameObject.fromData(obj);
-                    if(value.code=='adv'){
+                    if(value && value.code=='adv'){
                         console.log('adv from data:', obj)
                     }
                 }
