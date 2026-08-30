@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.107 BETA"
+const VERSION = "v7.26.8.30.161 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -139,14 +139,14 @@ class Door {
         data.p = this.opened;
         data.l = this.lock;
         if(data.l){
-            console.log(data);
+            log(data);
         }
         return data;
     }
 
     render(screen){
         if(this.wasOpen && this.wasOpen != this.opened && this.opened){
-            console.log("trying really hard to play audio")
+            log("trying really hard to play audio")
             this.room.audioChannel.play(SoundEffects.ROOM_OPENED, 1, false)
         }
         this.wasOpen = this.opened
@@ -507,13 +507,29 @@ class Game extends VC.Game {
     }
     onRender(deltaT){
         if(this.#currentScene){
-            let msg = new Message();
-            msg.messageType = MessageType.SCENE_DATA;
-            msg.sender = this.#server.id;
-            msg.deltaT = deltaT;
-            msg.data = this.#currentScene.getData();
-            //log(msg.data)
-            this.#server.broadcast(msg);
+
+            if(this.level){
+                let levelData = this.level.getData();
+                levelData.forEach((data, playerId) => {
+                    let msg = new Message();
+                    msg.messageType = MessageType.SCENE_DATA;
+                    msg.sender = this.#server.id;
+                    msg.deltaT = deltaT;
+                    msg.data = data;
+                    
+                    
+                    this.#server.send(playerId, msg);
+                    //log(msg);
+                });
+            }else{            
+                let msg = new Message();
+                msg.messageType = MessageType.SCENE_DATA;
+                msg.sender = this.#server.id;
+                msg.deltaT = deltaT;
+                msg.data = this.#currentScene.getData();
+                //log(msg.data)
+                this.#server.broadcast(msg);                
+            }
         }
     }
     onPostRender(deltaT){
@@ -907,6 +923,7 @@ class Message {
     messageType = MessageType.UNSET;
     timestamp = Date.now();
     sender = "";
+    reciever = "";
     data = {}
 }
 class MessageType {
@@ -1034,7 +1051,7 @@ class Player {
             this.playerName = data.n;
             if(data.o && (!this.gameObject || data.o!=this.gameObject.id || this.gameObject.room==null || (!isNaN(data.r) && this.lastRoom && this.lastRoom.id != data.r))){
                 if(renderer.currentScene instanceof Level){
-                    console.log("finding game object")
+                    log("finding game object")
                     if(!isNaN(data.r)){
                         this.gameObject = renderer.currentScene.findRoomById(data.r).findObjectById(data.o);
                     }else{
@@ -1046,9 +1063,9 @@ class Player {
             } else if (!data.o){
                 this.gameObject = null;
                 this.lastRoom = null;
-                console.log("removing game object!!")
+                log("removing game object!!")
             }else {
-                console.log("something's borken", data.o, this.gameObject.id, this.gameObject.room ? this.gameObject.room.id : "MISSING")
+                log("something's borken", data.o, this.gameObject.id, this.gameObject.room ? this.gameObject.room.id : "MISSING")
             }
         }
         
@@ -1194,6 +1211,7 @@ class Renderer extends VC.Game {
         }
         
         if(this.#currentScene instanceof Level){
+            log("objects",this.currentScene.rooms[0].objects);
             if(this.statusOverlay==null){
                 this.statusOverlay = new StatusOverlay();
             }
@@ -1589,7 +1607,7 @@ function filter(array, fun){
 
 function log(...args){
     if(DEBUG){
-        console.log(...args);
+        log(...args);
     }
 }
 
@@ -1997,6 +2015,7 @@ class GameObject{
             b: this.box.getData(),
             d: this.direction,
             s: this.state,
+            st: this._stateStart,
             r: this.room ? this.room.id : "",
             z: this.z
         }
@@ -2008,6 +2027,7 @@ class GameObject{
             this.box.reset(data.b.x, data.b.y, data.b.w, data.b.h);
             //log(this.tag, this.id, this.box);
             this.state = data.s;
+            this._stateStart = data.st;
             if(!this.room || this.room.id != data.r){
                 log("setting room")
                 this.room = renderer.currentScene instanceof Level ? renderer.currentScene.findRoomById(data.r) : null;
@@ -3807,7 +3827,7 @@ class Server extends VC.Server {
     }
 
     received(data){
-        console.log(data);
+        //log(data);
         let message = MessageDecoder.deserialize(data);
         if(message instanceof ReadyPlayer){
 
@@ -4688,38 +4708,46 @@ class Client extends VC.Client {
     }
     #lastTimeStamp = null;
     received(data){
-        //console.log(data);
-        //console.log(JSON.stringify(data));
+        //log(JSON.stringify(data));
         if(this.ignore){
             return;
         }
         let message = MessageDecoder.deserialize(data);
         if(this.#lastTimeStamp!=null && message.timestamp<this.#lastTimeStamp ){
+            log("out of order message, ignoring")
             return;
         }
         if(Date.now()-message.timestamp > 500){
-            console.log("old message, ignoring")
+            log("old message, ignoring")
             return;
         }
         
         this.#lastTimeStamp = message.timestamp;
-        if(message instanceof ReadyPlayer && message.sender == this.id){
-            //server is ready, begin sending input. 
-            this.intervalHandle = window.setInterval(()=>{this.pollController()}, 75);
-        }else {
-            this.otherPlayers.push(message.sender);
+        if(message instanceof ReadyPlayer){
+            if(message.sender == this.id){
+                //server is ready, begin sending input. 
+                this.intervalHandle = window.setInterval(()=>{this.pollController()}, 75);
+            }else if(this.otherPlayers.indexOf(message.sender)==-1) {
+                this.otherPlayers.push(message.sender);//useful?
+            }
         }
         if(message.messageType == MessageType.SCENE_DATA){
-            //log(data)
             if(!this.#renderer.currentScene || (this.#renderer.currentScene.sceneName!=message.data.sceneName && this.#renderer.transitioningTo != message.data.sceneName )){
                 //log("setting New scene")
                 let newScene = SceneManager.CreateScene(message.data.sceneName);
                 this.#renderer.currentScene = newScene; 
                 newScene.setData(message.data);
             }else if(this.#renderer.currentScene && this.#renderer.currentScene.sceneName==message.data.sceneName){
+                //log("updating scene");
                 this.#renderer.currentScene.setData(message.data);
             }
+            else{
+                //log("not ok");
+            }
+        }else{
+            //log("messagetype:", message.messageType)
         }
+
     }
 
 
@@ -5889,28 +5917,24 @@ class Level extends VC.Scene {
         */
 
     getData(){
-        let obj =  {
-            sceneName: this.sceneName,
-            n: this.number,
-            r: [],
-            p: [],
-            m: this.#message
-        }
-        let roomsToSend = []
+        let data = new Map();
+        let p = []
+        this.#players.forEach((player)=>{p.push(player.getData())});
         this.players.forEach((player)=>{
-            if(player.gameObject && player.gameObject.room && roomsToSend.indexOf(player.gameObject.room)==-1){
-                roomsToSend.push(player.gameObject.room)
+            let playerData = {
+                sceneName: this.sceneName,
+                n: this.number,
+                r: [],
+                p: p,
+                m: this.#message
+            };
+            if(player.gameObject && player.gameObject.room){
+                playerData.r = [player.gameObject.room.getData()];
             }
+            data.set(player.clientId, playerData);
         });
 
-        roomsToSend.forEach((r)=>{
-                obj.r.push(r.getData());
-            }
-        );
-        //console.log(obj.r)
-        //log('sending ', obj.r.length, "rooms")
-        this.#players.forEach((p)=>{obj.p.push(p.getData())});
-        return obj;
+        return data;
     }
 
     setData(data){
@@ -5923,6 +5947,7 @@ class Level extends VC.Scene {
                     let existingRoom = this.findRoomById(r.id)
                     if(existingRoom){
                         //update?
+                        log("updating", r.id)
                         existingRoom.setData(r)
                     } else if (r.s){
                         let room = Room.fromData(this, r);
@@ -5933,13 +5958,13 @@ class Level extends VC.Scene {
                         var msg = new RoomRequest();
                         msg.sender = client.id;
                         msg.id = r.id;
-                        //log("missing room id", r.id)
+                        log("missing room id", r.id)
                         client.send(msg);
                     }
                 });
             }
             if (data.p){
-                //console.log(this.#players.length);
+                //log(this.#players.length);
                 let updated = [];
                 data.p.forEach((player)=>{
                     let filteredPlayers = filter(this.#players, (p)=>{return p.clientId == player.i});
@@ -6114,7 +6139,7 @@ class Level extends VC.Scene {
                 }
             }
         }   
-        console.log("not found:", id)
+        log("not found:", id)
         return null;
     }
 
@@ -6131,7 +6156,7 @@ class Level extends VC.Scene {
         let player = null;
         for(let i=0; i<this.#players.length; i++){
             player = this.#players[i];
-            //console.log(player.clientId, player.gameObject ? player.gameObject.room ? player.gameObject.room.id : "no room" : "no gameObject");
+            //log(player.clientId, player.gameObject ? player.gameObject.room ? player.gameObject.room.id : "no room" : "no gameObject");
             if(player.clientId == client.id && player.gameObject && player.gameObject.room){
                 return player;
             }
@@ -6160,9 +6185,9 @@ class Level extends VC.Scene {
         if(focusedPlayer && focusedPlayer.gameObject && focusedPlayer.gameObject.room){
             this.currentRoom = focusedPlayer.gameObject.room;
         }else{
-            console.log(focusedPlayer)
+            log(focusedPlayer)
             console.error("can't focuse on", focusedPlayer.gameObject)
-            //console.log(focusedPlayer.gameObject.room)
+            //log(focusedPlayer.gameObject.room)
         
         }
         
@@ -6256,6 +6281,7 @@ class Level extends VC.Scene {
                 return this.#rooms[i];
             }
         }
+        log('returning null')
         return null;
     }
 
@@ -6406,7 +6432,7 @@ class Level extends VC.Scene {
             if(!nextRoom.barred || gameObject instanceof Adventurer ){
                 if(gameObject instanceof Adventurer){
                     nextRoom.visited = 1;
-                    console.log("moving to room", nextRoom.id)
+                    log("moving to room", nextRoom.id)
                 }
                 let loc = this.getEntranceLocation(nextRoom,(direction + 2) % 4, gameObject)
                 //if(gameObject.room === this.currentRoom){
@@ -6416,7 +6442,7 @@ class Level extends VC.Scene {
                 gameObject.room = nextRoom;
                 gameObject.box.x = loc.x;
                 gameObject.box.y = loc.y;
-                //console.log("sanity check", gameObject.room.id)
+                //log("sanity check", gameObject.room.id)
             }
         } 
     }
@@ -6489,7 +6515,7 @@ class Level extends VC.Scene {
 }
 
 class Room extends VC.Scene {
-    static idCounter = 0;
+    static idCounter = 1;
     type = "OVERRIDE ME";   
     doors = [];
     floor = null;
@@ -6553,19 +6579,20 @@ class Room extends VC.Scene {
                 }else {
                     let value = GameObject.fromData(obj);
                     if(value && value.code=='adv'){
-                        console.log('adv from data:', obj)
+                        log('adv from data:', obj)
                     }
                 }
             });
             let removable = [];
             this.objects.forEach((o)=>{
                 if(o.sync==true && o.immovable == false && !any(data.o, (p)=>{return  p.id == o.id; })){
-                    if(o.code=='tx') console.log("removing torch..?")
+                    if(o.code=='tx') log("removing torch..?")
                     removable.push(o);
                 }
             });
             
             removable.forEach((o)=>{
+                log("removing", o.code, o.id);
                 o.remove();
             });
         }
@@ -8905,9 +8932,10 @@ VC.System.OnReady(()=>{
     renderer = new Renderer(client);
     const [serverSide, clientSide] = VC.LoopbackConnection.createPair();
 
+    serverSide.metadata = client.id;
+    clientSide.metadata = client.id;
     //Note: order is important here...?
     //client.attach(clientSide);
-    server.addConnection(serverSide);
 
     const urlParams = new URLSearchParams(window.location.search);
     const host = urlParams.get('host'); 
@@ -8920,7 +8948,7 @@ VC.System.OnReady(()=>{
         client.join(join);
     }
     else {
-
+        server.addConnection(serverSide);
         client.attach(clientSide);
     }
     client.renderer.controllerScreen.canvas.addEventListener("touchstart",function(e){
@@ -14752,7 +14780,7 @@ class TreasureChest extends GameObject{
                 }
                 let playerName = ""
                 if(server.players.size>1 && p.playerName){
-                    playerName = p.playerName + " "
+                    playerName = p.playerName + ": "
                 }
                 let prefixes = ["Found", "Got", "Discovered", "Grabbed", "Nabbed", "Picked up"]
                 let prefix = prefixes[VC.Math.random(0,prefixes.length-1)];
@@ -14804,7 +14832,7 @@ class TreasureChest extends GameObject{
     }    
 
     render(deltaT, screen){
-        if(this.state==1 && !this.#lastOpened){
+        if(this.state==1 && Date.now()-this._stateStart<800 && !this.#lastOpened){
             this.playSound(0,SoundEffects.CHEST, .7, false)
             switch(this.#content){
                 case Treasure.SILVERKEY:
@@ -14851,7 +14879,7 @@ class TreasureChest extends GameObject{
             this.sprite.setAnimation(0,3);
             this.#backgroundSprite.setAnimation(0,1);
             
-            if(Date.now()-this._stateStart<1000){
+            if(Date.now()-this._stateStart<1000 && this.contentSprite==null){
                 
                 if (this.#contentSprite == null){
                     this.#contentSprite = new VC.Sprite(screen, Images.TREASURE, 36, 504, 36, 36, this.box.x+14,this.box.y-18)
@@ -16245,7 +16273,7 @@ class LevelFactory {
                 entrance.lock = region;
                 entrance.region = region;
 
-            console.log("Lock 1")
+            log("Lock 1")
                 extent.doors.push(lockedDoor);
                 entrance.doors.push(new Door(level,entrance,(direction + 2) % 4, 0));
                 level.statistics.doorsSpawned++;
@@ -16323,7 +16351,7 @@ class LevelFactory {
             //regionRooms.push(entrance);
 
  
-            console.log("Lock 2")
+            log("Lock 2")
 
             exitRoom.opened = false;
             maxKey = maxRegion + 1;

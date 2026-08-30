@@ -195,7 +195,7 @@ VC.Client = class {
             log('Peer opened (', myid, ')')
             this.#id = myid;
             log("connecting to ", 'vc-' + id.toLowerCase())
-            this.attach(this.#peer.connect('vc-' + id.toLowerCase(), {reliable: false}));
+            this.attach(this.#peer.connect('vc-' + id.toLowerCase(), {reliable: false, metadata: myid}));
         });
         this.#peer.on('error', (err)=>{this.onError(err)});
         this.#peer.on('disconnected', ()=>{
@@ -1149,10 +1149,9 @@ VC.Server = class {
     #id = "MULTIPLAYER!";
     #host = null;
     #shuttingDown = false;
-    connections = [];
+    connections = new Map();
     constructor(){
         log("constructing host")
-        this.connections = [];
         //register graceful shutdown.
     }
 
@@ -1190,7 +1189,8 @@ VC.Server = class {
         conn.on('error', (err)=>{this.onError(err)});
         conn.on('data', (data)=>{this.received(data)});
         conn.on('open', ()=>{log("connected to client")});
-        this.connections.push(conn);
+        this.connections.set(conn.metadata, conn);
+        console.log("creating connection:", conn.metadata)
     }
 
     stop(){
@@ -1199,6 +1199,16 @@ VC.Server = class {
         this.connections.forEach((conn)=>{conn.close()});
         if(this.#host){
             this.#host.destroy();
+        }
+    }
+
+    send(id, data){
+        let conn = this.connections.get(id);
+        if(conn && conn.open){
+            conn.send(data);
+            //console.log("sending to",id,data)
+        }else{
+            console.warn("conn not present:",id);
         }
     }
 
