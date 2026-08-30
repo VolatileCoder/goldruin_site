@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.42 BETA"
+const VERSION = "v7.26.8.30.44 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1666,9 +1666,9 @@ function playMusic(url){
     //to keep music in sync, start at the exact same moment.
     //assumes clocks are in sync across devices... 
     let now = Date.now();
-    let roundDown = Math.round(now/1000)*1000;
+    let roundDown = Math.floor(now/1000)*1000;
     if(roundDown<now){
-        roundDown += 1500;//add about two seconds
+        roundDown += 2500;//add about two seconds
         setTimeout(renderer.playMusic(url), roundDown-Date.now());
     }
 }
@@ -5998,13 +5998,6 @@ class Level extends VC.Scene {
         //log("test", deltaT);
         let scope=[];
 
-        if (this.music){
-            playMusic(this.music);
-        } else if(this.number % 5 === 4){
-            playMusic(Music.MYSTERY);
-        } else {
-            playMusic(LevelFactory.getMusic(this.world));
-        }
 
         this.players.forEach((player)=>{
             if(player.gameObject){
@@ -6121,6 +6114,13 @@ class Level extends VC.Scene {
     #lastRenderedRoom = null
     render(deltaT, screen){
         
+        if (this.music){
+            playMusic(this.music);
+        } else if(this.number % 5 === 4){
+            playMusic(Music.MYSTERY);
+        } else {
+            playMusic(LevelFactory.getMusic(this.world));
+        }
         let focusedPlayer = this.getFocusedPlayer();
         this.currentRoom = this.#lastRenderedRoom;
         if(focusedPlayer && focusedPlayer.gameObject && focusedPlayer.gameObject.room){
