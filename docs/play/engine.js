@@ -195,7 +195,7 @@ VC.Client = class {
             log('Peer opened (', myid, ')')
             this.#id = myid;
             log("connecting to ", 'vc-' + id.toLowerCase())
-            this.attach(this.#peer.connect('vc-' + id.toLowerCase()));
+            this.attach(this.#peer.connect('vc-' + id.toLowerCase(), {reliable: false}));
         });
         this.#peer.on('error', (err)=>{this.onError(err)});
         this.#peer.on('disconnected', ()=>{

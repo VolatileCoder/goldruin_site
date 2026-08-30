@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.99 BETA"
+const VERSION = "v7.26.8.30.103 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -513,7 +513,7 @@ class Game extends VC.Game {
             msg.deltaT = deltaT;
             msg.data = this.#currentScene.getData();
             //log(msg.data)
-            this.#server.broadcast(JSON.stringify(msg));
+            this.#server.broadcast(msg);
         }
     }
     onPostRender(deltaT){
@@ -3240,7 +3240,7 @@ class Keyboard {
 }
 class MessageDecoder {
     static deserialize(data){
-        let message = JSON.parse(data);
+        let message = data;
         switch(message.messageType){
             case MessageType.PLAYER_INPUT:
                 return PlayerInput.parse(message);
@@ -4673,14 +4673,14 @@ class Client extends VC.Client {
         //TODO: if slot selected, send info.
         var msg = new ReadyPlayer();
         msg.sender = this.id;
-        this.send(JSON.stringify(msg));
+        this.send(msg);
     }
     
     pollController(){
         if(this.isConnected){
             let msg = PlayerInput.map(this.#inputController.read())
             msg.sender = this.id;
-            this.send(JSON.stringify(msg));
+            this.send(msg);
         }else{
             window.clearInterval(this.#intervalHandle);
         }
@@ -4694,6 +4694,11 @@ class Client extends VC.Client {
         if(this.#lastTimeStamp!=null && message.timestamp<this.#lastTimeStamp ){
             return;
         }
+        if(Date.now()-message.timestamp > 500){
+            console.log("old message, ignoring")
+            return;
+        }
+        
         this.#lastTimeStamp = message.timestamp;
         if(message instanceof ReadyPlayer && message.sender == this.id){
             //server is ready, begin sending input. 
@@ -5926,7 +5931,7 @@ class Level extends VC.Scene {
                         msg.sender = client.id;
                         msg.id = r.id;
                         //log("missing room id", r.id)
-                        client.send(JSON.stringify(msg));
+                        client.send(msg);
                     }
                 });
             }
