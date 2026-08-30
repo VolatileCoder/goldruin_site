@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.56 BETA"
+const VERSION = "v7.26.8.30.99 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1010,6 +1010,12 @@ class Player {
         };
         if(this.gameObject){
             data.o = this.gameObject.id;
+            if(this.gameObject.room){
+                data.r = this.gameObject.room.id;
+            }
+        }
+        else{
+            console.error("no gameobject!!!")
         }
         return data;
     }
@@ -1023,15 +1029,26 @@ class Player {
         return null;
     }
     setData(data){
+        
         if(data.i == this.clientId){
             this.playerName = data.n;
-            if(data.o && (!this.gameObject || data.o!=this.gameObject.id || this.gameObject.room==null)){
+            if(data.o && (!this.gameObject || data.o!=this.gameObject.id || this.gameObject.room==null || (!isNaN(data.r) && this.lastRoom && this.lastRoom.id != data.r))){
                 if(renderer.currentScene instanceof Level){
-                    log("finding game object")
-                    this.gameObject = renderer.currentScene.findObjectById(data.o);
+                    console.log("finding game object")
+                    if(!isNaN(data.r)){
+                        this.gameObject = renderer.currentScene.findRoomById(data.r).findObjectById(data.o);
+                    }else{
+                        this.gameObject = renderer.currentScene.findObjectById(data.o);
+                    }
+                    this.lastRoom = this.gameObject.room;
                 }
+        
             } else if (!data.o){
                 this.gameObject = null;
+                this.lastRoom = null;
+                console.log("removing game object!!")
+            }else {
+                console.log("something's borken", data.o, this.gameObject.id, this.gameObject.room ? this.gameObject.room.id : "MISSING")
             }
         }
         
@@ -5877,10 +5894,12 @@ class Level extends VC.Scene {
                 roomsToSend.push(player.gameObject.room)
             }
         });
+
         roomsToSend.forEach((r)=>{
                 obj.r.push(r.getData());
             }
         );
+        //console.log(obj.r)
         //log('sending ', obj.r.length, "rooms")
         this.#players.forEach((p)=>{obj.p.push(p.getData())});
         return obj;
@@ -6082,11 +6101,12 @@ class Level extends VC.Scene {
     findObjectById(id){
         for(var i = 0; i<this.#rooms.length; i++){
             for(var o = 0; o<this.#rooms[i].objects.length; o++){
-                if(this.#rooms[i].objects[o].id == id){
+                if(this.#rooms[i].objects[o].id == id && this.#rooms[i].objects[o].room == this.#rooms[i]){
                     return this.#rooms[i].objects[o] 
                 }
             }
         }   
+        console.log("not found:", id)
         return null;
     }
 
@@ -6131,6 +6151,11 @@ class Level extends VC.Scene {
         this.currentRoom = this.#lastRenderedRoom;
         if(focusedPlayer && focusedPlayer.gameObject && focusedPlayer.gameObject.room){
             this.currentRoom = focusedPlayer.gameObject.room;
+        }else{
+            console.log(focusedPlayer)
+            console.error("can't focuse on", focusedPlayer.gameObject)
+            //console.log(focusedPlayer.gameObject.room)
+        
         }
         
         if(this.#lastRenderedRoom !== this.currentRoom){
@@ -6369,11 +6394,11 @@ class Level extends VC.Scene {
     moveToNextRoom(gameObject, direction){
         if(gameObject && gameObject.room && gameObject.room.findDoor(direction)){
             let nextRoom = this.findNeighbor(gameObject.room, direction);  
-            console.log("moveToNextRoom", nextRoom.id);
             //gameObject.remove();
             if(!nextRoom.barred || gameObject instanceof Adventurer ){
                 if(gameObject instanceof Adventurer){
                     nextRoom.visited = 1;
+                    console.log("moving to room", nextRoom.id)
                 }
                 let loc = this.getEntranceLocation(nextRoom,(direction + 2) % 4, gameObject)
                 //if(gameObject.room === this.currentRoom){
@@ -6383,6 +6408,7 @@ class Level extends VC.Scene {
                 gameObject.room = nextRoom;
                 gameObject.box.x = loc.x;
                 gameObject.box.y = loc.y;
+                //console.log("sanity check", gameObject.room.id)
             }
         } 
     }
@@ -8233,6 +8259,7 @@ class Adventurer extends Character{
         }
     }
     remove(){
+        
         //if(this.state==State.DEAD || this.tag != "Server"){
             super.remove();
         //}
