@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.162 BETA"
+const VERSION = "v7.26.8.30.163 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1052,10 +1052,16 @@ class Player {
             if(data.o && (!this.gameObject || data.o!=this.gameObject.id || this.gameObject.room==null || (!isNaN(data.r) && this.lastRoom && this.lastRoom.id != data.r))){
                 if(renderer.currentScene instanceof Level){
                     console.log("finding game object")
-                    if(!isNaN(data.r)){
-                        this.gameObject = renderer.currentScene.findRoomById(data.r).findObjectById(data.o);
-                    }else{
-                        this.gameObject = renderer.currentScene.findObjectById(data.o);
+                    if(renderer.currentScene instanceof Level){
+                        
+                        if(!isNaN(data.r)){
+                            let room = renderer.currentScene.findRoomById(data.r);
+                            if (room){
+                                this.gameObject = room.findObjectById(data.o);   
+                            }
+                        }else{
+                            this.gameObject = renderer.currentScene.findObjectById(data.o);
+                        }
                     }
                     this.lastRoom = this.gameObject && this.gameObject.room ? this.gameObject.room : null;
                 }
