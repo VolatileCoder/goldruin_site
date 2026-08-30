@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.208 BETA"
+const VERSION = "v7.26.8.29.212 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -14560,7 +14560,7 @@ class TreasureChest extends GameObject{
                     //game.level.statistics.goldCollected += goldValue;
                 }
                 let playerName = ""
-                if(server.players.size>1){
+                if(server.players.size>1 && player.playerName){
                     playerName = player.playerName + " "
                 }
                 let prefixes = ["Found", "Got", "Discovered", "Yes! It's", "Grabbed", "Nabbed", "Picked up"]
@@ -14658,8 +14658,10 @@ class TreasureChest extends GameObject{
         }
         
         if(this.state==1){
+            this.sprite.setAnimation(0,3);
+            this.#backgroundSprite.setAnimation(0,1);
+            
             if(Date.now()-this._stateStart<1000){
-                this.sprite.setAnimation(0,3);
                 
                 if (this.#contentSprite == null){
                     this.#contentSprite = new VC.Sprite(screen, Images.TREASURE, 36, 504, 36, 36, this.box.x+14,this.box.y-18)
@@ -14667,7 +14669,6 @@ class TreasureChest extends GameObject{
                     
                 }
 
-                this.#backgroundSprite.setAnimation(0,1);
                 
                 let offset = (100/1000) * deltaT;
                 this.#treasureOffset += offset;
