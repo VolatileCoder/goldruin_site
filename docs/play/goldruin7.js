@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.37 BETA"
+const VERSION = "v7.26.8.30.42 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -2311,13 +2311,13 @@ class GameOverScreen extends VC.Scene{
         }
     }
     preDisplay(){
-        playMusic(Music.DEATH);
         //game.player.state = State.DEAD;
         game.boss = null;
     }
     preRender(deltaT){}
 
     render(deltaT, screen){
+        playMusic(Music.DEATH);
         if(this.#statistics && !this.#rendered){
             this.stats = new Statistics()
             this.stats.add(this.#statistics);
@@ -6003,7 +6003,7 @@ class Level extends VC.Scene {
         } else if(this.number % 5 === 4){
             playMusic(Music.MYSTERY);
         } else {
-            playMusic(LevelFactory.getTemple(this.world).music);
+            playMusic(LevelFactory.getMusic(this.world));
         }
 
         this.players.forEach((player)=>{
@@ -10794,7 +10794,7 @@ class LevelSelectScreen extends VC.Scene {
 
     preDisplay(){
         renderer.infoScreen.clear(); //TOOD: display total money
-        playMusic(Music.CHARGE);
+
         this.audioChannels = [
             new VC.AudioChannel(),
             new VC.AudioChannel(),
@@ -10992,6 +10992,7 @@ class LevelSelectScreen extends VC.Scene {
         }
     }
     render(deltaT, screen){
+        playMusic(Music.CHARGE);
         var shuffle = false; 
         var beep = false;
         var boop = false;
@@ -15014,7 +15015,7 @@ class BossLevelFactory {
     }
 }
 class DesertTemple extends Temple{
-    
+    static music = Music.EXPLORATION;
     #palette = new Palette(
         "#642",//clip color
         "#864",//floor color
@@ -15033,11 +15034,6 @@ class DesertTemple extends Temple{
         return "The Desert Temple"
     }
 
-    //read-only properties
-    get music(){
-        return Music.EXPLORATION;
-    }
-    
     get palette(){
         return this.#palette;
     }
@@ -15096,7 +15092,7 @@ class DesertTemple extends Temple{
     }
 }
 class FireTemple extends Temple{
-    
+    static music = Music.FIRE;
     #charcoalGolemSpawned = false;
     #palette = new Palette(
         "#19351A",//clip color
@@ -15115,10 +15111,6 @@ class FireTemple extends Temple{
         return "The Volcano Temple"
     }
 
-    //read-only properties
-    get music(){
-        return Music.FIRE;
-    }
     
     get palette(){
         return this.#palette;
@@ -15251,7 +15243,7 @@ class FireTemple extends Temple{
     }
 }
 class ForestTemple extends Temple{
-    
+    static music = Music.FOREST;
     #palette = new Palette(
         "#19351A",//clip color
         "#442A01",//floor color
@@ -15267,11 +15259,6 @@ class ForestTemple extends Temple{
     
     get description(){
         return "The Forest Temple"
-    }
-
-    //read-only properties
-    get music(){
-        return Music.FOREST;
     }
     
     get palette(){
@@ -15341,7 +15328,7 @@ class ForestTemple extends Temple{
     }
 }
 class IceTemple extends Temple{
-    
+    static music = Music.ICE;
     #palette = new Palette(
         "#19351A",//clip color
         "#442A01",//floor color
@@ -15358,11 +15345,6 @@ class IceTemple extends Temple{
     
     get description(){
         return "The Ice Temple"
-    }
-
-    //read-only properties
-    get music(){
-        return Music.EXPLORATION;
     }
     
     get palette(){
@@ -16012,7 +15994,7 @@ class TNT extends GameObject{
    
 }
 class WaterTemple extends Temple{
-    
+    static music = Music.EXPLORATION;
     #palette = new Palette(
         "#19351A",//clip color
         "#442A01",//floor color
@@ -16030,10 +16012,6 @@ class WaterTemple extends Temple{
         return "The Ocean Temple"
     }
 
-    //read-only properties
-    get music(){
-        return Music.EXPLORATION;
-    }
     
     get palette(){
         return this.#palette;
@@ -16699,6 +16677,22 @@ class LevelFactory {
                 return new IceTemple();
         }
         return null;
+    }
+
+    static getMusic(worldNumber){
+            switch(worldNumber){
+            case 1:
+                return ForestTemple.music;
+            case 2:
+                return FireTemple.music;
+            case 3:
+                return WaterTemple().music;
+            case 4:
+                return DesertTemple().music;
+            case 5:
+                return IceTemple().music;
+        }
+        return null;    
     }
 
     static getWorldPalette(worldNumber){
