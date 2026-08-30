@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.29.212 BETA"
+const VERSION = "v7.26.8.29.213 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -14563,7 +14563,7 @@ class TreasureChest extends GameObject{
                 if(server.players.size>1 && player.playerName){
                     playerName = player.playerName + " "
                 }
-                let prefixes = ["Found", "Got", "Discovered", "Yes! It's", "Grabbed", "Nabbed", "Picked up"]
+                let prefixes = ["Found", "Got", "Discovered", "Grabbed", "Nabbed", "Picked up"]
                 let prefix = prefixes[VC.Math.random(0,prefixes.length-1)];
                 let suffix = "";
                 switch(this.#content){
@@ -15143,7 +15143,7 @@ class ForestTemple extends Temple{
     
     themeRoom(room, index, level){
         super.themeRoom(room, index);
-        return;
+        //return;
         if (index !== 0 && !room.exit && level && level.number % 5 != 4 && !room.secret){
             
             var enemyRange = level.number + 1 ;
