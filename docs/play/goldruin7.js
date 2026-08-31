@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.31.16 BETA"
+const VERSION = "v7.26.8.31.18 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -8132,6 +8132,9 @@ class Adventurer extends Character{
 
     
     move(deltaT){
+        if(this.state==DEAD){
+            return;
+        }
         if(this.hidden && this.hiddenUntil<Date.now()){
             this.hidden = false;
         }
