@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.185 BETA"
+const VERSION = "v7.26.8.30.188 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1220,7 +1220,7 @@ class Renderer extends VC.Game {
             if(this.statusOverlay==null){
                 this.statusOverlay = new StatusOverlay();
             }
-            let focusedPlayer = this.#currentScene.getFocusedPlayer();
+            let focusedPlayer = this.#currentScene.getFocusedPlayer(client.id);
             if(focusedPlayer && focusedPlayer.gameObject){
                 this.statusOverlay.playerGameObject = focusedPlayer.gameObject;
                 this.statusOverlay.render(deltaT, this.infoScreen);
@@ -5934,7 +5934,7 @@ class Level extends VC.Scene {
                 p: p,
                 m: this.#message
             };
-            if(player.gameObject && player.gameObject.room && !player.gameObject.state == State.DEAD){
+            if(player.gameObject && player.gameObject.room && !player.gameObject.state != State.DEAD){
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
@@ -6203,7 +6203,7 @@ class Level extends VC.Scene {
             this.currentRoom = focusedPlayer.gameObject.room;
         }else{
             //console.log(focusedPlayer)
-            console.error("can't focus !", focusedPlayer.gameObject)
+            console.error("can't focus !", focusedPlayer ? focusedPlayer.gameObject : null)
             //console.log(focusedPlayer.gameObject.room)
         }
         
