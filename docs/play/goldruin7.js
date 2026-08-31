@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.31.30 BETA"
+const VERSION = "v7.26.8.31.39 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1787,7 +1787,7 @@ class AutoController extends Controller {
                 ac.nextRetarget = Date.now() + 750;//play with this
                 //find the closest enemy. 
 
-                let viewableEnemies = forObject.getObjectsInView().filter((obj)=>obj.team===opposingTeam);
+                let viewableEnemies = forObject.getObjectsInView().filter((obj)=>obj.team===opposingTeam && obj.state!=State.DEAD);
                 ac.primaryTarget = null;
                 viewableEnemies.forEach((e)=>{
                     if(ac.primaryTarget==null || ac.primaryTarget.distanceTo(forObject.box.center())>e.box.center().distanceTo(forObject.box.center())){
@@ -5940,7 +5940,7 @@ class Level extends VC.Scene {
                 p: p,
                 m: this.#message
             };
-            if(player.gameObject && player.gameObject.room && player.gameObject.state != State.DEAD && player.gameObject.health>0){
+            if(player.gameObject && player.gameObject.room && (player.gameObject.state != State.DEAD || (player.gameObject.state==State.DEAD && Date.now()-player.gameObject_stateStart<2500))){
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
@@ -6196,7 +6196,7 @@ class Level extends VC.Scene {
     getFocusedPlayer(forId){
         var result = null;
         this.#players.forEach((player,id)=>{
-            if(player.clientId == forId && player.gameObject && player.gameObject.room && player.gameObject.state!=State.DEAD){
+            if(player.clientId == forId && player.gameObject && player.gameObject.room && player.gameObject.state!=State.DEAD && Date.now()-player.gameObject_stateStart<2500){
                 result = player;
             }
         });
@@ -8197,6 +8197,7 @@ class Adventurer extends Character{
                 this.keys.forEach((k, i)=>{
                     var pu = new Pickup(this.room, k, true);
                     pu.box.center(this.box.center());
+                    pu.box.y++;
                     game.level.statistics.keysCollected--;
                 });
             }
@@ -8291,7 +8292,6 @@ class Adventurer extends Character{
         //render player sprite
         if(this.state === State.DEAD ){
             this.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
-            this.plane = Plane.ETHEREAL;
 
         } else if (this.state === State.THROWING){
             this.sprite.setFrame(this.direction, State.THROWING, 0)
@@ -8351,6 +8351,7 @@ class Adventurer extends Character{
                 let deathRoom = this.room;
                 super.remove();
                 this.room = deathRoom;
+                this.plane = Plane.ETHEREAL;
                 this.state = State.DEAD;
             }
             this.dead = true;
@@ -8976,7 +8977,7 @@ constants.thresholds = Math.round((constants.maxArea-constants.minArea) / 4);
 
 
 const SCREENBLACK = "#080808";
-let DEBUG = true;
+let DEBUG = false;
 
 let game
 let renderer
@@ -12109,6 +12110,10 @@ class Pickup extends GameObject{
 
         players.forEach((p)=>{
             let player = p.gameObject;
+            if(player.state == State.DEAD)
+            {
+                return;
+            }
             this.plane = Plane.ETHEREAL;
             if(this.#content === Treasure.RANDOM){
                 if ((player.health/player.maxHealth) < Math.random()){
