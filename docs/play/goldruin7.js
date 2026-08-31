@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.189 BETA"
+const VERSION = "v7.26.8.30.201 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -5845,7 +5845,7 @@ class Level extends VC.Scene {
 
     number = -1;
     #rooms = [];
-    #players = [];
+    #players = new Map();
     #currentRoom = null;
     #backDropElement = null;
     #message = "";
@@ -5857,6 +5857,9 @@ class Level extends VC.Scene {
         this.statistics = new Statistics();
     }
     set players(value){
+        if(!(value instanceof Map)){
+            throw ("gotcha!")
+        }
         this.#players = value;
     }
     get players(){
@@ -5926,7 +5929,7 @@ class Level extends VC.Scene {
         let p = []
         let roomCache = new Map();
         this.#players.forEach((player)=>{p.push(player.getData())});
-        this.players.forEach((player)=>{
+        this.#players.forEach((player)=>{
             let playerData = {
                 sceneName: this.sceneName,
                 n: this.number,
@@ -5991,14 +5994,20 @@ class Level extends VC.Scene {
                     if(filteredPlayers.length == 0){
                         //new player, add them
                         let newPlayer = Player.fromData(player);
-                        this.#players.push(newPlayer)
+                        this.#players.set(player.clientId, newPlayer)
                         updated.push(newPlayer)
                     }else{
                         filteredPlayers[0].setData(player)
                         updated.push(filteredPlayers[0]);
                     }
                 });
-                remove(this.#players, (p)=>{return updated.indexOf(p)==-1});
+                let remove = []
+                this.players.forEach((player, playerId)=>{
+                    if(updated.indexOf(player)==-1){
+                        remove.push(playerId);
+                    }
+                });
+                remove.forEach((id)=>{this.players.delete(id)});
             }
             if(this.message != data.m){
                 this.message = data.m
@@ -6170,21 +6179,21 @@ class Level extends VC.Scene {
     }
 
     getFocusedPlayer(forId){
-        let player = null;
-        for(let i=0; i<this.#players.length; i++){
-            player = this.#players[i];
-            //console.log(player.clientId, player.gameObject ? player.gameObject.room ? player.gameObject.room.id : "no room" : "no gameObject");
+        var result = null;
+        this.#players.forEach((player,id)=>{
             if(player.clientId == forId && player.gameObject && player.gameObject.room && player.gameObject.state!=State.DEAD){
-                return player;
+                result = player;
             }
+        });
+        if(result == null){
+            this.#players.forEach((player,id)=>{
+                if(player.gameObject && player.gameObject.room && player.gameObject.state!=State.DEAD){ //todo: modify for observing
+                    result = player;
+                }
+            });
         }
-        for(let i=0; i<this.#players.length; i++){
-            player = this.#players[i];
-            if(player.gameObject && player.gameObject.room && player.gameObject.state!=State.DEAD){ //todo: modify for observing
-                return player;
-            }
-        }
-        return null;
+        
+        return result;
     }
 
     #lastRenderedRoom = null
@@ -16754,7 +16763,7 @@ class LevelFactory {
                 a.color = LevelFactory.getPlayerColor(playerCounter);
                 playerCounter++;
             }
-            level.players.push(player)
+            level.players.set(playerid,player)
             level.rooms[0].spawn(a);//todo: spawn near entrance. Especially if single player.
             level.rooms[0].visited = 1;
         });
