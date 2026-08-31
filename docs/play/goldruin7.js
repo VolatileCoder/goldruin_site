@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.183 BETA"
+const VERSION = "v7.26.8.30.185 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -5934,13 +5934,12 @@ class Level extends VC.Scene {
                 p: p,
                 m: this.#message
             };
-            if(player.gameObject && player.gameObject.room){
+            if(player.gameObject && player.gameObject.room && !player.gameObject.state == State.DEAD){
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
                 playerData.r = [roomCache.get(player.gameObject.room.id)];
-            }
-            if(!player.gameObject || player.gameObject.state == State.DEAD){
+            }else {
                 let p2 = this.getFocusedPlayer(player.clientId);
                 if(p2 && p2.gameObject && p2.gameObject.room){
                     if(!roomCache.has(p2.gameObject.room.id)){
@@ -6185,7 +6184,7 @@ class Level extends VC.Scene {
                 return player;
             }
         }
-        return player;
+        return null;
     }
 
     #lastRenderedRoom = null
