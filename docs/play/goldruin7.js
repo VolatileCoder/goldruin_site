@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.31.43 BETA"
+const VERSION = "v7.26.8.31.44 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1013,13 +1013,25 @@ class Player {
     gameObject = null;
     playerName = "";
     clientId = "";
+    #spectating = "";
     controller = null;
     levelState = [2,2,2,2,2];
     playTime = 0;
 
+    get spectating(){
+        if(this.#spectating == null || this.#spectating == ""){
+            return this.clientId;
+        }
+        return this.#spectating;
+    }
+    set spectating(value){
+        this.#spectating = value;
+    }
+
     getData(){
         let data = {
             i: this.clientId,
+            s: this.spectating,
             n: this.playerName
         };
         if(this.gameObject){
@@ -5940,26 +5952,30 @@ class Level extends VC.Scene {
                 p: p,
                 m: this.#message
             };
-            if(player.gameObject && player.gameObject.room && player.gameObject.state != State.DEAD){
+
+            spectatingPlayer = this.#players.get(player.spectating);
+            
+            if(spectatingPlayer.gameObject.state == State.DEAD && Date.now() - spectatingPlayer.gameObject._stateStart > 2500){
+                //switch to a new player
+                this.#players.forEach((candidate)=>{
+                    if(candidate && candidate.gameObject && candidate.gameObject.state != gameObject.DEAD){
+                        spectatingPlayer = candidate;
+                    }
+                });
+            }
+
+
+            if(player.gameObject && player.gameObject.room){
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
-                playerData.r = [roomCache.get(player.gameObject.room.id)];
-            }else {
-                if(player.gameObject && player.gameObject.room){                
-                    if(!roomCache.has(player.gameObject.room.id)){
-                        roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
-                    }
-                    playerData.r = [roomCache.get(player.gameObject.room.id)];
+                playerData.r.push(oomCache.get(player.gameObject.room.id));
+            }
+            if(spectating.gameObject && spectating.gameObject.room){
+                if(!roomCache.has(spectating.gameObject.room.id)){
+                    roomCache.set(spectating.gameObject.room.id, spectating.gameObject.room.getData());
                 }
-                
-                let p2 = this.getFocusedPlayer(player.clientId);
-                if(p2 && p2.gameObject && p2.gameObject.room){
-                    if(!roomCache.has(p2.gameObject.room.id)){
-                        roomCache.set(p2.gameObject.room.id, p2.gameObject.room.getData());
-                    }       
-                    playerData.r.push(roomCache.get(p2.gameObject.room.id))
-                }
+                playerData.r.push(roomCache.get(spectating.gameObject.room.id));
             }
             data.set(player.clientId, playerData);
         });
@@ -6193,24 +6209,6 @@ class Level extends VC.Scene {
         return null;
     }
 
-    getFocusedPlayer(forId){
-        var result = null;
-        this.#players.forEach((player,id)=>{
-            if(player.clientId == forId && player.gameObject && player.gameObject.room && (player.gameObject.state!=State.DEAD || player.gameObject.state==State.DEAD && Date.now()-player.gameObject_stateStart<5000)){
-                result = player;
-            }
-        });
-        if(result == null){
-            this.#players.forEach((player,id)=>{
-                if(player.gameObject && player.gameObject.room && player.gameObject.state!=State.DEAD){ //todo: modify for observing
-                    result = player;
-                }
-            });
-        }
-        
-        return result;
-    }
-
     #lastRenderedRoom = null
     render(deltaT, screen){
         
@@ -6221,13 +6219,14 @@ class Level extends VC.Scene {
         } else {
             playMusic(LevelFactory.getMusic(this.world));
         }
-        let focusedPlayer = this.getFocusedPlayer(client.id);
+        let currentPlayer = this.players(client.id);
+        let spectating = this.players(currentPlayer.spectating);
         this.currentRoom = this.#lastRenderedRoom;
-        if(focusedPlayer && focusedPlayer.gameObject && focusedPlayer.gameObject.room){
-            this.currentRoom = focusedPlayer.gameObject.room;
+        if(spectating && spectating.gameObject && spectating.gameObject.room){
+            this.currentRoom = spectating.gameObject.room;
         }else{
             //console.log(focusedPlayer)
-            console.error("can't focus !", focusedPlayer ? focusedPlayer.gameObject : null)
+            console.error("can't spectate!", spectating ? spectating.gameObject : null)
             //console.log(focusedPlayer.gameObject.room)
         }
         
