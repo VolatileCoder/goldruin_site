@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.210 BETA"
+const VERSION = "v7.26.8.30.218 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -4744,6 +4744,7 @@ class Client extends VC.Client {
                 newScene.setData(message.data);
             }else if(this.#renderer.currentScene && this.#renderer.currentScene.sceneName==message.data.sceneName){
                 //console.log("updating scene");
+                console.log(message.data)
                 this.#renderer.currentScene.setData(message.data);
             }
             else{
@@ -5948,7 +5949,7 @@ class Level extends VC.Scene {
                     if(!roomCache.has(p2.gameObject.room.id)){
                         roomCache.set(p2.gameObject.room.id, p2.gameObject.room.getData());
                     }       
-                    playerData.r.push(roomCache.get(p2.gameObject.roomid))
+                    playerData.r.push(roomCache.get(p2.gameObject.room.id))
                 }
             }
             data.set(player.clientId, playerData);
@@ -5964,23 +5965,26 @@ class Level extends VC.Scene {
             }
             if (data.r && data.r.length>0){
                 data.r.forEach((r)=>{
-                    let existingRoom = this.findRoomById(r.id)
-                    if(existingRoom){
-                        //update?
-                        //console.log("updating", r.id)
-                        existingRoom.setData(r)
-                    } else if (r.s){
-                        let room = Room.fromData(this, r);
-                        //console.warn("creating", r.id)
-                        this.#rooms.push(room);
-                        room.setData(r);
-                    } else {
-                        var msg = new RoomRequest();
-                        msg.sender = client.id;
-                        msg.id = r.id;
-                        //console.log("missing room id", r.id)
-                        client.send(msg);
-                    }
+                        
+                        let existingRoom = this.findRoomById(r.id)
+                        if(existingRoom){
+                            //update?
+                            //console.log("updating", r.id)
+                            existingRoom.setData(r)
+                        } else if (r.s){
+                            let room = Room.fromData(this, r);
+                            //console.warn("creating", r.id)
+                            this.#rooms.push(room);
+                            room.setData(r);
+                        } else {
+                            var msg = new RoomRequest();
+                            msg.sender = client.id;
+                            msg.id = r.id;
+                            //console.log("missing room id", r.id)
+                            client.send(msg);
+                        }
+
+                    //}
                 });
             }
             if (data.p){
@@ -8952,7 +8956,7 @@ constants.thresholds = Math.round((constants.maxArea-constants.minArea) / 4);
 
 
 const SCREENBLACK = "#080808";
-let DEBUG = false;
+let DEBUG = true;
 
 let game
 let renderer
