@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.188 BETA"
+const VERSION = "v7.26.8.30.189 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -6174,7 +6174,7 @@ class Level extends VC.Scene {
         for(let i=0; i<this.#players.length; i++){
             player = this.#players[i];
             //console.log(player.clientId, player.gameObject ? player.gameObject.room ? player.gameObject.room.id : "no room" : "no gameObject");
-            if(player.clientId == forId && player.gameObject && player.gameObject.room){
+            if(player.clientId == forId && player.gameObject && player.gameObject.room && player.gameObject.state!=State.DEAD){
                 return player;
             }
         }
