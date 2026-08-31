@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.31.29 BETA"
+const VERSION = "v7.26.8.31.30 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -8291,6 +8291,7 @@ class Adventurer extends Character{
         //render player sprite
         if(this.state === State.DEAD ){
             this.sprite.setFrame(Direction.SOUTH, State.DYING, 7);
+            this.plane = Plane.ETHEREAL;
 
         } else if (this.state === State.THROWING){
             this.sprite.setFrame(this.direction, State.THROWING, 0)
@@ -8345,10 +8346,16 @@ class Adventurer extends Character{
         }
     }
     remove(){
-        super.remove();
         if(this.state==State.DEAD && game.level){
-            this.room = game.level.rooms[0];
-            this.state = State.DEAD;
+            if(!this.dead){
+                let deathRoom = this.room;
+                super.remove();
+                this.room = deathRoom;
+                this.state = State.DEAD;
+            }
+            this.dead = true;
+        }else{
+            super.remove()
         }
         this.clear();
     }
