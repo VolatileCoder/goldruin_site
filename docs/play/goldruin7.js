@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.31.24 BETA"
+const VERSION = "v7.26.8.31.29 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -5946,6 +5946,13 @@ class Level extends VC.Scene {
                 }
                 playerData.r = [roomCache.get(player.gameObject.room.id)];
             }else {
+                if(player.gameObject && player.gameObject.room){                
+                    if(!roomCache.has(player.gameObject.room.id)){
+                        roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
+                    }
+                    playerData.r = [roomCache.get(player.gameObject.room.id)];
+                }
+                
                 let p2 = this.getFocusedPlayer(player.clientId);
                 if(p2 && p2.gameObject && p2.gameObject.room){
                     if(!roomCache.has(p2.gameObject.room.id)){
@@ -8339,11 +8346,9 @@ class Adventurer extends Character{
     }
     remove(){
         super.remove();
-        if(this.state==State.DEAD || this.tag != "Server"){
-            if(game.level){
-                this.room = game.level.rooms[0];
-                this.state = State.DEAD;
-            }
+        if(this.state==State.DEAD && game.level){
+            this.room = game.level.rooms[0];
+            this.state = State.DEAD;
         }
         this.clear();
     }
