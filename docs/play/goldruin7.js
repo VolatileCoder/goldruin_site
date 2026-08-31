@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.218 BETA"
+const VERSION = "v7.26.8.31.13 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1057,6 +1057,8 @@ class Player {
                             }else{
                                 this.gameObject = renderer.currentScene.findObjectById(data.o);
                             }
+                        } else if (this.gameObject && this.gameObject.health <=0 && isNaN(data.r)){
+                            this.gameObject.room = null;
                         }
                     }
                     this.lastRoom = this.gameObject && this.gameObject.room ? this.gameObject.room : null;
@@ -5938,7 +5940,7 @@ class Level extends VC.Scene {
                 p: p,
                 m: this.#message
             };
-            if(player.gameObject && player.gameObject.room && player.gameObject.state != State.DEAD){
+            if(player.gameObject && player.gameObject.room && player.gameObject.state != State.DEAD && player.gameObject.health>0){
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
@@ -6546,7 +6548,7 @@ class Level extends VC.Scene {
 }
 
 class Room extends VC.Scene {
-    static idCounter = 1;
+    static idCounter = 0;
     type = "OVERRIDE ME";   
     doors = [];
     floor = null;
@@ -8333,10 +8335,12 @@ class Adventurer extends Character{
         }
     }
     remove(){
-        
-        //if(this.state==State.DEAD || this.tag != "Server"){
-            super.remove();
-        //}
+        super.remove();
+        if(this.state==State.DEAD || this.tag != "Server"){
+            if(game.level){
+                this.room = game.level.rooms[0];
+            }
+        }
         this.clear();
     }
 
