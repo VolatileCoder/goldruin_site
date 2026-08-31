@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.31.44 BETA"
+const VERSION = "v7.26.8.31.53 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1234,9 +1234,10 @@ class Renderer extends VC.Game {
             if(this.statusOverlay==null){
                 this.statusOverlay = new StatusOverlay();
             }
-            let focusedPlayer = this.#currentScene.getFocusedPlayer(client.id);
-            if(focusedPlayer && focusedPlayer.gameObject){
-                this.statusOverlay.playerGameObject = focusedPlayer.gameObject;
+            let currentPlayer = this.#currentScene.players.get(client.id);
+            let spectating = this.#currentScene.players.get(currentPlayer.spectating);
+            if(spectating && spectating.gameObject){
+                this.statusOverlay.playerGameObject = spectating.gameObject;
                 this.statusOverlay.render(deltaT, this.infoScreen);
             }
         }else {
@@ -5953,7 +5954,7 @@ class Level extends VC.Scene {
                 m: this.#message
             };
 
-            spectatingPlayer = this.#players.get(player.spectating);
+            let spectatingPlayer = this.#players.get(player.spectating);
             
             if(spectatingPlayer.gameObject.state == State.DEAD && Date.now() - spectatingPlayer.gameObject._stateStart > 2500){
                 //switch to a new player
@@ -5969,13 +5970,13 @@ class Level extends VC.Scene {
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
-                playerData.r.push(oomCache.get(player.gameObject.room.id));
+                playerData.r.push(roomCache.get(player.gameObject.room.id));
             }
-            if(spectating.gameObject && spectating.gameObject.room){
-                if(!roomCache.has(spectating.gameObject.room.id)){
-                    roomCache.set(spectating.gameObject.room.id, spectating.gameObject.room.getData());
+            if(spectatingPlayer.gameObject && spectatingPlayer.gameObject.room){
+                if(!roomCache.has(spectatingPlayer.gameObject.room.id)){
+                    roomCache.set(spectatingPlayer.gameObject.room.id, spectating.gameObject.room.getData());
                 }
-                playerData.r.push(roomCache.get(spectating.gameObject.room.id));
+                playerData.r.push(roomCache.get(spectatingPlayer.gameObject.room.id));
             }
             data.set(player.clientId, playerData);
         });
@@ -6219,8 +6220,8 @@ class Level extends VC.Scene {
         } else {
             playMusic(LevelFactory.getMusic(this.world));
         }
-        let currentPlayer = this.players(client.id);
-        let spectating = this.players(currentPlayer.spectating);
+        let currentPlayer = this.players.get(client.id);
+        let spectating = this.players.get(currentPlayer.spectating);
         this.currentRoom = this.#lastRenderedRoom;
         if(spectating && spectating.gameObject && spectating.gameObject.room){
             this.currentRoom = spectating.gameObject.room;
