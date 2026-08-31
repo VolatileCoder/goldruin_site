@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.31.53 BETA"
+const VERSION = "v7.26.8.31.59 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1049,6 +1049,7 @@ class Player {
         if(data && data.i){
             let result = new Player()
             result.clientId = data.i;
+            result.spectating = data.s;
             result.setData(data);
             return result
         }
@@ -1058,6 +1059,7 @@ class Player {
         
         if(data.i == this.clientId){
             this.playerName = data.n;
+            this.spectating = data.s;
             if(data.o && (!this.gameObject || data.o!=this.gameObject.id || this.gameObject.room==null || (!isNaN(data.r) && this.lastRoom && this.lastRoom.id != data.r))){
                 if(renderer.currentScene instanceof Level){
                     //console.log("finding game object")
@@ -5956,14 +5958,15 @@ class Level extends VC.Scene {
 
             let spectatingPlayer = this.#players.get(player.spectating);
             
-            if(spectatingPlayer.gameObject.state == State.DEAD && Date.now() - spectatingPlayer.gameObject._stateStart > 2500){
+            if(spectatingPlayer.gameObject.state == State.DEAD && Date.now() - spectatingPlayer.gameObject._stateStart > 1500){
                 //switch to a new player
                 this.#players.forEach((candidate)=>{
-                    if(candidate && candidate.gameObject && candidate.gameObject.state != gameObject.DEAD){
+                    if(candidate && candidate.gameObject && candidate.gameObject.state != State.DEAD){
                         spectatingPlayer = candidate;
                     }
                 });
             }
+            player.spectating = spectatingPlayer.clientId
 
 
             if(player.gameObject && player.gameObject.room){
@@ -5974,7 +5977,7 @@ class Level extends VC.Scene {
             }
             if(spectatingPlayer.gameObject && spectatingPlayer.gameObject.room){
                 if(!roomCache.has(spectatingPlayer.gameObject.room.id)){
-                    roomCache.set(spectatingPlayer.gameObject.room.id, spectating.gameObject.room.getData());
+                    roomCache.set(spectatingPlayer.gameObject.room.id, spectatingPlayer.gameObject.room.getData());
                 }
                 playerData.r.push(roomCache.get(spectatingPlayer.gameObject.room.id));
             }
