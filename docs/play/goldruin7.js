@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.176 BETA"
+const VERSION = "v7.26.8.30.182 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -5924,6 +5924,7 @@ class Level extends VC.Scene {
     getData(){
         let data = new Map();
         let p = []
+        let roomCache = new Map();
         this.#players.forEach((player)=>{p.push(player.getData())});
         this.players.forEach((player)=>{
             let playerData = {
@@ -5934,12 +5935,18 @@ class Level extends VC.Scene {
                 m: this.#message
             };
             if(player.gameObject && player.gameObject.room){
-                playerData.r = [player.gameObject.room.getData()];
+                if(!roomCache.has(player.gameObject.room.id)){
+                    roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
+                }
+                playerData.r = [roomCache.get(player.gameObject.room.id)];
             }
             if(!player.gameObject || player.gameObject.state == State.DEAD){
                 let p2 = this.getFocusedPlayer(player.clientId);
-                if(p2.gameObject && p2.gameObject.room){
-                    playerData.r.push(p2.gameObject.room)
+                if(p2 && p2.gameObject && p2.gameObject.room){
+                    if(!roomCache.has(p2.gameObject.room.id)){
+                        roomCache.set(p2.gameObject.room.id, p2.gameObject.room.getData());
+                    }       
+                    playerData.r.push(roomCache.get(p2.gameObject.roomid))
                 }
             }
             data.set(player.clientId, playerData);
@@ -6170,11 +6177,11 @@ class Level extends VC.Scene {
             //console.log(player.clientId, player.gameObject ? player.gameObject.room ? player.gameObject.room.id : "no room" : "no gameObject");
             if(player.clientId == forId && player.gameObject && player.gameObject.room){
                 return player;
-            }
+            }z
         }
         for(let i=0; i<this.#players.length; i++){
             player = this.#players[i];
-            if(player.gameObject && player.gameObject.room && player.gameObject.state!==State.DEAD){ //todo: modify for observing
+            if(player.gameObject && player.gameObject.room && player.gameObject.state!=State.DEAD){ //todo: modify for observing
                 return player;
             }
         }
@@ -8164,6 +8171,7 @@ class Adventurer extends Character{
                 this.keys.forEach((k, i)=>{
                     var pu = new Pickup(this.room, k, true);
                     pu.box.center(this.box.center());
+                    game.level.statistics.keysCollected--;
                 });
             }
 
