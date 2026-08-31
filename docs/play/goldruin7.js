@@ -1,4 +1,4 @@
-const VERSION = "v7.26.8.30.201 BETA"
+const VERSION = "v7.26.8.30.210 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -5937,7 +5937,7 @@ class Level extends VC.Scene {
                 p: p,
                 m: this.#message
             };
-            if(player.gameObject && player.gameObject.room && !player.gameObject.state != State.DEAD){
+            if(player.gameObject && player.gameObject.room && player.gameObject.state != State.DEAD){
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
@@ -5994,13 +5994,14 @@ class Level extends VC.Scene {
                     if(filteredPlayers.length == 0){
                         //new player, add them
                         let newPlayer = Player.fromData(player);
-                        this.#players.set(player.clientId, newPlayer)
+                        this.#players.set(player.i, newPlayer)
                         updated.push(newPlayer)
                     }else{
                         filteredPlayers[0].setData(player)
                         updated.push(filteredPlayers[0]);
                     }
                 });
+                /*
                 let remove = []
                 this.players.forEach((player, playerId)=>{
                     if(updated.indexOf(player)==-1){
@@ -6008,6 +6009,7 @@ class Level extends VC.Scene {
                     }
                 });
                 remove.forEach((id)=>{this.players.delete(id)});
+                */
             }
             if(this.message != data.m){
                 this.message = data.m
