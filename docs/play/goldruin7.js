@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.1.100 BETA"
+const VERSION = "v7.26.9.1.101 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -17075,7 +17075,7 @@ class LevelFactory {
         
         server.players.forEach((player, playerid)=>{
             //log("playerId", playerid);
-            player.spectating = null;
+            player.spectating = playerId;
             var a = new Adventurer(level.rooms[0], player.controller);
             a.tag = "Server";
             //a.keys.push(Treasure.SILVERKEY);
