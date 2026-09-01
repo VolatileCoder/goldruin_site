@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.1.113 BETA"
+const VERSION = "v7.26.9.1.117 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -6125,7 +6125,9 @@ class Level extends VC.Scene {
                 if(!roomCache.has(spectatingPlayer.gameObject.room.id)){
                     roomCache.set(spectatingPlayer.gameObject.room.id, spectatingPlayer.gameObject.room.getData());
                 }
-                playerData.r.push(roomCache.get(spectatingPlayer.gameObject.room.id));
+                if(playerData.r.indexOf(roomCache.get(spectatingPlayer.gameObject.room.id))==-1){
+                    playerData.r.push(roomCache.get(spectatingPlayer.gameObject.room.id));
+                }
             }
             data.set(player.clientId, playerData);
         });
@@ -17350,6 +17352,12 @@ class EndLevelSummary extends RectangularRoom {
                 this.player.gameObject.z = 0;
                 //this.player.gameObject.speed = 150;
                 this.initialized = true;
+
+                let world = Math.floor(this.number / 5) + 1;
+                console.log("world", world)
+                var temple = LevelFactory.getTemple(world)
+                this.palette = temple.palette;
+                temple.themeRoom(this);
             }
             /*
             this.player.gameObject.sprite.lastLocation.x =  this.player.gameObject.box.x;
@@ -17360,11 +17368,6 @@ class EndLevelSummary extends RectangularRoom {
             
             */
 
-            let world = Math.floor(this.number / 5) + 1;
-            console.log("world", world)
-            var temple = LevelFactory.getTemple(world)
-            this.palette = temple.palette;
-            temple.themeRoom(this);
         }
         
         super.preRender(deltaT)
