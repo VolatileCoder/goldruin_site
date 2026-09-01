@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.1.99 BETA"
+const VERSION = "v7.26.9.1.100 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -4728,6 +4728,7 @@ class Character extends GameObject{
             if (Math.abs(input.x)===1 && Math.abs(input.y)===1){
                 multiplier = 1/Math.sqrt(2);
             }
+        
             let constrained = this.room ? this.room.constrain(this,
                 this.box.x + input.x * this.speed * multiplier * deltaT/1000,
                 this.box.y + input.y * this.speed * multiplier * deltaT/1000
@@ -4899,7 +4900,7 @@ class Client extends VC.Client {
         if(message.messageType == MessageType.SCENE_DATA){
             if(!this.#renderer.currentScene || (this.#renderer.currentScene.sceneName!=message.data.sceneName && this.#renderer.transitioningTo != message.data.sceneName )){
                 //console.log("setting New scene")
-                console.log("creating", message.data)
+                //console.log("creating", message.data)
                 let newScene = SceneManager.CreateScene(message.data.sceneName);
                 newScene.setData(message.data);
                 this.#renderer.currentScene = newScene; 
@@ -6766,7 +6767,7 @@ class Room extends VC.Scene {
                 }else {
                     let value = GameObject.fromData(obj, this);
                     if(value && value.code=='adv'){
-                        console.log('adv from data:', obj)
+                        //console.log('adv from data:', obj)
                     }
                 }
             });
@@ -6882,7 +6883,7 @@ class Room extends VC.Scene {
 
     preRender(deltaT){
 
-        console.log("counter:", game.frameCounter, deltaT);
+        //console.log("counter:", game.frameCounter, deltaT);
         this.objects.forEach((o)=>{
             if(o.state !== State.DYING || o.state !== State.DEAD){
                 o.move(deltaT);
@@ -14743,7 +14744,6 @@ class TitleScreen extends VC.Scene {
         
     }
     preRender(deltaT){
-        
         if (!this.#exiting && server && server.players){
             server.players.forEach((v,k) =>{
                 let c = v.controller.read();
@@ -15700,7 +15700,7 @@ class ForestTemple extends Temple{
     
     themeRoom(room, index, level){
         super.themeRoom(room, index);
-        return;
+        //return;
         if (index !== 0 && !room.exit && level && level.number % 5 != 4 && !room.secret){
             
             var enemyRange = level.number + 1 ;
@@ -17076,9 +17076,9 @@ class LevelFactory {
         server.players.forEach((player, playerid)=>{
             //log("playerId", playerid);
             player.spectating = null;
-            var a = new Adventurer(exitRoom, player.controller);
+            var a = new Adventurer(level.rooms[0], player.controller);
             a.tag = "Server";
-            a.keys.push(Treasure.SILVERKEY);
+            //a.keys.push(Treasure.SILVERKEY);
             //a.id = playerid;
             player.gameObject = a;
             if (server.players.size>1){
@@ -17086,9 +17086,8 @@ class LevelFactory {
                 playerCounter++;
             }
             level.players.set(playerid,player)
-            //level.rooms[0].spawn(a);//todo: spawn near entrance. Especially if single player.
-            //level.rooms[0].visited = 1;
-            exitRoom.spawn(a);
+            level.rooms[0].spawn(a);//todo: spawn near entrance. Especially if single player.
+            level.rooms[0].visited = 1;
         });
         return level;
     }
