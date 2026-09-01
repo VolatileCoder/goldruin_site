@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.1.112 BETA"
+const VERSION = "v7.26.9.1.113 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -6115,13 +6115,12 @@ class Level extends VC.Scene {
             }
             player.spectating = spectatingPlayer.clientId
 
-/*
             if(player.gameObject && player.gameObject.room){
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
                 playerData.r.push(roomCache.get(player.gameObject.room.id));
-            }*/
+            }
             if(spectatingPlayer.gameObject && spectatingPlayer.gameObject.room){
                 if(!roomCache.has(spectatingPlayer.gameObject.room.id)){
                     roomCache.set(spectatingPlayer.gameObject.room.id, spectatingPlayer.gameObject.room.getData());
