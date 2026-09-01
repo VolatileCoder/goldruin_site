@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.1.102 BETA"
+const VERSION = "v7.26.9.1.112 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1071,6 +1071,8 @@ class Player {
                             }else{
                                 this.gameObject = renderer.currentScene.findObjectById(data.o);
                             }
+                            this.lastRoom  = room
+                            //this.lastRoom = this.gameObject && this.gameObject.room ? this.gameObject.room : null;
                         } else if (this.gameObject && this.gameObject.health <=0 && isNaN(data.r)){
                             this.gameObject.room = null;
                         }
@@ -6113,13 +6115,13 @@ class Level extends VC.Scene {
             }
             player.spectating = spectatingPlayer.clientId
 
-
+/*
             if(player.gameObject && player.gameObject.room){
                 if(!roomCache.has(player.gameObject.room.id)){
                     roomCache.set(player.gameObject.room.id, player.gameObject.room.getData());
                 }
                 playerData.r.push(roomCache.get(player.gameObject.room.id));
-            }
+            }*/
             if(spectatingPlayer.gameObject && spectatingPlayer.gameObject.room){
                 if(!roomCache.has(spectatingPlayer.gameObject.room.id)){
                     roomCache.set(spectatingPlayer.gameObject.room.id, spectatingPlayer.gameObject.room.getData());
@@ -12341,48 +12343,50 @@ class Pickup extends GameObject{
     }
 
     move (deltaT){
+        if(game.level){
+            let players = game.currentScene.getPlayersInRoom(this.room);
 
-        let players = game.currentScene.getPlayersInRoom(this.room);
-
-        players.forEach((p)=>{
-            let player = p.gameObject;
-            if(player.state == State.DEAD)
-            {
-                return;
-            }
-            this.plane = Plane.ETHEREAL;
-            if(this.#content === Treasure.RANDOM){
-                if ((player.health/player.maxHealth) < Math.random()){
-                    this.#content = Treasure.HEART
-                } else {
-                    this.#content = Math.round(Math.random() * 6) + Treasure.HEART;
+            players.forEach((p)=>{
+                let player = p.gameObject;
+                if(player.state == State.DEAD)
+                {
+                    return;
                 }
-            }
-            
-            if((this.state === State.IDLE || this.state === State.DYING) && player.box.collidesWith (this.box)){
-                this.state = State.HURT;
-                super.move();
-
-                if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
-                    player.keys.push(this.#content);
-                    game.level.statistics.keysCollected++;
-                } else if (this.#content === Treasure.HEART){
-                    player.health = VC.Math.constrain(0, player.health + 10, player.maxHealth);
-                    game.level.statistics.heartsCollected++;
-                } else if (this.#content === Treasure.TNT){
-                    player.tntCount++;
-                    game.level.statistics.tntCollected += 1;
-                } else if (this.#content === Treasure.HEARTCONTAINER){
-                    player.maxHealth += 10;
-                    player.health = player.maxHealth;//TODO: add slowly
-                } else {
-                    let goldValue = (this.#content - Treasure.TNT ) * 100;
-                    player.gold += goldValue;
-                    game.level.statistics.goldCollected += goldValue;
+                this.plane = Plane.ETHEREAL;
+                if(this.#content === Treasure.RANDOM){
+                    if ((player.health/player.maxHealth) < Math.random()){
+                        this.#content = Treasure.HEART
+                    } else {
+                        this.#content = Math.round(Math.random() * 6) + Treasure.HEART;
+                    }
                 }
-            }
+                
+                if((this.state === State.IDLE || this.state === State.DYING) && player.box.collidesWith (this.box)){
+                    this.state = State.HURT;
+                    super.move();
 
-        });
+                    if(this.#content >= Treasure.SILVERKEY && this.#content <= Treasure.BLUEKEY){
+                        player.keys.push(this.#content);
+                        game.level.statistics.keysCollected++;
+                    } else if (this.#content === Treasure.HEART){
+                        player.health = VC.Math.constrain(0, player.health + 10, player.maxHealth);
+                        game.level.statistics.heartsCollected++;
+                    } else if (this.#content === Treasure.TNT){
+                        player.tntCount++;
+                        game.level.statistics.tntCollected += 1;
+                    } else if (this.#content === Treasure.HEARTCONTAINER){
+                        player.maxHealth += 10;
+                        player.health = player.maxHealth;//TODO: add slowly
+                    } else {
+                        let goldValue = (this.#content - Treasure.TNT ) * 100;
+                        player.gold += goldValue;
+                        game.level.statistics.goldCollected += goldValue;
+                    }
+                }
+
+            });
+        }
+        
         if(!this.#permanent && this.state === State.IDLE && this._stateStart + 2000 < Date.now()){
             this.state = State.DYING;
         }
@@ -17075,7 +17079,7 @@ class LevelFactory {
         
         server.players.forEach((player, playerid)=>{
             //log("playerId", playerid);
-            player.spectating = playerId;
+            player.spectating = playerid;
             var a = new Adventurer(level.rooms[0], player.controller);
             a.tag = "Server";
             //a.keys.push(Treasure.SILVERKEY);
