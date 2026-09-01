@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.1.123 BETA"
+const VERSION = "v7.26.9.1.129 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -1056,20 +1056,22 @@ class Player {
         }
         return null;
     }
+
     setData(data){
         if(data.i == this.clientId){
             this.playerName = data.n;
             this.spectating = data.s;
-            if(data.o && (!this.gameObject || data.o!=this.gameObject.id || this.gameObject.room==null || (!isNaN(data.r) && this.lastRoom && this.lastRoom.id != data.r))){
+            if((!this.roomFound) || data.o && (!this.gameObject || data.o!=this.gameObject.id || this.gameObject.room==null || (!isNaN(data.r) && this.lastRoom && this.lastRoom.id != data.r))){
                 if(renderer.currentScene instanceof Level){
                     //console.log("finding game object")
                     if(renderer.currentScene instanceof Level){
                         if(!isNaN(data.r)){
                             let room = renderer.currentScene.findRoomById(data.r);
                             if (room){
-                                this.gameObject = room.findObjectById(data.o);          
+                                this.gameObject = room.findObjectById(data.o);    
+                                this.roomFound==true;      
                             }else{
-                                this.gameObject = renderer.currentScene.findObjectById(data.o);
+                                this.roomFound==false;
                             }
                             this.lastRoom  = room
                             //this.lastRoom = this.gameObject && this.gameObject.room ? this.gameObject.room : null;
@@ -4000,7 +4002,7 @@ class Server extends VC.Server {
         if(message instanceof ReadyPlayer){
 
             if(!this.players.has(message.sender)){
-                let player =  new Player();
+                let player = new Player();
                 player.clientId = message.sender;
                 player.controller = new RemoteController();
                 this.players.set(message.sender, player)
@@ -4021,6 +4023,7 @@ class Server extends VC.Server {
             return;
         }
         if(message instanceof RoomRequest && game.currentScene instanceof Level){
+            console.log('ack. will send structure for', message.id)
             game.currentScene.findRoomById(message.id).sendStructure = true;
         }
             
@@ -6143,25 +6146,23 @@ class Level extends VC.Scene {
             if (data.r && data.r.length>0){
                 data.r.forEach((r)=>{
                         
-                        let existingRoom = this.findRoomById(r.id)
-                        if(existingRoom){
-                            //update?
-                            //console.log("updating", r.id)
-                            existingRoom.setData(r)
-                        } else if (r.s){
-                            let room = Room.fromData(this, r);
-                            //console.warn("creating", r.id)
-                            this.#rooms.push(room);
-                            room.setData(r);
-                        } else {
-                            var msg = new RoomRequest();
-                            msg.sender = client.id;
-                            msg.id = r.id;
-                            console.log("missing room id", r.id)
-                            client.send(msg);
-                        }
-
-                    //}
+                    let existingRoom = this.findRoomById(r.id)
+                    if(existingRoom){
+                        //update?
+                        //console.log("updating", r.id)
+                        existingRoom.setData(r)
+                    } else if (r.s){
+                        let room = Room.fromData(this, r);
+                        console.warn("creating", r.id)
+                        this.#rooms.push(room);
+                        room.setData(r);
+                    } else {
+                        var msg = new RoomRequest();
+                        msg.sender = client.id;
+                        msg.id = r.id;
+                        console.log("missing room id", r.id)
+                        client.send(msg);
+                    }
                 });
             }
             if (data.p){
