@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.1.130 BETA"
+const VERSION = "v7.26.9.2.5 BETA"
 class Controller{
     up = 0;
     left = 0;
@@ -12,6 +12,18 @@ class Controller{
             y: this.up * -1  + this.down,
             a: this.attack    
         }
+    }
+    static areEqualReads(read1, read2){
+        if(read1 == null && read2 == null){
+            return true
+        }
+        if(read1 == null || read2 == null){
+            return false
+        }
+        if(read1.a != read2.a || read1.x != read2.x || read1.y != read2.y){
+            return false;
+        }
+        return true;
     }
 }
 class Direction {
@@ -3667,9 +3679,7 @@ class RemoteController extends Controller {
         this.#lastSet = Date.now();
     }
     read(forObject){
-        if(Date.now()-this.#lastSet>1000){//disconnected
-            return this.#default;
-        }
+       
         return this.#obj;
     }
 }
@@ -4867,12 +4877,23 @@ class Client extends VC.Client {
         msg.sender = this.id;
         this.send(msg);
     }
-    
+    #lastRead = null;
+    #sameRead = 0 
     pollController(){
         if(this.isConnected){
-            let msg = PlayerInput.map(this.#inputController.read())
-            msg.sender = this.id;
-            this.send(msg);
+            
+            let thisRead = this.#inputController.read();
+            if(Controller.areEqualReads(this.#lastRead, thisRead)){
+                this.sameRead++;
+            }else{
+                this.sameRead = 0;
+                this.#lastRead = thisRead;
+            }
+            if(this.sameRead<3){
+                let msg = PlayerInput.map(thisRead)
+                msg.sender = this.id;
+                this.send(msg);
+            }
         }else{
             window.clearInterval(this.#intervalHandle);
         }
@@ -4897,7 +4918,7 @@ class Client extends VC.Client {
         if(message instanceof ReadyPlayer){
             if(message.sender == this.id){
                 //server is ready, begin sending input. 
-                this.intervalHandle = window.setInterval(()=>{this.pollController()}, 75);
+                this.intervalHandle = window.setInterval(()=>{this.pollController()}, 33);
             }else if(this.otherPlayers.indexOf(message.sender)==-1) {
                 this.otherPlayers.push(message.sender);//useful?
             }
