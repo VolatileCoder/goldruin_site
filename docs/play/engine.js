@@ -1,5 +1,16 @@
 'use strict';
-const VC={};
+const VC={
+    GenerateRandomUUID(){
+        if(crypto.randomUUID){
+            return crypto.randomUUID()
+        }else{
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+            });        
+        }
+    }
+};
 
 VC.AudioChannel = class{
     static howlPool = new Map();
@@ -54,6 +65,13 @@ VC.AudioChannel = class{
     }
     get player(){
         return this.#player;
+    }
+
+    get playing(){
+        return (
+            this.#player && 
+            this.#player.playing
+        )
     }
 
     get volume(){
@@ -184,7 +202,7 @@ VC.AudioChannel = class{
 setInterval(()=>{VC.AudioChannel.cullPool()}, 5000);
 
 VC.Client = class {
-    #id = crypto.randomUUID();
+    #id = VC.GenerateRandomUUID();
     #peer = null;
     #connection = null;
     #shuttingDown = false;
@@ -1172,7 +1190,7 @@ VC.Server = class {
         //TODO: check to see if peer is already open.
         this.#id = this.#generateHostKey();
         log("starting host: ", 'vc-'+this.#id.toLowerCase())
-        this.#host = new Peer('vc-'+this.#id.toLowerCase());//;this.#id;
+        this.#host = new Peer('vc-'+this.#id.toLowerCase(), {'expire_timeout':500});//;this.#id;
         this.#host.on('open', (id)=>{console.log ("Host Ready: ", id)})
         this.#host.on('connection', (conn)=>{
             this.addConnection(conn);
