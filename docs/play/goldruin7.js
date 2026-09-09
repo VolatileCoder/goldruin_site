@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.7.64 BETA"
+const VERSION = "v7.26.9.8.12 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
@@ -228,9 +228,9 @@ class Door {
     }
 
     render(screen){
-        if(this.wasOpen && this.wasOpen != this.opened && this.opened){
-            //console.log("trying really hard to play audio")
-            this.room.audioChannel.play(SoundEffects.ROOM_OPENED, false)
+        if(this.wasOpen != null && this.wasOpen != this.opened && this.opened){
+            console.log("trying really hard to play audio")
+            this.room.audioChannel.play(SoundEffects.ROOM_OPENED.data, SoundEffects.ROOM_OPENED.volume, false)
         }
         this.wasOpen = this.opened
         focus={};
@@ -6959,7 +6959,7 @@ class Room extends VC.Scene {
 
             if(this.barred){
                 this.audioChannel.play(SoundEffects.ROOM_BARRED.data, SoundEffects.ROOM_BARRED.volume, false);
-            }else if(this.lastBarred==true || this.lastOpened == false){
+            }else if(this.lastBarred==true){
                 this.audioChannel.play(SoundEffects.ROOM_OPENED.data, SoundEffects.ROOM_OPENED.volume, false);
             }
             this.lastBarred = this.barred; 
@@ -6987,9 +6987,7 @@ class Room extends VC.Scene {
 
     postDisplay(){
         this.clear();
-        if(this.audioChannel){
-            this.audioChannel.dispose();
-        }
+
     }
 
     clear(){
@@ -7012,6 +7010,10 @@ class Room extends VC.Scene {
             o.remove();
         })
         removable = [];
+        if(this.audioChannel){
+            this.audioChannel.dispose();
+            this.audioChannel = null;
+        }
     }
 
     renderStructure(screen){
@@ -7809,9 +7811,9 @@ class SlotStatsScreen extends VC.Scene{
 }
 
 class SmokeBillow extends GameObject{
-    code = "sb";
+    code = "sm";
     #sprite = null;
-    #speed = 75 ;
+    #speed = 75;
     constructor(room, x, y, direction){
         super(room);
         this.box.x = x-64;
@@ -16987,6 +16989,7 @@ class Client extends VC.Client {
     ignore = false;
     otherPlayers=[];
     syncTime = Date.now();
+    enableLogging = false;
 
     constructor(){
         super();
@@ -17053,7 +17056,9 @@ class Client extends VC.Client {
                 this.#renderer.currentScene = newScene; 
             }else if(this.#renderer.currentScene && this.#renderer.currentScene.sceneName==message.data.sceneName){
                 //console.log("updating scene");
-                //console.log("updating", message.data)
+                if (this.enableLogging){
+                    console.log("updating", message.data);
+                }
                 this.#renderer.currentScene.setData(message.data);
             }
             else{
@@ -17884,7 +17889,6 @@ let client
 VC.System.OnReady(()=>{
     server = new Server();
     game = new Game(server);
-    game.setFrameLimit(30);
     client = new Client();
     renderer = new Renderer(client);
     const [serverSide, clientSide] = VC.LoopbackConnection.createPair();
@@ -17897,9 +17901,16 @@ VC.System.OnReady(()=>{
     const urlParams = new URLSearchParams(window.location.search);
     const host = urlParams.get('host'); 
     if(host && host == "true"){
+        game.setFrameLimit(30);
         server.startHost();
+    } else {
+        game.setFrameLimit(60);
     }
-    
+    const log = urlParams.get('log');
+    if(log && log == "true"){
+        client.enableLogging = true;
+    } 
+
     const join = urlParams.get('join'); 
     if(join){
         client.join(join);
