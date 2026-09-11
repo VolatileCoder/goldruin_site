@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.10.1 BETA"
+const VERSION = "v7.26.9.11.7 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
@@ -7,9 +7,6 @@ class ClientSoundChannel {
         return !disposed && this.#audioChannel.playing
     }
     performCommand(sound, room){
-        if(sound.soundId == 31 && sound.soundCommand==1){
-            console.log('performing', sound)
-        }
         if(this.disposed || this.#audioChannel==null || this.#audioChannel.disposed ){
             this.#audioChannel = new VC.AudioChannel();
             this.disposed = false
@@ -229,7 +226,6 @@ class Door {
 
     render(screen){
         if(this.wasOpen != null && this.wasOpen != this.opened && this.opened){
-            console.log("trying really hard to play audio")
             this.room.playSound(SoundEffects.ROOM_OPENED, false)
         }
         this.wasOpen = this.opened
@@ -4506,6 +4502,7 @@ class StatusOverlay extends VC.Scene {
             let opacity = (health > 10 || health <= 0 || (time > 100 && time < 464)) ? 0 : .5;
             this.#heartMask.attr({opacity: opacity});
             this.#heartMask.toFront();
+            console.log(player.tntCount);
             this.#tntReadout.attr("text",Format.numberWithCommas(player.tntCount));
 
             let boss = null
@@ -6640,7 +6637,7 @@ class Level extends VC.Scene {
         if(gameObject && gameObject.room && gameObject.room.findDoor(direction)){
             let nextRoom = this.findNeighbor(gameObject.room, direction);  
             //gameObject.remove();
-            if(!nextRoom.barred || gameObject instanceof Adventurer ){
+            if(!nextRoom.barred || gameObject instanceof Adventurer || gameObject instanceof TNT){
                 if(gameObject instanceof Adventurer){
                     nextRoom.visited = 1;
                     //console.log("moving to room", nextRoom.id)
@@ -7191,7 +7188,7 @@ class Room extends VC.Scene {
                     }
                     if(game && game.currentScene instanceof Level) {
 
-                        var neighbor = game.currentScene.findNeighbor(room, door.wall)
+                        //var neighbor = game.currentScene.findNeighbor(room, door.wall)
                         if((constrained.collidesWith(door.trip))){// || (gameObject !== game.player && door.opened && gameObject instanceof Character  && door.box.collidesWith(gameObject.box) && room.barred==false && gameObject.transferrable && neighbor.barred == false && neighbor == game.player.room)){
                             tripped = doorTripFunc(door);
                             break;
@@ -7232,7 +7229,6 @@ class Room extends VC.Scene {
                     }    
                 }
             }
-
         }
 
         //LAVA POOL FIX FOR SKELETONS
@@ -8633,17 +8629,19 @@ class Adventurer extends Character{
             if(data.w){
                 this.#whip.box = VC.Box.fromData(data.w);
             }
-            if(data.tn){
+            if(data.tn != null){
                 this.tntCount = data.tn;
             }
             if(data.cl){
                 this.color = data.cl;
             }
-            if(data.g){
+            if(data.g != null){
                 this.gold = data.g;
             }
             if(data.k){
                 this.keys = data.k;
+            }else {
+                this.keys = [];
             }
         }
     }
@@ -10178,16 +10176,10 @@ class ClientSoundScape {
             }
             if(sound.soundCommand == 1 && !this.#channels.get(sound.originatorObjectId).has(sound.channelId)){
                 if(level){
-                    if(sound.soundId == 31 && sound.soundCommand==1){
-                        console.log('creating Channel', sound)
-                    }
                     this.#channels.get(sound.originatorObjectId).set(sound.channelId, new ClientSoundChannel());
                 }
             }
             if(this.#channels.get(sound.originatorObjectId).has(sound.channelId)){
-                if(sound.soundId == 31 && sound.soundCommand==1){
-                    console.log('inner', sound)
-                }
                 let channel = this.#channels.get(sound.originatorObjectId).get(sound.channelId);
                 channel.performCommand(sound, room);
             }
@@ -10578,10 +10570,8 @@ class Exit extends GameObject {
                 }
 
             });
-
         }
         if(game.currentScene instanceof EndLevelSummary){
-            console.log("creating", game.currentScene.nextLevel);
             game.currentScene = LevelFactory.Construct(game.currentScene.nextLevel);
         }else if(game.level){
             game.level.statistics.roomsVisited = filter(game.level.rooms,(r)=>{return r.visited}).length
