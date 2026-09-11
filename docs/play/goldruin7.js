@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.8.12 BETA"
+const VERSION = "v7.26.9.10.1 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
@@ -230,7 +230,7 @@ class Door {
     render(screen){
         if(this.wasOpen != null && this.wasOpen != this.opened && this.opened){
             console.log("trying really hard to play audio")
-            this.room.audioChannel.play(SoundEffects.ROOM_OPENED.data, SoundEffects.ROOM_OPENED.volume, false)
+            this.room.playSound(SoundEffects.ROOM_OPENED, false)
         }
         this.wasOpen = this.opened
         focus={};
@@ -3528,7 +3528,7 @@ class ServerSoundScape {
         this.#sounds.forEach((soundArray)=>{
             remove(soundArray, (s)=>{
                 if(!s.isMusic){
-                    let go = level ? level.findObjectById(s.originatorObjectId) : null;
+                    let go = s.originatorObjectId==-1 ? null : level ? level.findObjectById(s.originatorObjectId) : null;
                     return (
                         (
                             go && go.state != State.DEAD
@@ -6749,7 +6749,6 @@ class Room extends VC.Scene {
 
     sendStructure = true;
     doorsRendered = false;
-    audioChannel = null;
 
     static roomIds
 
@@ -6900,8 +6899,21 @@ class Room extends VC.Scene {
         return this.#shadowGroup;
     }
 
-    preDisplay(){
-        this.audioChannel = new VC.AudioChannel();
+    playSound(sound, loop){
+        if(game.level){
+            let s = new Sound(
+                this,//TNT fix
+                -1,
+                0,
+                sound.id,
+                1,
+                loop ? true : false
+            )
+            s.tag = this.code;
+            game.level.soundScape.add(
+                s
+            )
+        }
     }
 
     preRender(deltaT){
@@ -6958,9 +6970,9 @@ class Room extends VC.Scene {
             this.doorsRendered = true;
 
             if(this.barred){
-                this.audioChannel.play(SoundEffects.ROOM_BARRED.data, SoundEffects.ROOM_BARRED.volume, false);
+                this.playSound(SoundEffects.ROOM_BARRED, false);
             }else if(this.lastBarred==true){
-                this.audioChannel.play(SoundEffects.ROOM_OPENED.data, SoundEffects.ROOM_OPENED.volume, false);
+                this.playSound(SoundEffects.ROOM_OPENED, false);
             }
             this.lastBarred = this.barred; 
             this.lastOpened = this.opened;
@@ -7010,10 +7022,6 @@ class Room extends VC.Scene {
             o.remove();
         })
         removable = [];
-        if(this.audioChannel){
-            this.audioChannel.dispose();
-            this.audioChannel = null;
-        }
     }
 
     renderStructure(screen){
@@ -10203,7 +10211,7 @@ class ClientSoundScape {
         if(level){
             let removable = [];
             this.#channels.forEach((objectChannels, originatorObjectId)=>{
-                let gameObject = level.findObjectById(originatorObjectId);
+                let gameObject = originatorObjectId == - 1 ? null : level.findObjectById(originatorObjectId);
                 if(gameObject && gameObject.state==State.DEAD && Date.now() - gameObject._stateStart>1000 ){
                     objectChannels.forEach((channel)=>{
                         channel.dispose();
