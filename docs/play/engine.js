@@ -2004,7 +2004,7 @@ window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Syst
     }
 
     set x(value){
-        if(value!=this.#x){
+        if(value!=this.#x && !isNaN(value)){
             this.#x = value;
             this.#points = [];
         }
@@ -2014,7 +2014,7 @@ window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Syst
     }
     
     set y(value){
-        if(value!=this.#y){
+        if(value!=this.#y && !isNaN(value)){
             this.#y = value;
             this.#points = [];
         }
@@ -2025,7 +2025,7 @@ window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Syst
 
     
     set width(value){
-        if(value!=this.#width){
+        if(value!=this.#width && !isNaN(value)){
             this.#width = value;
             this.#points = [];
         }
@@ -2035,7 +2035,7 @@ window.matchMedia("(orientation: landscape)").addEventListener("change", VC.Syst
     }
 
     set height(value){
-        if(value!=this.#height){
+        if(value!=this.#height && !isNaN(value)){
             this.#height = value;
             this.#points = [];
         }
