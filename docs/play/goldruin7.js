@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.12.37 BETA"
+const VERSION = "v7.26.9.12.38 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
@@ -11414,7 +11414,7 @@ class TempleIcon{
 class LevelSelectScreen extends VC.Scene {
     #sceneName = "ls"
     #kcode = "UUDDLRLR";
-    #k = true;
+    #k = false;
     #tiebroken = false;
     #result = null;
     #selections = {};
