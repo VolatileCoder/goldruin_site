@@ -1206,6 +1206,7 @@ VC.Server = class {
     addConnection(conn){
         conn.on('error', (err)=>{this.onError(err)});
         conn.on('data', (data)=>{this.received(data)});
+        conn.on('close', ()=>{log("disconnected from client")});
         conn.on('open', ()=>{log("connected to client")});
         this.connections.set(conn.metadata, conn);
         console.log("creating connection:", conn.metadata)
