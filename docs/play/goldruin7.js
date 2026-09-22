@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.21.40 BETA"
+const VERSION = "v7.26.9.21.42 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
@@ -7196,9 +7196,9 @@ class Room extends VC.Scene {
     remove(){
         let removable = [];
         this.objects.forEach((o)=>{
-            if(o!==game.player){
+            //if(o!==game.player){
                 removable.push(o);
-            }
+            //}
         });
         removable.forEach((o)=>{ 
             o.remove();
@@ -9051,7 +9051,7 @@ class Adventurer extends Character{
         }
     }
     remove(){
-        if(this.state==State.DEAD && game.level){
+        if(this.state==State.DEAD && game && game.level){
             if(!this.dead){
                 let deathRoom = this.room;
                 super.remove();
@@ -18246,7 +18246,6 @@ class EndLevelSummary extends RectangularRoom {
         }
             
         this.volume = 1;
-        //statistics.levelsCleared = game.statistics.levelsCleared
         this.box.x = this.wallHeight;
         this.box.y = Math.round((Renderer.dimensions.width - this.box.height - this.wallHeight*2) / 2) + this.wallHeight;
         if(game && game.level){
