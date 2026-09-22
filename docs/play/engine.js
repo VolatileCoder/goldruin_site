@@ -255,7 +255,8 @@ VC.Client = class {
         console.warn('received should be overridden by derived classes');
     }
     onError(err){
-        console.error("client", err);
+        console.error("client", err.message);
+        this.disconnect();
     }
 }
 
@@ -1164,7 +1165,7 @@ VC.Scene = class {
 }
 
 VC.Server = class {
-    #id = "MULTIPLAYER!";
+    #id = "LOCAL";
     #host = null;
     #shuttingDown = false;
     connections = new Map();
@@ -1206,7 +1207,7 @@ VC.Server = class {
     addConnection(conn){
         conn.on('error', (err)=>{this.onError(err)});
         conn.on('data', (data)=>{this.received(data)});
-        conn.on('close', ()=>{log("disconnected from client")});
+        conn.on('close', ()=>{this.onClose(conn.metadata)});
         conn.on('open', ()=>{log("connected to client")});
         this.connections.set(conn.metadata, conn);
         console.log("creating connection:", conn.metadata)
@@ -1237,6 +1238,10 @@ VC.Server = class {
 
     received(data){
         console.warn('received should be overridden by derived classes');
+    }
+
+    onClose(id){
+        this.connections.delete(id);
     }
     
     onError(err){
