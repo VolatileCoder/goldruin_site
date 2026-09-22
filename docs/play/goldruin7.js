@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.21.39 BETA"
+const VERSION = "v7.26.9.21.40 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
@@ -5191,7 +5191,7 @@ class GameOverScreen extends VC.Scene{
     }
     preDisplay(){
         //game.player.state = State.DEAD;
-        game.boss = null;
+        renderer.boss = null;
     }
     preRender(deltaT){}
 
@@ -18249,7 +18249,7 @@ class EndLevelSummary extends RectangularRoom {
         //statistics.levelsCleared = game.statistics.levelsCleared
         this.box.x = this.wallHeight;
         this.box.y = Math.round((Renderer.dimensions.width - this.box.height - this.wallHeight*2) / 2) + this.wallHeight;
-        if(game.level){
+        if(game && game.level){
             this.palette = game.level.palette;
             this.palette.clipColor = SCREENBLACK;
         }
