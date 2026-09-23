@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.22.17 BETA"
+const VERSION = "v7.26.9.22.20 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
@@ -15116,13 +15116,14 @@ class SwordSkeleton extends Character{
         this.perimeter = 66;
     }
     move(deltaT){
-        if(!this.sprite || this.sprite.animation.frame>4){
+        let _stateFrame = Math.floor(((Date.now()-this._stateStart) % 800) / 100);
+        if(_stateFrame > 4){
             this.speed = 60;
         } else {
             this.speed = 4;
         }
 
-        if(this.sprite && this.state === State.ATTACKING && !this.attacked && this.sprite.animation.frame===3){
+        if(this.state === State.ATTACKING && !this.attacked && _stateFrame == 3){
             this.attacked=true;
             let opposingTeam = Team.getOpposingTeam(this.team)
             let targets = this.getObjectsInRangeOfAttack();
@@ -15137,7 +15138,7 @@ class SwordSkeleton extends Character{
                 }
             });
              
-        }else if(this.sprite && this.sprite.animation.frame!==3){
+        }else if(_stateFrame!==3){
             this.attacked=false;
         }
         super.move(deltaT); 
