@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.22.20 BETA"
+const VERSION = "v7.26.9.22.22 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
