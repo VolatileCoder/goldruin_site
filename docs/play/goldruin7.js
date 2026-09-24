@@ -1,4 +1,4 @@
-const VERSION = "v7.26.9.23.9 BETA"
+const VERSION = "v7.26.9.24.18 BETA"
 class ClientSoundChannel {
     #audioChannel = new VC.AudioChannel();
     #sound = null;
@@ -4384,7 +4384,16 @@ class StatusOverlay extends VC.Scene {
     #bossHealthBar = null;
     #bossMode = true; //sic: gets set to false on first render.
     #lastHealthWidth = 0;
+    #spectating = null;
     playerGameObject = null;
+
+    #showSpectatingIndicator = false;
+    get spectating(){
+        return this.#showSpectatingIndicator;
+    }
+    set spectating (value) {
+        this.#showSpectatingIndicator = value;
+    }
 
     render(deltaT, screen){
         //construct all elements
@@ -4429,6 +4438,9 @@ class StatusOverlay extends VC.Scene {
         }
         if(this.#bossHealthBar == null){
             this.#bossHealthBar = screen.drawRect(0,62,0,5,"#FFF","#AAA",1);
+        }
+        if(this.#spectating == null){
+            this.#spectating = screen.text(Renderer.dimensions.width/2,22,"- SPECTATING -").attr({ "font-size": "32px", "font-family": "monospace", "fill": "#FFF"});
         }
 
         //render the frame
@@ -4517,7 +4529,19 @@ class StatusOverlay extends VC.Scene {
             
             this.#levelReadout.attr("text","Level " + level.world + "-" + ((level.number % 5) + 1));
             
-            
+            if(this.#showSpectatingIndicator){
+                let pulse = Date.now() % 3000;
+                if(pulse <1500){
+                    this.#spectating.attr({opacity: pulse/1500 });
+                    this.#spectating.toFront();
+                } else {
+                    pulse = pulse - 1500
+                    this.#spectating.attr({opacity:  1-pulse/1500 });
+                    this.#spectating.toFront();
+                }
+            }else{
+                    this.#spectating.attr({opacity: 0});
+            }
         }
 
     }
@@ -4558,6 +4582,11 @@ class StatusOverlay extends VC.Scene {
             this.#coinSprite.remove();
             this.#coinSprite = null;
         }  
+
+        if(this.#spectating){
+            this.#spectating.remove();
+            this.#spectating = null;
+        }
 
         this.#keys.forEach((hSprite)=>{hSprite.remove();});
         this.#keys.length = [];
@@ -6991,9 +7020,7 @@ class Room extends VC.Scene {
                     currentObject.setData(obj);
                 }else {
                     let value = GameObject.fromData(obj, this);
-                    if(value && value.code=='adv'){
-                        //console.log('adv from data:', obj)
-                    }
+     
                 }
             });
             let removable = [];
@@ -7044,7 +7071,7 @@ class Room extends VC.Scene {
         if (data.s){
             room.region = data.s.r;
         }
-
+        room.setData(data);
         return room;
     }
 
@@ -12759,7 +12786,7 @@ class Manos extends Character{
     clear(){
         super.clear();
         if(renderer && renderer.currentScene){
-            renderer.currentScene.boss = null;w
+            renderer.currentScene.boss = null;
         }
         if(this.#sprite){
             this.#sprite.remove();
@@ -14151,9 +14178,9 @@ class Server extends VC.Server {
     
     addConnection(conn){
         if(this.players.size<4){
-            //todo: send busy message?
             super.addConnection(conn);
         }else{
+            //todo: send busy message?
             conn.close()
         }
     }
@@ -14166,6 +14193,15 @@ class Server extends VC.Server {
                 let player = new Player();
                 player.clientId = message.sender;
                 player.controller = new RemoteController();
+                if(game && game.level){ // game in progress
+                    let playerIdToSpectate = player.clientId;
+                    game.level.players.forEach((p, i) => {
+                        if(p && p.gameObject && p.gameObject.health>0){
+                            playerIdToSpectate = i;
+                        }
+                    });
+                    player.spectating = playerIdToSpectate;
+                }
                 this.players.set(message.sender, player)
             }
             
@@ -14185,7 +14221,6 @@ class Server extends VC.Server {
             return;
         }
         if(message instanceof RoomRequest && game.currentScene instanceof Level){
-            //console.log('ack. will send structure for', message.id)
             game.currentScene.findRoomById(message.id).sendStructure = true;
         }
             
@@ -14194,7 +14229,15 @@ class Server extends VC.Server {
 
     onClose(id){
         super.onClose(id);
-        this.players.delete(id);//todo: what should happen in the game? How?
+        if(game && game.level){
+            if(game.level.players.has(id)){
+                let player =  game.level.players.get(id);
+                if(player && player.gameObject){
+                    player.gameObject.hurt(player.gameObject.health);
+                }
+            }
+        }
+        this.players.delete(id);
     }
 
     stop(){
@@ -16990,6 +17033,7 @@ class Renderer extends VC.Game {
             let spectating = this.#currentScene.players.get(currentPlayer.spectating);
             if(spectating && spectating.gameObject){
                 this.statusOverlay.playerGameObject = spectating.gameObject;
+                this.statusOverlay.spectating = (spectating != currentPlayer);
                 this.statusOverlay.render(deltaT, this.infoScreen);
             }
         }else {
